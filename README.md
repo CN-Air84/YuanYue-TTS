@@ -1,4 +1,4 @@
-<img width="822" height="81" alt="image" src="https://github.com/user-attachments/assets/569cbf42-565c-4778-bfbe-b97c657f43f6" />　__源悦TTS，__
+__源悦TTS，__
 
 # __一款由学生研发、以学生为本、为学生而生的文本转语音程序。__
 
