@@ -3,6 +3,7 @@
 # __一款由学生研发、以学生为本、为学生而生的文本转语音程序。__
 ___
 
+
 本文档还在持续更新中，
 如发现某处表达不妥可以交PR，我会第一时间修改。
 
@@ -11,6 +12,23 @@ ___
 如果你觉得这个工具好用, 可以点一个Star 或者分享给你的朋友!
 
 [基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
+
+<div align="center">
+	<div>
+    	<img alt="downloads" src="https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total">
+	</div>
+	<div>
+    	<img alt="stars" src="https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?style=social">
+    	<img alt="forks" src="https://img.shields.io/github/forks/CN-Air84/YuanYue-TTS?style=social">
+    	<img alt="watching" src="https://img.shields.io/github/watchers/CN-Air84/YuanYue-TTS?style=social">
+	</div>
+	<div>
+    	<img alt="version" src="https://img.shields.io/github/v/release/CN-Air84/YuanYue-TTS?color=%239c080b&style=flat-square">
+    	<img alt="platform" src="https://img.shields.io/badge/platform-Windows-cyan">
+    	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
+	</div>
+
+
 ___
 
 ## 目录 
@@ -118,8 +136,8 @@ ___
 
 理解万岁！
 
-
-　
+</div>
+<div align="right">
 
 ##### 致所有还没有下载的用户： 
 使用 __前__ 须知已经结束，下面是使用 __时__ 须知。
@@ -127,8 +145,8 @@ ___
 [都看到这里了，不妨来亲自上手体验一下吧！](/releases)
 
 [或者，您可以来看看我们的程序特色介绍：](#程序特色介绍)
-
-　
+</div>
+<div align="center">
 
 ### 为什么线上导入用不了/加载缓慢
 
@@ -207,7 +225,7 @@ __看不清就对了！__
 
 请移步[issues](/issues)。
 
-　
+
 
 # ——————————————
 
@@ -241,6 +259,7 @@ __看不清就对了！__
 | [ghfast](https://ghfast.top/)|github加速服务，顾名思义|
 | [ChinaTextbook](https://github.com/TapXWorld/ChinaTextbook)|电子书源，造福华人，伟大无需多言|
 | …… | …… |
+</div>
 
 # ——————————————
 
@@ -402,7 +421,15 @@ __三步操作__
 
  ### 节省了用户抬头看书所需时间的同时，辅助用户更快的记忆书本上的知识，帮助用户更高效地学习。
 
-　
+
+
+## 免责声明
+
+禁止使用本程序进行洗稿/二次配音等剽窃他人创意的活动。
+
+若违规/违法（中国大陆法律、用户当地法律）使用, 本程序与开发者不承担任何责任。
+
+
 
 ## 注：
 1.后续可能会添加“看广告支持开发者”功能，不点按钮就不会弹。
