@@ -139,8 +139,9 @@ ___
 
 那么你可以在“设置”页面中将“Github下载加速”改为[ghfast](https://ghfast.top "ghfast")。
 
-如果你无法连接到github服务器，
+　
 
+如果你无法连接到github服务器，
 
 **简而言之，请使用VPN。**
 
