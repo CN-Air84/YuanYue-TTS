@@ -1,6 +1,4 @@
-
-
-<img width="2560" height="1440" alt="icon_with_title" src="https://github.com/user-attachments/assets/1602b53d-a0f8-46cb-8c1e-84a0cd1918fa" />
+<img width="1920" height="1080" alt="icon_with_title_1080p" src="https://github.com/user-attachments/assets/1b5f38ad-9f96-441a-9d69-4930b0b28add" />
 
 　__源悦TTS，__
  
