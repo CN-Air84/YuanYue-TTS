@@ -1,9 +1,7 @@
 
 <div align="center">
 	
-[中文](#)|[English](/docs/readme_En.md)|[中文省流](/docs/readme_Cn_without_pics.md)|[English Lite-Version](docs/readme_En_without_pics.md)
-	
-</div>
+[中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)</div>
 <img width="1920" height="1080" alt="icon_full_1080" src="https://github.com/user-attachments/assets/cf8f0a88-04b0-462a-9506-195beea1f5d3" />
 
 
