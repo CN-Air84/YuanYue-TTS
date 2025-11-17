@@ -1,6 +1,3 @@
-# 3 英文无图版
-
-[Chinese](#)|[English](/docs/readme_En.md)|[Chinese Lite-Version](/docs/readme_Cn_without_pics.md)|[English Lite-Version](docs/readme_En_without_pics.md)
 
 
 This document is still being updated continuously.
