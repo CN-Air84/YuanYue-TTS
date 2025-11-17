@@ -256,8 +256,8 @@ Finally, you can use this money for many other things: buy a fragrant big meat b
   
   Thank you for your support!
   
-  [WeChat Donation Code]
-  [Alipay Receipt Code]
+  ![微信赞赏码](https://youke1.picui.cn/s1/2025/11/13/6915e2f462bb7.png)
+  ![支付宝收款码](https://youke1.picui.cn/s1/2025/11/16/6919bccb783bd.jpg)
 </details>
 
 
