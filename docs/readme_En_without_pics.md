@@ -248,7 +248,7 @@ First, YuanYue TTS is completely free to download and use on Github, so there's 
 
 Second, money is hard-earned, and the author is not in urgent need of donations. The author would rather see you help give this project a Star, which is already a great support for this project!!!
 
-Finally, you can use this money for many other things: buy a fragrant big meat bun to reward your stomach, buy a flower for your loved one, or change to a better pen...
+Finally, you can use this money for many other things: buy a fragrant big meat bun to reward your stomach, buy a flower for your teacher, or change to a better pen...
 
 
 <details>
