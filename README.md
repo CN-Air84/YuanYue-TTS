@@ -1,9 +1,5 @@
-<img width="1920" height="1080" alt="icon_with_title_1080p" src="https://github.com/user-attachments/assets/1b5f38ad-9f96-441a-9d69-4930b0b28add" />
 
-　__源悦TTS，__
- 
-# __一款由学生研发、以学生为本、为学生而生的文本转语音程序。__
-___
+<img width="1920" height="1080" alt="icon_full_1080" src="https://github.com/user-attachments/assets/cf8f0a88-04b0-462a-9506-195beea1f5d3" />
 
 
 本文档还在持续更新中，
@@ -470,3 +466,9 @@ __三步操作__
 <div align="center">
 
 # [点击回到文档顶部](https://github.com/CN-Air84/YuanYue-TTS/)
+	
+<img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/5245c0fe-3e40-4e4e-89ea-7e27637e50ae" />
+
+
+
+
