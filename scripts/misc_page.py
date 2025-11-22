@@ -78,7 +78,7 @@ class AIOCRWorker(QThread):
             )
             
             def encode_image(image_path):
-                with open(image_path, "rb", encoding='utf-8') as image_file:
+                with open(image_path, "rb") as image_file:
                     return base64.b64encode(image_file.read()).decode('utf-8')
             
             base64_image = encode_image(self.image_path)
@@ -452,7 +452,7 @@ class PDFDownloadDialog(QDialog):
             
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             
-            with open(save_path, 'wb', encoding='utf-8') as f:
+            with open(save_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
                     QApplication.processEvents()
