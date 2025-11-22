@@ -470,7 +470,7 @@ __三步操作__
 
 # [点击回到文档顶部](https://github.com/CN-Air84/YuanYue-TTS/)
 	
-<img width="2560" height="1440" alt="icon_with_title_2k" src="https://youke1.picui.cn/s1/2025/11/22/6921c11ea41f7.png" />
+<img width="2560" height="1440" alt="icon_with_title_2k" src="(https://youke1.picui.cn/s1/2025/11/22/6921c1800765e.png" />
 
 
 
