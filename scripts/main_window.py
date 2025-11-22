@@ -1,3 +1,4 @@
+# coding=utf-8
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QStackedWidget
 from PyQt5.QtCore import Qt
@@ -7,7 +8,36 @@ from edge_audio_generator import AudioGenerator
 from audio_preview import AudioPreview
 from misc_func import AudioConfig, SettingsManager
 from notification import NotificationManager
+import os
+import locale
 
+# 在程序最开头添加编码设置
+def setup_encoding():
+    # 设置环境变量
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    
+    # 针对Windows控制台的特殊处理
+    if sys.platform.startswith('win'):
+        # 设置标准输出编码
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8')
+        
+        # 设置locale
+        try:
+            locale.setlocale(locale.LC_ALL, 'chinese')
+        except:
+            try:
+                locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
+            except:
+                try:
+                    locale.setlocale(locale.LC_ALL, '')
+                except:
+                    pass
+
+# 调用设置函数
+setup_encoding()
 
 class FontManager:
     """字体管理器"""

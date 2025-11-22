@@ -1,3 +1,4 @@
+# coding=utf-8
 import os
 import hashlib
 import datetime
@@ -132,9 +133,9 @@ class AudioConfig:
     def _generate_default_content(self, now: datetime.datetime) -> str:
         """生成默认文本内容"""
         return (
-            f"本段音频由源悦TTS在{now.strftime('%m月%d日%H时%M分%S秒')}生成，"
+            
             "欢迎使用源悦TTS。用户没有输入文本。"
-            "源悦TTS SimeonTest 0.5.6.6 2025年11月13日编译"
+            "源悦TTS 2025年11月13日编译"
         )
     
     def update_timestamp(self):

@@ -1,3 +1,4 @@
+# coding=utf-8
 import threading
 from typing import Dict, List, Callable, Any
 from PyQt5.QtWidgets import (QWidget, QPushButton, QSlider, QTextEdit, QCheckBox, QComboBox, QLabel)

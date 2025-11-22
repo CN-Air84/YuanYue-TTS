@@ -1,3 +1,4 @@
+# coding=utf-8
 import sys
 import os
 import re
@@ -52,7 +53,7 @@ class AIOCRWorker(QThread):
             )
             
             def encode_image(image_path):
-                with open(image_path, "rb") as image_file:
+                with open(image_path, "rb", encoding='utf-8') as image_file:
                     return base64.b64encode(image_file.read()).decode('utf-8')
             
             base64_image = encode_image(self.image_path)
@@ -574,7 +575,7 @@ class OnlineImportDialog(QDialog):
             if os.path.exists(filepath):
                 return filepath
             
-            with open(filepath, 'wb') as f:
+            with open(filepath, 'wb', encoding='utf-8') as f:
                 f.write(pdf_data)
             
             return filepath
