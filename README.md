@@ -2,7 +2,7 @@
 <div align="center">
 	
 [中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)</div>
-<img width="1920" height="1080" alt="icon_full_1080" src="https://youke1.picui.cn/s1/2025/11/22/6921c11eb4d25.png" />
+<img width="2560" height="1440" alt="icon_full_2k" src="https://youke1.picui.cn/s1/2025/11/22/6921c11eb4d25.png" />
 
 
 本文档还在持续更新中，
@@ -470,7 +470,7 @@ __三步操作__
 
 # [点击回到文档顶部](https://github.com/CN-Air84/YuanYue-TTS/)
 	
-<img width="2560" height="1440" alt="icon_with_title_2k" src="(https://youke1.picui.cn/s1/2025/11/22/6921c1800765e.png" />
+<img width="10667" height="6000" alt="icon_full_6000" src="https://youke1.picui.cn/s1/2025/11/22/6921c1800765e.png" />
 
 
 
