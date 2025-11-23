@@ -39,3 +39,5 @@
     SimeonTest 0.5.4    + 杂项页面增加“关于”
     SimeonTest 0.5Release 各功能再次检查。发布到Github。
     SimeonTest 0.6      + 添加ghfast加速功能 · 移动音量条 - 删除音频前进功能
+    SimeonTest 0.6fix   · 修复一些问题，比如根本打不开什么的
+    SimeonTest 0.6.1    · 初步支持Win7系统
