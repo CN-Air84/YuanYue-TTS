@@ -2,20 +2,16 @@
 import os
 import hashlib
 import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple  # 新增Tuple导入
 import configparser
-
 '''
 本段代码在SimeonTest Re1时使用 DeepSeek 重构，
 DeepSeek送我的屎山，哎哟我，太香了👍👍👍
-
 This code uses DeepSeek refactoring at Simeontest RE1,
 deepseek sent me a shit mountain. Oh, my God, it smells so good.(lol)
 '''
 class VoiceConfig:
     """音色配置类 - 管理所有音色相关配置"""
-
-
     
     # 硬编码音色参数设置
     EDGE_VOICES = [
@@ -60,8 +56,6 @@ class VoiceConfig:
                 categories.setdefault(current_category, []).append(voice)
                 
         return categories
-
-
 class CustomConfig:
     """个性化配置常量
         一坨屎山🤣"""
@@ -102,8 +96,6 @@ class CustomConfig:
         "直接从github服务器获取（海外首选）",
         "ghfast（国内首选）"
     ]
-
-
 class AudioConfig:
     """音频配置数据类"""
     
@@ -162,8 +154,6 @@ class AudioConfig:
         for key, value in config_dict.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-
-
 class ConfigSection:
     """配置段落基类 - 为不同类型的配置提供统一接口"""
     
@@ -178,8 +168,6 @@ class ConfigSection:
     def set_value(self, key: str, value: Any) -> bool:
         """设置配置值 - 子类必须实现"""
         raise NotImplementedError("子类必须实现set_value方法")
-
-
 class StringConfigSection(ConfigSection):
     """字符串配置段落"""
     
@@ -205,8 +193,6 @@ class StringConfigSection(ConfigSection):
         except Exception as e:
             print(f"设置配置失败 [{self.section_name}.{key}]: {e}")
             return False
-
-
 class IntConfigSection(ConfigSection):
     """整数配置段落"""
     
@@ -221,8 +207,6 @@ class IntConfigSection(ConfigSection):
     def set_value(self, key: str, value: int) -> bool:
         """设置整数配置值"""
         return StringConfigSection(self.settings_manager, self.section_name).set_value(key, str(value))
-
-
 class FloatConfigSection(ConfigSection):
     """浮点数配置段落"""
     
@@ -237,8 +221,6 @@ class FloatConfigSection(ConfigSection):
     def set_value(self, key: str, value: float) -> bool:
         """设置浮点数配置值"""
         return StringConfigSection(self.settings_manager, self.section_name).set_value(key, str(value))
-
-
 class BoolConfigSection(ConfigSection):
     """布尔值配置段落"""
     
@@ -253,8 +235,6 @@ class BoolConfigSection(ConfigSection):
     def set_value(self, key: str, value: bool) -> bool:
         """设置布尔值配置值"""
         return StringConfigSection(self.settings_manager, self.section_name).set_value(key, str(value))
-
-
 class SettingsManager:
     """设置管理器 - 使用ini文件保存配置"""
     
@@ -481,8 +461,6 @@ class SettingsManager:
         except Exception as e:
             print(f"重置设置失败: {e}")
             return False
-
-
 class ContentHasher:
     """内容哈希计算器"""
     
@@ -502,8 +480,6 @@ class ContentHasher:
         """计算任意参数的哈希值"""
         content = "_".join(str(arg) for arg in args)
         return hashlib.md5(content.encode('utf-8')).hexdigest()
-
-
 class AudioFileManager:
     """音频文件管理器"""
     
@@ -564,20 +540,18 @@ class AudioFileManager:
         except Exception as e:
             print(f"清理文件失败: {e}")
             return 0
-
-
 class InputValidator:
     """输入验证器"""
     
     @staticmethod
-    def validate_preview_inputs(config: AudioConfig) -> tuple[bool, str]:
+    def validate_preview_inputs(config: AudioConfig) -> Tuple[bool, str]:  # 改为Tuple
         """验证预览输入参数"""
         if not VoiceConfig.is_valid_voice(config.voice):
             return False, "音色选择错误"
         return True, ""
     
     @staticmethod
-    def validate_generation_inputs(config: AudioConfig, settings_manager: SettingsManager) -> tuple[bool, str]:
+    def validate_generation_inputs(config: AudioConfig, settings_manager: SettingsManager) -> Tuple[bool, str]:  # 改为Tuple
         """验证生成输入参数"""
         empty_fields = []
         
@@ -588,7 +562,6 @@ class InputValidator:
             
         if config.voice == "选项1" or not VoiceConfig.is_valid_voice(config.voice):
             empty_fields.append("语音选项")
-
         if empty_fields:
             return False, "请配置以下内容: " + ", ".join(empty_fields)
         
@@ -598,7 +571,7 @@ class InputValidator:
         return True, ""
     
     @staticmethod
-    def check_inputs_for_button(config: AudioConfig, settings_manager: SettingsManager) -> tuple[bool, list]:
+    def check_inputs_for_button(config: AudioConfig, settings_manager: SettingsManager) -> Tuple[bool, list]:  # 改为Tuple
         """检查输入以更新按钮状态"""
         empty_fields = []
         # 检查默认保存路径是否设置
@@ -608,11 +581,10 @@ class InputValidator:
             
         if config.voice == "选项1" or not VoiceConfig.is_valid_voice(config.voice):
             empty_fields.append("语音选项")
-
         return bool(empty_fields), empty_fields
     
     @staticmethod
-    def validate_file_path(file_path: str) -> tuple[bool, str]:
+    def validate_file_path(file_path: str) -> Tuple[bool, str]:  # 改为Tuple
         """验证文件路径"""
         if not file_path:
             return False, "文件路径不能为空"
@@ -624,7 +596,7 @@ class InputValidator:
         return True, ""
     
     @staticmethod
-    def validate_api_key(api_key: str) -> tuple[bool, str]:
+    def validate_api_key(api_key: str) -> Tuple[bool, str]:  # 改为Tuple
         """验证API Key格式"""
         if not api_key:
             return False, "API Key不能为空"
@@ -633,7 +605,5 @@ class InputValidator:
             return False, "API Key格式不正确"
             
         return True, ""
-
-
 # 向后兼容的全局变量
 EdgeVoices = VoiceConfig.EDGE_VOICES
