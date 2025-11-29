@@ -1,8 +1,9 @@
 
 <div align="center">
-	
+<img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
+
 [中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)</div>
-<img width="10667" height="6000" alt="icon_full_6000" src="https://youke1.picui.cn/s1/2025/11/22/6921c1800765e.png" />
+
 
 
 本文档还在持续更新中，
