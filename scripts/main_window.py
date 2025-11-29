@@ -11,6 +11,7 @@ from notification import NotificationManager
 import os
 import locale
 
+
 # 在程序最开头添加编码设置
 def setup_encoding():
     # 设置环境变量
@@ -106,7 +107,7 @@ class FontManager:
         
         # 文本编辑框
         if hasattr(page, 'text_edit_section'):
-            text_edit_font = QFont("微软雅黑", 12)
+            text_edit_font = QFont("微软雅黑", 14)
             page.text_edit_section.text_edit.setFont(text_edit_font)
     
     def _update_all_buttons_font(self, page, font):
@@ -260,7 +261,7 @@ class MainWindow(QWidget):
     
     def _setup_window_properties(self):
         """设置窗口属性"""
-        self.setWindowTitle('语音生成')
+        self.setWindowTitle('文本转语音')
         self.setGeometry(300, 300, self.default_width, self.default_height)
         self.setMinimumSize(1080, 720)
         self.setStyleSheet("background-color: #69E0A5;")

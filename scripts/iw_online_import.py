@@ -247,7 +247,6 @@ class OnlineImportDialog(QDialog):
         self.tree_widget.clear()
         
         try:
-            # 目录查询始终使用GitHub官方API
             url = f"https://api.github.com/repos/TapXWorld/ChinaTextbook/contents/{path}"
             
             response = requests.get(url, verify=certifi.where(), timeout=15)
@@ -284,7 +283,7 @@ class OnlineImportDialog(QDialog):
             
         except Exception as e:
             self.status_label.setText(f"加载失败: {str(e)}")
-            QMessageBox.critical(self, "错误", f"无法加载目录内容: {str(e)}")
+            QMessageBox.critical(self, "错误", f"无法加载目录内容: ……{str(e)[0:10]}")
 
     def _get_download_url(self, original_url):
         """根据加速选项获取下载URL"""
@@ -366,7 +365,8 @@ class OnlineImportDialog(QDialog):
     def process_with_ai_ocr(self, user_page, extract_type):
         """AI处理PDF"""
         loading_dialog = LoadingDialog(self)
-        loading_dialog.text_label.setText(f"正在处理 ……{self.selected_pdf_name[8:]}...")#目前是前8个字符不要 苦一苦大学用户 骂名我来担
+        text_per_line=int((len(self.selected_pdf_name)-8)/2)
+        loading_dialog.text_label.setText(f"正在处理 ……\n{self.selected_pdf_name[8:8+text_per_line]}\n{self.selected_pdf_name[8+text_per_line:9+2*text_per_line]}")#目前是前8个字符不要 苦一苦大学用户 骂名我来担
         loading_dialog.show()
         QApplication.processEvents()
         try:
