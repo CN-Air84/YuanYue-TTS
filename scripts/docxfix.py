@@ -5,10 +5,7 @@ Open but cannot modify Microsoft Word 2007 docx files (called 'OpenXML' and
 'Office OpenXML' by Microsoft)
 
 This code is a significant simplification of the python-docx .
-Thanks to the original author,
-i don't know his name because his github nickname is python-openxml.
-Mike maccana, I think.
-Anyway, thanks.
+Thanks to the original author.
 https://github.com/python-openxml/python-docx
 """
 
@@ -217,4 +214,5 @@ def opendocx(file_path: str) -> etree._Element:
 
 
 if __name__ == "__main__":
+
     print(0)
