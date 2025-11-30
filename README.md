@@ -2,7 +2,7 @@
 <div align="center">
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
 
-[中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)</div>
+[中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
 
 
 
@@ -14,7 +14,7 @@
 如果你觉得这个工具好用, 可以点一个Star 或者分享给你的朋友!
 
 [基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
-
+</div>
 <div align="center">
 	<div>
     	<img alt="downloads" src="https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total">
