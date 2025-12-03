@@ -1,3 +1,34 @@
+
+
+[中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
+
+
+### 源悦TTS
+
+本文档还在持续更新中，
+如发现某处表达不妥可以交PR，我会第一时间修改。
+
+~~看项目星星数与本人心情 飞速~~ 更新中
+
+如果你觉得这个工具好用, 可以点一个Star 或者分享给你的朋友!
+
+[基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
+</div>
+<div align="center">
+	<div>
+    	<img alt="downloads" src="https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total">
+	</div>
+	<div>
+    	<img alt="stars" src="https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?style=social">
+    	<img alt="forks" src="https://img.shields.io/github/forks/CN-Air84/YuanYue-TTS?style=social">
+    	<img alt="watching" src="https://img.shields.io/github/watchers/CN-Air84/YuanYue-TTS?style=social">
+	</div>
+	<div>
+    	<img alt="version" src="https://img.shields.io/github/v/release/CN-Air84/YuanYue-TTS?color=%239c080b&style=flat-square">
+    	<img alt="platform" src="https://img.shields.io/badge/platform-Windows-cyan">
+    	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
+	</div>
+
 <!-- 将此代码直接插入 README.md 文件的任意位置 -->
 <div class="tooltip">
   <span class="tooltip-text">这里是悬浮窗内容<br>支持多行文本</span>
@@ -57,37 +88,6 @@
 
 <div align="center">
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
-
-[中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
-
-
-### 源悦TTS
-
-本文档还在持续更新中，
-如发现某处表达不妥可以交PR，我会第一时间修改。
-
-~~看项目星星数与本人心情 飞速~~ 更新中
-
-如果你觉得这个工具好用, 可以点一个Star 或者分享给你的朋友!
-
-[基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
-</div>
-<div align="center">
-	<div>
-    	<img alt="downloads" src="https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total">
-	</div>
-	<div>
-    	<img alt="stars" src="https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?style=social">
-    	<img alt="forks" src="https://img.shields.io/github/forks/CN-Air84/YuanYue-TTS?style=social">
-    	<img alt="watching" src="https://img.shields.io/github/watchers/CN-Air84/YuanYue-TTS?style=social">
-	</div>
-	<div>
-    	<img alt="version" src="https://img.shields.io/github/v/release/CN-Air84/YuanYue-TTS?color=%239c080b&style=flat-square">
-    	<img alt="platform" src="https://img.shields.io/badge/platform-Windows-cyan">
-    	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
-	</div>
-
-
 ___
 
 ## 目录 
