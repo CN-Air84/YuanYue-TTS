@@ -1,9 +1,58 @@
-<div align="right">
-  <div style="display: inline-block; background-color: #f0f0f0; border: 1px solid #ccc; padding: 10px; border-radius: 5px; margin: 10px;">
-    <strong>提示</strong><br>
-    这里可以显示一些文字，比如项目说明、更新日志等。
-  </div>
+<!-- 将此代码直接插入 README.md 文件的任意位置 -->
+<div class="tooltip">
+  <span class="tooltip-text">这里是悬浮窗内容<br>支持多行文本</span>
+  鼠标移到这里查看悬浮窗
 </div>
+
+<style>
+.tooltip {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  color: #0366d6;
+  font-weight: bold;
+  padding: 5px 10px;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  background-color: #f6f8fa;
+}
+
+.tooltip .tooltip-text {
+  visibility: hidden;
+  width: 200px;
+  background-color: #24292e;
+  color: #ffffff;
+  text-align: center;
+  border-radius: 6px;
+  padding: 10px;
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  font-size: 14px;
+  font-weight: normal;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.tooltip .tooltip-text::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #24292e transparent transparent transparent;
+}
+
+.tooltip:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+</style>
 
 
 <div align="center">
