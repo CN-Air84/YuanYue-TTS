@@ -1,3 +1,10 @@
+<div align="right">
+  <div style="display: inline-block; background-color: #f0f0f0; border: 1px solid #ccc; padding: 10px; border-radius: 5px; margin: 10px;">
+    <strong>提示</strong><br>
+    这里可以显示一些文字，比如项目说明、更新日志等。
+  </div>
+</div>
+
 
 <div align="center">
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
@@ -5,6 +12,7 @@
 [中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
 
 
+### 源悦TTS
 
 本文档还在持续更新中，
 如发现某处表达不妥可以交PR，我会第一时间修改。
