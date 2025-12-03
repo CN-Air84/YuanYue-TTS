@@ -1,5 +1,5 @@
 
-' Windows Update Patches Installer with Command Line Progress Bar
+' Windows 7 SP1 PatcherInstaller
 ' Compatible only with Windows 7 x64
 
 Option Explicit
