@@ -29,19 +29,6 @@
     	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
 	</div>
 
-<details>
-  <summary>📌 点击查看重要提示</summary>
-  
-  **这里是悬浮窗内容**  
-  - 支持 Markdown 格式
-  - 可以写多行文字
-  - 会自动折叠/展开
-  
-  使用说明：
-  1. 安装依赖
-  2. 配置环境
-  3. 运行项目
-</details>
 
 <div align="center">
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
