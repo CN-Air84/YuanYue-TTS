@@ -29,43 +29,19 @@
     	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
 	</div>
 
-<!-- 更简洁的版本 -->
-<details class="floating-details">
+<details>
   <summary>📌 点击查看重要提示</summary>
-  <div class="details-content">
-    <p><strong>使用说明：</strong></p>
-    <ul>
-      <li>确保已安装依赖包</li>
-      <li>配置环境变量</li>
-      <li>运行前请阅读文档</li>
-    </ul>
-  </div>
+  
+  **这里是悬浮窗内容**  
+  - 支持 Markdown 格式
+  - 可以写多行文字
+  - 会自动折叠/展开
+  
+  使用说明：
+  1. 安装依赖
+  2. 配置环境
+  3. 运行项目
 </details>
-
-<style>
-.floating-details {
-  display: inline-block;
-  margin: 10px;
-  border: 1px solid #d1d5da;
-  border-radius: 6px;
-  padding: 10px;
-  background: #fafbfc;
-}
-
-.floating-details summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: #0366d6;
-}
-
-.details-content {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #e1e4e8;
-  font-size: 14px;
-}
-</style>
-
 
 <div align="center">
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
