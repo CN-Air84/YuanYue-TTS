@@ -1,0 +1,3 @@
+@echo off
+echo 32-bit systems are not supported...
+pause
