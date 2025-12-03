@@ -29,59 +29,40 @@
     	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
 	</div>
 
-<!-- 将此代码直接插入 README.md 文件的任意位置 -->
-<div class="tooltip">
-  <span class="tooltip-text">这里是悬浮窗内容<br>支持多行文本</span>
-  鼠标移到这里查看悬浮窗
-</div>
+<!-- 更简洁的版本 -->
+<details class="floating-details">
+  <summary>📌 点击查看重要提示</summary>
+  <div class="details-content">
+    <p><strong>使用说明：</strong></p>
+    <ul>
+      <li>确保已安装依赖包</li>
+      <li>配置环境变量</li>
+      <li>运行前请阅读文档</li>
+    </ul>
+  </div>
+</details>
 
 <style>
-.tooltip {
-  position: relative;
+.floating-details {
   display: inline-block;
-  cursor: pointer;
-  color: #0366d6;
-  font-weight: bold;
-  padding: 5px 10px;
-  border: 1px solid #e1e4e8;
-  border-radius: 6px;
-  background-color: #f6f8fa;
-}
-
-.tooltip .tooltip-text {
-  visibility: hidden;
-  width: 200px;
-  background-color: #24292e;
-  color: #ffffff;
-  text-align: center;
+  margin: 10px;
+  border: 1px solid #d1d5da;
   border-radius: 6px;
   padding: 10px;
-  position: absolute;
-  z-index: 1;
-  bottom: 125%;
-  left: 50%;
-  transform: translateX(-50%);
-  opacity: 0;
-  transition: opacity 0.3s;
+  background: #fafbfc;
+}
+
+.floating-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #0366d6;
+}
+
+.details-content {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e4e8;
   font-size: 14px;
-  font-weight: normal;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.tooltip .tooltip-text::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  margin-left: -5px;
-  border-width: 5px;
-  border-style: solid;
-  border-color: #24292e transparent transparent transparent;
-}
-
-.tooltip:hover .tooltip-text {
-  visibility: visible;
-  opacity: 1;
 }
 </style>
 
