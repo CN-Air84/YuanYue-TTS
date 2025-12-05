@@ -156,13 +156,13 @@ ___
 
 Win7 SP0用户下载windows6.1-kb976932-x64_…….exe以升级到SP1。
 
-
-
 Win7 SP1用户需要安装KB3063858和KB2999226补丁文件。
 
 或者下载[自动补丁安装器](/misc/Win7SP1PatchInstaller.exe)。
 
 Win8/8.1无法运行可以下载并安装[VC2019](bing.com/search?q=vc2019运行库)
+
+其他的具体问题
 
 ### 为什么线上导入用不了/加载缓慢
 
