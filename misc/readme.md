@@ -6,7 +6,7 @@ Win7 SP0用户下载windows6.1-kb976932-x64_…….exe以升级到SP1。
 
 Win7 SP1用户需要安装上面两个.msu补丁文件。
 
-安装器源码在sp1pi_scripts里
+安装器源码在sp1pi_scripts里。
 
 
 
