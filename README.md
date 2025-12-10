@@ -249,32 +249,16 @@ __看不清就对了！__
 
 #### 统一致谢
 
-直接或间接参与到本软件开发的所有人员
+直接或间接参与到本程序开发的所有人员
 
 包括在网络上分享各种教程的大佬们
 
+以及本程序引用的各个模块作者/使用的各个网络服务的提供者
+
 还有开源自己代码的巨佬们！
 
-### 本项目主要使用的外部资源（不分先后）
+另：程序修改并使用了mikemaccana大佬的python-docx模块，在此感谢。
 
-| 名称 | 内容 |
-| - | - |
-| [pygame](https://github.com/pygame/pygame) | 预览功能主要依赖此库，经典python库 |
-| [lxml](https://github.com/lxml/lxml) | XML处理首选，python-docx依赖此库 |
-| [edge_tts](https://github.com/rany2/edge-tts) | 底层功能——TTS服务的提供者，夯炸了 |
-| [pypdf2](https://github.com/colemana/PyPDF2) | PDF处理兜底库，稳定可靠，可惜中文处理比较麻烦 |
-| [pyqt](https://pypi.org/project/PyQt5/) | 经典的跨平台 GUI 库，老牌劲旅，不用多说 |、
-| [pillow](https://pypi.org/project/pillow/) | 无需多言 |
-| [certifi](https://pypi.org/project/certifi/) | 证书这一块，github访问护航者 |
-| [openai](https://pypi.org/project/openai/) | 无需多言|
-| [pymupdf](https://pypi.org/project/PyMuPDF/) |PDF识别主力军，又快又好|
-| [pyinstaller](https://pypi.org/project/pyinstaller/) | 无需多言|
-| [python-docx](https://pypi.org/project/python-docx/)|已被我重写过/docx读取依赖|
-| 分割线|分割线|
-| [ffmpeg](htttps://ffmpeg.org)|无需多言|
-| [ghfast](https://ghfast.top/)|github加速服务，顾名思义|
-| [ChinaTextbook](https://github.com/TapXWorld/ChinaTextbook)|电子书源，造福华人，伟大无需多言|
-| …… | …… |
 
 
 ## 支持
