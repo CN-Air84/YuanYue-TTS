@@ -1,15 +1,14 @@
 # coding=utf-8
 import sys
-import os
-from typing import Optional, Callable
+from typing import Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QTextEdit, QFileDialog, 
-    QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel
+    QMessageBox, QVBoxLayout, QHBoxLayout, QDialog
 )
-from PyQt5.QtCore import Qt, QRect
+from PyQt5.QtCore import  QRect
 
 from docxfix import Document
-from iw_dialogs import LoadingDialog, ClearConfirmationDialog, DialogFactory
+from iw_dialogs import DialogFactory
 from iw_online_import import OnlineImportDialog, AIOCRWorker
 try:
     from misc_func import SettingsManager
@@ -359,9 +358,9 @@ def show_text_import_dialog(parent: Optional[QWidget] = None,
 
 
 #检查模式
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    imported_text = show_text_import_dialog(initial_text="这是初始文本")
-    print(f"导入的文本: {imported_text}")
-    
-    sys.exit(app.exec_())
+# if __name__ == "__main__":
+#     app = QApplication(sys.argv)
+#     imported_text = show_text_import_dialog(initial_text="这是初始文本")
+#     print(f"导入的文本: {imported_text}")
+#     
+#     sys.exit(app.exec_())

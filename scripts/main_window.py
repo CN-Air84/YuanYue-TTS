@@ -1,15 +1,17 @@
 # coding=utf-8
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QStackedWidget
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 
-from edge_audio_generator import AudioGenerator
 from audio_preview import AudioPreview
 from misc_func import AudioConfig, SettingsManager
-from notification import NotificationManager
+from shared_memory_manager import get_shared_memory_manager
 import os
 import locale
+
+# 导入GenerationPage用于属性检查
+from generation_page import GenerationPage
 
 
 # 在程序最开头添加编码设置
@@ -39,6 +41,37 @@ def setup_encoding():
 
 # 调用设置函数
 setup_encoding()
+
+class AsyncInitializer:
+    """异步初始化管理器（使用QTimer在主线程中延迟初始化）"""
+    
+    def __init__(self, parent_window):
+        self.parent_window = parent_window
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._process_initialization)
+        self.current_step = 0
+        self.total_steps = 2  # 两个初始化步骤
+    
+    def start(self):
+        """开始异步初始化"""
+        print("开始异步初始化...")
+        self.timer.start(100)  # 100ms后开始第一个步骤
+    
+    def _process_initialization(self):
+        """处理初始化步骤"""
+        if self.current_step == 0:
+            print("异步初始化: 正在初始化选项卡页面...")
+            self.parent_window._async_create_tab_pages()
+            self.current_step += 1
+            self.timer.start(50)  # 50ms后开始下一个步骤
+        elif self.current_step == 1:
+            print("异步初始化: 正在初始化非关键组件...")
+            self.parent_window._async_init_non_critical_components()
+            self.current_step += 1
+            print("异步初始化完成")
+            self.timer.stop()
+            self.parent_window._on_async_finished()
+
 
 class FontManager:
     """字体管理器"""
@@ -180,16 +213,33 @@ class TabManager:
         """换卡"""
         if index == self.current_tab_index:
             return
+        
+        # 检查选项卡页面是否已创建
+        if index >= self.parent_window.stacked_widget.count():
+            # 页面尚未创建，需要同步创建
+            self._create_tab_page(index)
+        
         for i, btn in enumerate(self.tab_buttons):
             btn.setChecked(i == index)
         #换页
         self.parent_window.stacked_widget.setCurrentIndex(index)
         self.current_tab_index = index
         self._on_tab_switched(index)
+    
+    def _create_tab_page(self, index):
+        """同步创建单个选项卡页面"""
+        if index < len(self.tab_configs):
+            tab_config = self.tab_configs[index]
+            page_widget = tab_config.widget_class(self.parent_window)
+            self.parent_window.stacked_widget.addWidget(page_widget)
     def _on_tab_switched(self, index):
         """换卡后处理"""
-        if index == 0 and hasattr(self.parent_window, 'generation_page'):
-            self.parent_window.generation_page._check_inputs_and_update_button()
+        # 获取当前页面的配置
+        if index < len(self.tab_configs):
+            tab_config = self.tab_configs[index]
+            # 如果是生成页面，执行特殊处理
+            if tab_config.name == 'generation' and hasattr(self.parent_window, 'generation_page'):
+                self.parent_window.generation_page._check_inputs_and_update_button()
     def _get_tab_button_style(self):
         """选项卡按钮样式"""
         return """
@@ -220,18 +270,21 @@ class MainWindow(QWidget):
     """主窗口类"""
     def __init__(self):
         super().__init__()
+        self._async_initializer = None
         self._init_core_components()
+        self._load_settings()  # 优先加载设置
         self._init_ui()
-        self._load_settings()
+        self._start_async_initialization()
         
     def _init_core_components(self):
         """初始化核心组件"""
         self.config = AudioConfig()
         self.settings_manager = SettingsManager()
-        self.audio_generator = AudioGenerator()
         self.audio_preview = AudioPreview(self)
-        self.notification_manager = NotificationManager(self)
         self.font_manager = FontManager(self)
+        self.shared_manager = get_shared_memory_manager()  # 初始化共享内存管理器
+        self._audio_generator = None  # 延迟加载
+        self._notification_manager = None  # 延迟加载
         self._init_audio_state()
         self._init_ui_variables()
     def _init_audio_state(self):
@@ -264,11 +317,16 @@ class MainWindow(QWidget):
         self.setWindowTitle('文本转语音')
         self.setGeometry(300, 300, self.default_width, self.default_height)
         self.setMinimumSize(1080, 720)
-        self.setStyleSheet("background-color: #69E0A5;")
+        # 使用设置中的背景色，如果没有设置则使用默认值
+        background_color = self.settings_manager.get_Custom_value("background_color", "#69E0A5")
+        self.setStyleSheet(f"background-color: {background_color};")
         initial_font = QFont("微软雅黑", 26)
         self.setFont(initial_font)
         # 焦点策略
         self.setFocusPolicy(Qt.StrongFocus)
+        
+        # 广播窗口大小变化到共享内存
+        self.shared_manager.broadcast_window_size_change(self.default_width, self.default_height)
     def _setup_tabs(self):
         """设置选项卡系统"""
 
@@ -276,6 +334,7 @@ class MainWindow(QWidget):
         '''----------'''
 
         # 注册选项卡
+        self.tab_manager.register_tab('welcome', '欢迎', self._get_welcome_page_class())
         self.tab_manager.register_tab('generation', '生成', self._get_generation_page_class())
         self.tab_manager.register_tab('settings', '设置', self._get_settings_page_class())
         self.tab_manager.register_tab('personalization', '个性化', self._get_personalization_page_class()) 
@@ -283,8 +342,8 @@ class MainWindow(QWidget):
 
         '''----------'''
 
-
-        self.tab_manager.setup_tabs()
+        # 只创建选项卡按钮，页面将在异步中创建
+        self.tab_manager._create_tab_buttons()
     def _get_generation_page_class(self):
         from generation_page import GenerationPage
         return GenerationPage
@@ -294,11 +353,40 @@ class MainWindow(QWidget):
     def _get_personalization_page_class(self):
         from custom_page import CustomPage
         return CustomPage
+    def _get_welcome_page_class(self):
+        from welcome_page import WelcomePage
+        return WelcomePage
+    
     def _get_misc_page_class(self):
         from misc_page import MiscPage
         return MiscPage
-    
 
+    def _start_async_initialization(self):
+        """启动异步初始化"""
+        self._async_initializer = AsyncInitializer(self)
+        self._async_initializer.start()
+    
+    def _on_async_finished(self):
+        """异步初始化完成"""
+        print("异步初始化完成")
+        self._async_initializer = None
+    
+    def _async_create_tab_pages(self):
+        """异步创建选项卡页面"""
+        # 延迟创建选项卡页面
+        for tab_config in self.tab_manager.tab_configs:
+            page_widget = tab_config.widget_class(self)
+            self.stacked_widget.addWidget(page_widget)
+            
+            # 如果页面有共享内存信号连接方法，则调用它
+            if hasattr(page_widget, '_connect_shared_memory_signals'):
+                page_widget._connect_shared_memory_signals()
+    
+    def _async_init_non_critical_components(self):
+        """异步初始化非关键组件"""
+        # 这里可以添加其他非关键组件的异步初始化
+        # 例如：预加载一些数据、初始化缓存等
+        pass
     
     def _load_settings(self):
         """加载设置"""
@@ -328,6 +416,9 @@ class MainWindow(QWidget):
         self.tab_manager.resize_tabs(width, height)
         self.stacked_widget.setGeometry(tab_bar_width, 0, content_width, height)
         self.font_manager.update_all_fonts()
+        
+        # 广播窗口大小变化到共享内存
+        self.shared_manager.broadcast_window_size_change(width, height)
     def keyPressEvent(self, event):
         """处理键盘按键事件"""
         self.audio_preview.handle_key_event(event)
@@ -340,10 +431,29 @@ class MainWindow(QWidget):
         self.audio_preview.cleanup_preview_audio()
         event.accept()
     @property
+    def audio_generator(self):
+        """获取音频生成器（延迟加载）"""
+        if self._audio_generator is None:
+            from edge_audio_generator import AudioGenerator
+            self._audio_generator = AudioGenerator()
+        return self._audio_generator
+    
+    @property
+    def notification_manager(self):
+        """获取通知管理器（延迟加载）"""
+        if self._notification_manager is None:
+            from notification import NotificationManager
+            self._notification_manager = NotificationManager(self)
+        return self._notification_manager
+    
+    @property
     def generation_page(self):
         """获取生成页面（便捷属性）"""
-        if self.stacked_widget.count() > 0:
-            return self.stacked_widget.widget(0)
+        # 找到生成页面的索引
+        for i in range(self.stacked_widget.count()):
+            widget = self.stacked_widget.widget(i)
+            if isinstance(widget, GenerationPage):
+                return widget
         return None
 def main():
     """应用程序入口点"""  

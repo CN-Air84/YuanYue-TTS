@@ -2,23 +2,18 @@
 import sys
 import os
 import re
-import time
-import datetime
 import base64
 import io
-import json
 import tempfile
 import requests
-from multiprocessing import Process, Queue, Event
-
-from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QTextEdit, QFileDialog, 
+from multiprocessing import Event
+from PyQt5.QtWidgets import (QApplication, QPushButton, QLineEdit, QTreeWidget, 
                             QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
-                            QInputDialog, QComboBox, QLineEdit, QFormLayout, QTreeWidget, 
-                            QTreeWidgetItem, QCheckBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QRect
-from PyQt5.QtGui import QPainter, QColor, QPen, QFont
+                            QTreeWidgetItem)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import  QFont
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 import certifi
 import fitz  # PyMuPDF
 PYTMUPDF_AVAILABLE = True #沟槽的我VS沟槽的之前的我 lol
@@ -103,17 +98,18 @@ class OnlineImportDialog(QDialog):
         else:
             self.resize(800, 600)
         
-        self.setStyleSheet("""
-            QDialog {background-color: #69E0A5;}
-            QPushButton {font-family: "微软雅黑"; background-color: white; color: black;
-                         border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;}
-            QPushButton:hover {background-color: #f0f0f0;}
-            QLabel {font-family: "微软雅黑"; font-size: 14px;}
-            QLineEdit {font-family: "微软雅黑"; background-color: white; color: black;
-                       border: 2px solid gray; border-radius: 5px; padding: 5px;}
-            QTreeWidget {font-family: "微软雅黑"; background-color: white; color: black;
-                         border: 2px solid gray; border-radius: 5px;}
-        """)
+        global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑") if self.parent_window else "微软雅黑"
+        self.setStyleSheet(f"""
+            QDialog {{background-color: #69E0A5;}}
+            QPushButton {{font-family: "{global_font}"; background-color: white; color: black;
+                    border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;}}
+            QPushButton:hover {{background-color: #f0f0f0;}}
+            QLabel {{font-family: "{global_font}"; font-size: 14px;}}
+            QLineEdit {{font-family: "{global_font}"; background-color: white; color: black;
+               border: 2px solid gray; border-radius: 5px; padding: 5px;}}
+            QTreeWidget {{font-family: "{global_font}"; background-color: white; color: black;
+                 border: 2px solid gray; border-radius: 5px;}}
+            """)
         
         main_layout = QVBoxLayout()
         
@@ -216,7 +212,8 @@ class OnlineImportDialog(QDialog):
         base_font_size = max(min_font_size, min(max_font_size, base_font_size))
         
         other_font_size = int(base_font_size * 0.5)
-        other_font = QFont("微软雅黑", other_font_size)
+        global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑") if self.parent_window else "微软雅黑"
+        other_font = QFont(global_font, other_font_size)
         
         #设置所有标签和输入框的字体
         for widget in [self.path_label, self.status_label, self.page_label, self.extract_label]:

@@ -1,13 +1,12 @@
 import re
 import os
+import platform
 import traceback
 import subprocess
 import tempfile
 import shutil
 from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
-
-import edge_tts
 
 
 @dataclass
@@ -154,6 +153,19 @@ class InputValidator:
     @staticmethod
     def validate_inputs(config: GenerationConfig) -> Tuple[bool, str]:
         """验证输入参数"""
+        # 添加详细调试输出
+        print(f"=== 输入验证详情 (生成音频) ===")
+        print(f"验证语音ID: '{config.voice}'")
+        print(f"语音ID长度: {len(config.voice)}")
+        print(f"是否包含中文括号'（': {'（' in config.voice}")
+        print(f"字符编码检查:")
+        for i, char in enumerate(config.voice):
+            print(f"  字符 {i}: '{char}' (ASCII: {ord(char)})")
+        print(f"文本内容: '{config.content[:30]}...'" if len(config.content) > 30 else f"文本内容: '{config.content}'")
+        print(f"保存路径: {config.save_path}")
+        print(f"Python版本: {platform.python_version()}")
+        print(f"=======================")
+        
         empty_fields = []
         
         if not config.save_path.strip():
@@ -166,22 +178,36 @@ class InputValidator:
             return False, "没有指定路径"
         
         if "（" in config.voice:
-            print("音色选择错误")
+            print(f"⚠️  验证失败: 语音ID包含中文括号'（'")
             return False, "音色选择错误"
             
+        print("✅ 生成音频输入验证通过")
         return True, ""
     
     @staticmethod
     def validate_preview_inputs(config: GenerationConfig) -> Tuple[bool, str]:
         """验证预览输入参数"""
+        # 添加详细调试输出
+        print(f"=== 输入验证详情 (预览音频) ===")
+        print(f"验证语音ID: '{config.voice}'")
+        print(f"语音ID长度: {len(config.voice)}")
+        print(f"是否包含中文括号'（': {'（' in config.voice}")
+        print(f"字符编码检查:")
+        for i, char in enumerate(config.voice):
+            print(f"  字符 {i}: '{char}' (ASCII: {ord(char)})")
+        print(f"文本内容: '{config.content[:30]}...'" if len(config.content) > 30 else f"文本内容: '{config.content}'")
+        print(f"Python版本: {platform.python_version()}")
+        print(f"=======================")
+        
         if "（" in config.voice:
-            print("音色选择错误")
+            print(f"⚠️  验证失败: 语音ID包含中文括号'（'")
             return False, "音色选择错误"
         
         if not config.content.strip():
             print("没有输入文本")
             return False, "没有输入文本"
             
+        print("✅ 预览音频输入验证通过")
         return True, ""
 
 
@@ -194,27 +220,67 @@ class EdgeTTSGenerator:
     def generate_audio(self, config: GenerationConfig, temp_path: str) -> bool:
         """生成音频文件"""
         try:
+            # 延迟导入Edge-TTS模块
+            import edge_tts
+            
             #预处理文本和参数
             text = self.parameter_formatter.preprocess_text(config.content)
             rate = self.parameter_formatter.format_speed(config.speed)
             pitch = self.parameter_formatter.format_pitch(config.pitch)
             volume = self.parameter_formatter.format_volume(config.volume)
             
-            print(f"开始生成音频... 参数: 语速={rate}, 音调={pitch}, 音量={volume}")
+            # 添加详细调试输出
+            voice_id = config.voice
+            voice_with_neural = voice_id + "Neural"
+            text_preview = text[:50] + "..." if len(text) > 50 else text
+            
+            print(f"=== Edge TTS 指令详情 ===")
+            print(f"原始语音ID: {voice_id}")
+            print(f"带Neural后缀语音ID: {voice_with_neural}")
+            print(f"语速参数: {rate}")
+            print(f"音调参数: {pitch}")
+            print(f"音量参数: {volume}")
+            print(f"文本长度: {len(text)}字符")
+            print(f"文本预览: {text_preview}")
+            print(f"保存路径: {temp_path}")
             print(f"音频拉伸设置: 启用={config.stretch_enabled}, 拉伸因子={config.stretch_factor}")
+            print(f"Python版本: {platform.python_version()}")
+            print(f"Edge-TTS版本: {edge_tts.__version__ if hasattr(edge_tts, '__version__') else '未知'}")
+            print(f"=======================")
             
-            #生成音频
-            communicate = edge_tts.Communicate(
-                text=text, 
-                voice=config.voice + "Neural", 
-                rate=rate, 
-                pitch=pitch, 
-                volume=volume
-            )
+            # 尝试使用不同的语音ID格式以增强兼容性
+            voice_formats = [
+                voice_with_neural,  # 原始格式: ID + Neural
+                voice_id,           # 不带Neural后缀
+                voice_id.replace('-', '_') + "Neural",  # 使用下划线替代连字符
+                voice_id.replace('-', '') + "Neural"   # 移除所有连字符
+            ]
             
-            communicate.save_sync(temp_path)
-            print("音频生成成功")
-            return True
+            # 去重处理
+            voice_formats = list(dict.fromkeys(voice_formats))
+            print(f"尝试的语音ID格式列表: {voice_formats}")
+            
+            # 尝试不同的语音ID格式
+            for i, voice_format in enumerate(voice_formats):
+                try:
+                    print(f"尝试格式 {i+1}/{len(voice_formats)}: {voice_format}")
+                    #生成音频
+                    communicate = edge_tts.Communicate(
+                        text=text, 
+                        voice=voice_format, 
+                        rate=rate, 
+                        pitch=pitch, 
+                        volume=volume
+                    )
+                    
+                    communicate.save_sync(temp_path)
+                    print(f"✅ 音频生成成功，使用语音格式: {voice_format}")
+                    return True
+                except Exception as inner_e:
+                    print(f"❌ 格式 {voice_format} 失败: {str(inner_e)}")
+                    # 如果是最后一次尝试仍然失败，则抛出原始异常
+                    if i == len(voice_formats) - 1:
+                        raise
             
         except Exception as e:
             print(f"Edge-TTS生成音频失败: {e}")
@@ -247,9 +313,20 @@ class AudioGenerator:
                 callback(True, "生成成功")
             return True
         except Exception as e:
-            error_msg = f"生成音频时发生错误: {str(e)}"
-            print(error_msg)
+            # 增强错误处理，提供更具体的错误信息
+            error_type = type(e).__name__
+            if "NoAudioReceived" in str(e):
+                error_msg = "音频生成失败：无法从Edge TTS服务接收音频。请尝试以下解决方案：\n1. 检查网络连接\n2. 尝试使用其他语音\n3. 确保语音ID格式正确"
+            elif "ConnectionError" in error_type or "Timeout" in error_type:
+                error_msg = "网络错误：无法连接到Edge TTS服务。请检查您的网络连接并重试。"
+            elif "ValueError" in error_type and "voice" in str(e).lower():
+                error_msg = "语音错误：指定的语音ID无效。请尝试选择列表中的其他语音。"
+            else:
+                error_msg = f"生成音频时发生错误: {str(e)}"
+                
+            print(f"错误详情: {error_type}: {str(e)}")
             traceback.print_exc()
+            
             if callback:
                 callback(False, error_msg)
             return False
@@ -264,6 +341,22 @@ class AudioGenerator:
                 error_callback(message)
                 return
                 
+            # 额外的兼容性验证：检查语音ID是否包含非法字符
+            if any(char in config.voice for char in ['(', ')', '（', '）', '[', ']', '{', '}', ' ', '\t', '\n']):
+                clean_voice = ''.join(char for char in config.voice if char not in ['(', ')', '（', '）', '[', ']', '{', '}', ' ', '\t', '\n'])
+                print(f"检测到语音ID包含特殊字符，已清理为: {clean_voice}")
+                # 创建配置副本并使用清理后的语音ID
+                config = GenerationConfig(
+                    content=config.content,
+                    voice=clean_voice,
+                    speed=config.speed,
+                    pitch=config.pitch,
+                    volume=config.volume,
+                    save_path=config.save_path,
+                    stretch_factor=config.stretch_factor,
+                    stretch_enabled=config.stretch_enabled
+                )
+                
             #临时文件名
             temp_filename = self.file_manager.generate_preview_filename()
             program_dir = os.path.dirname(os.path.abspath(__file__))
@@ -277,6 +370,19 @@ class AudioGenerator:
             
             print("开始生成预览音频...")
             print(f"音频拉伸设置: 启用={config.stretch_enabled}, 拉伸因子={config.stretch_factor}")
+            
+            #延迟导入Edge-TTS模块
+            import edge_tts
+            
+            # 添加调试输出，显示完整的指令信息
+            print(f"[DEBUG] Edge TTS Command Parameters:")
+            print(f"[DEBUG] Voice: {config.voice}")
+            print(f"[DEBUG] Voice with Neural suffix: {config.voice + 'Neural'}")
+            print(f"[DEBUG] Speed: {rate}")
+            print(f"[DEBUG] Pitch: {pitch}")
+            print(f"[DEBUG] Volume: {volume}")
+            print(f"[DEBUG] Text length: {len(text)} characters")
+            print(f"[DEBUG] Text preview: {text[:100]}..." if len(text) > 100 else f"[DEBUG] Text: {text}")
             
             #生成预览
             communicate = edge_tts.Communicate(

@@ -1,8 +1,6 @@
 # coding=utf-8
-import sys
-import os
-from PyQt5.QtWidgets import QWidget, QLabel, QApplication
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, QRect, QPoint, QObject
+from PyQt5.QtWidgets import QWidget, QLabel
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, QPoint, QObject
 from PyQt5.QtGui import QFont, QMouseEvent
 
 '''

@@ -1,17 +1,19 @@
 # coding=utf-8
 import os
 import re
-from typing import Dict, Any, List
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
     QLineEdit, QPushButton, QColorDialog, QGroupBox, QFormLayout,
-    QSpinBox, QMessageBox, QDoubleSpinBox, QScrollArea
+    QSpinBox, QMessageBox, QDoubleSpinBox, QScrollArea, QGridLayout,
+    QFontComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent
-from PyQt5.QtGui import QFont, QColor, QPalette
+from PyQt5.QtGui import QFont, QColor, QFontDatabase
 
 from misc_func import SettingsManager
+import misc_func
 from audio_preview import KeyboardControlScheme
+from shared_memory_manager import get_shared_memory_manager
 
 '''
 本段代码在SimeonTest Re1时使用 DeepSeek 重构，
@@ -25,30 +27,129 @@ thanks to DS for changing my “Dog-skin plaster” to tiger-skin plaster.
 class CustomConfig:
     """个性化配置常量"""
     
-    # 预设窗口尺寸选项
-    WINDOW_SIZES = [
-    "1024x600",
-    "1024x768",
-    "1280x720",
-    "1280x768",
-    "1280x800",
-    "1280x960",
-    "1280x1024",
-    "1400x1050",
-    "1440x900",
-    "1600x1024",
-    "1600x1050",
-    "1600x1200",
-    "1680x1050",
-    "1900x1200",
-    "1920x1080",
-    "1920x1200",
-    "2048x1536",
-    "2560x1600",
-    "2560x2048",
-    "3200x2400",
-    "3840x2400"
-    ]
+    # 间距系统配置
+    SPACING_SYSTEM = {
+        'xs': 4,    # 组件内间距
+        'sm': 8,    # 组件间小间距
+        'md': 16,   # 组件间中间距
+        'lg': 24,   # 分组间间距
+        'xl': 32    # 大区块间距
+    }
+    
+    # 卡片样式模板
+    CARD_STYLE = """
+        QGroupBox {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 16px;
+            padding: 4px 12px;
+            background-color: #ffffff;
+            color: #333333;
+            font-weight: bold;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        QLabel {
+            background-color: transparent;
+        }
+    """
+    
+    # 统一的控件样式系统
+    UNIFIED_STYLES = {
+        'input': """
+            QLineEdit, QSpinBox, QDoubleSpinBox {
+                border: 2px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 8px 12px;
+                background-color: #ffffff;
+                color: #333333;
+                min-height: 32px;
+            }
+            QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+                border-color: #4A90E2;
+                outline: none;
+            }
+            QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+                border-color: #808080;
+            }
+            QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+                background-color: #f5f5f5;
+                color: #999999;
+                border-color: #e0e0e0;
+            }
+            QSpinBox::up-button, QDoubleSpinBox::up-button {
+                width: 0px;
+                height: 0px;
+            }
+            QSpinBox::down-button, QDoubleSpinBox::down-button {
+                width: 0px;
+                height: 0px;
+            }
+        """,
+        'button': """
+            QPushButton {
+                border: 2px solid #4A90E2;
+                border-radius: 6px;
+                padding: 8px 16px;
+                background-color: #4A90E2;
+                color: #ffffff;
+                font-weight: 500;
+                min-height: 32px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #357ABD;
+                border-color: #357ABD;
+            }
+            QPushButton:pressed {
+                background-color: #2E5A8E;
+                border-color: #2E5A8E;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                border-color: #cccccc;
+                color: #999999;
+            }
+        """,
+        'combo': """
+            QComboBox {
+                border: 2px solid #d0d0d0;
+                border-radius: 6px;
+                padding: 8px 12px;
+                background-color: #ffffff;
+                color: #333333;
+                min-height: 32px;
+            }
+            QComboBox:hover {
+                border-color: #808080;
+            }
+            QComboBox:focus {
+                border-color: #4A90E2;
+                outline: none;
+            }
+            QComboBox::drop-down {
+                border-left: 1px solid #d0d0d0;
+                width: 30px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #333333;
+                width: 0px;
+                height: 0px;
+            }
+        """
+    }
+    
+    # 窗口尺寸预设已迁移到misc_func.py中的CustomConfig类
     
     # 键盘控制方案选项
     KEYBOARD_SCHEMES = KeyboardControlScheme.get_all_schemes()
@@ -95,7 +196,7 @@ class WheelEventFilter(QObject):
 
 
 class ColorPickerWidget(QWidget):
-    """颜色选择器组件"""
+    """增强的颜色选择器组件 - 带视觉反馈和错误处理"""
     
     color_changed = pyqtSignal(str)
     
@@ -103,37 +204,97 @@ class ColorPickerWidget(QWidget):
         super().__init__(parent)
         self.color_value = initial_color
         self.wheel_filter = WheelEventFilter()
+        self.valid_color = "#d0d0d0"  # 有效颜色边框
+        self.invalid_color = "#ff4444"  # 无效颜色边框
+        self.focus_color = "#4A90E2"   # 焦点颜色边框
         self._init_ui()
     
     def _init_ui(self):
-        """初始化UI"""
+        """初始化UI - 使用统一样式"""
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(CustomConfig.SPACING_SYSTEM['sm'])
         
-        # 颜色显示框
+        # 颜色显示框 - 增大尺寸并添加悬停效果
         self.color_display = QLabel()
-        self.color_display.setFixedSize(30, 30)
-        self.color_display.setStyleSheet(f"background-color: {self.color_value}; border: 2px solid gray; border-radius: 5px;")
+        self.color_display.setFixedSize(40, 32)  # 增大尺寸
+        self.color_display.setCursor(Qt.PointingHandCursor)  # 添加手型光标
+        self._update_color_display()  # 使用新方法更新显示
         self.color_display.mousePressEvent = self._show_color_dialog
         
-        # 颜色输入框 - 应用设置界面样式
+        # 颜色输入框 - 使用统一输入样式
         self.color_input = QLineEdit(self.color_value)
-        self.color_input.setFixedWidth(80)
+        self.color_input.setFixedWidth(100)  # 增加宽度
         self.color_input.textChanged.connect(self._on_text_changed)
-        self.color_input.setStyleSheet(self._get_input_style())
+        self.color_input.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        self.color_input.setMaxLength(7)  # 限制输入长度
         # 安装滚轮事件过滤器
         self.color_input.installEventFilter(self.wheel_filter)
         
-        # 调色盘按钮 - 应用设置界面样式
-        self.palette_button = QPushButton("调色盘")
-        self.palette_button.clicked.connect(self._show_color_dialog)
-        self.palette_button.setStyleSheet(self._get_button_style())
-        
         layout.addWidget(self.color_display)
         layout.addWidget(self.color_input)
-        layout.addWidget(self.palette_button)
+        layout.addStretch()  # 添加弹性空间
         
         self.setLayout(layout)
+        
+        # 连接信号 - 点击颜色显示框打开颜色选择器
+        self.color_display.mousePressEvent = lambda event: self._show_color_dialog()
+        self.color_display.setCursor(Qt.PointingHandCursor)  # 添加手型光标
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg']
+        )
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg']
+        )
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg']
+        )
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg']
+        )
+    
+    def _update_color_display(self):
+        """更新颜色显示框样式"""
+        self.color_display.setStyleSheet(f"""
+            QLabel {{
+                background-color: {self.color_value};
+                border: 2px solid {self.valid_color};
+                border-radius: 6px;
+                padding: 2px;
+            }}
+            QLabel:hover {{
+                border-color: {self.focus_color};
+                border-width: 3px;
+            }}
+        """)
     
     def _show_color_dialog(self, event=None):
         """显示颜色选择对话框"""
@@ -142,11 +303,23 @@ class ColorPickerWidget(QWidget):
             self.set_color(color.name())
     
     def _on_text_changed(self, text: str):
-        """文本输入改变事件"""
+        """文本输入改变事件 - 带视觉反馈"""
         if self._is_valid_color(text):
             self.color_value = text
-            self.color_display.setStyleSheet(f"background-color: {text}; border: 2px solid gray; border-radius: 5px;")
+            self._update_color_display()  # 使用新方法更新显示
+            self.color_input.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])  # 恢复默认样式
             self.color_changed.emit(text)
+        else:
+            # 无效颜色时显示错误状态
+            self.color_input.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: #fff5f5;
+                    color: #cc0000;
+                    border: 2px solid {self.invalid_color};
+                    border-radius: 10px;
+                    padding: 5px;
+                }}
+            """)
     
     def _is_valid_color(self, color_str: str) -> bool:
         """检查颜色字符串是否有效"""
@@ -154,70 +327,92 @@ class ColorPickerWidget(QWidget):
         return re.match(pattern, color_str) is not None
     
     def set_color(self, color: str):
-        """设置颜色"""
+        """设置颜色 - 带验证"""
         if self._is_valid_color(color):
             self.color_value = color
             self.color_input.setText(color)
-            self.color_display.setStyleSheet(f"background-color: {color}; border: 2px solid gray; border-radius: 5px;")
+            self._update_color_display()  # 使用新方法更新显示
+            self.color_input.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])  # 恢复默认样式
             self.color_changed.emit(color)
     
     def get_color(self) -> str:
         """获取颜色"""
         return self.color_value
-    
-    def _get_input_style(self):
-        """获取输入框样式 - 与设置界面保持一致"""
-        return "QLineEdit { background-color: white; color: black; border: 2px solid gray; border-radius: 10px; padding: 5px; }"
-    
-    def _get_button_style(self):
-        """获取按钮样式 - 与设置界面保持一致"""
-        return """
-            QPushButton {
-                font-family: "微软雅黑"; background-color: white; color: black;
-                border: 2px solid gray; border-radius: 5px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #f0f0f0; }
-        """
 
 
 class KeyboardControlGroup(QGroupBox):
-    """键盘控制设置组"""
+    """键盘控制设置组 - 卡片式设计"""
     
     def __init__(self, parent=None):
-        super().__init__("键盘控制方案", parent)
+        super().__init__("键盘控制设置", parent)
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
         self._load_settings()
+        self._apply_card_style()
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
     
     def _init_ui(self):
-        """初始化UI"""
+        """初始化UI - 使用统一控件样式"""
         layout = QVBoxLayout()
+        layout.setSpacing(CustomConfig.SPACING_SYSTEM['md'])  # 添加间距
         
-        # 键盘控制方案选择 - 应用设置界面样式
+        # 标题标签 - 使用统一样式
+        title_label = QLabel("选择键盘控制方案:   （注：需要重启软件）")
+        title_label.setStyleSheet("font-weight: bold; color: #333;")
+        
+        # 键盘控制方案选择 - 使用统一下拉框样式
         self.scheme_combo = QComboBox()
         schemes = KeyboardControlScheme.get_all_schemes()
         for scheme_id, scheme_name in schemes.items():
             self.scheme_combo.addItem(scheme_name, scheme_id)
         
         self.scheme_combo.currentIndexChanged.connect(self._on_scheme_changed)
-        self.scheme_combo.setStyleSheet(self._get_combo_box_style())
+        self.scheme_combo.setStyleSheet(CustomConfig.UNIFIED_STYLES['combo'])
         # 安装滚轮事件过滤器
         self.scheme_combo.installEventFilter(self.wheel_filter)
         
-        # 方案说明标签
+        # 方案说明标签 - 使用描述文本样式
         self.scheme_description = QLabel()
         self.scheme_description.setWordWrap(True)
-        self.scheme_description.setStyleSheet("color: #666666; font-size: 12px; margin-top: 5px;")
+        self.scheme_description.setStyleSheet("""
+            QLabel {
+                color: #666666;
+                font-size: 12px;
+                background-color: #f8f9fa;
+                padding: 8px;
+                border-radius: 6px;
+                border: 1px solid #e9ecef;
+            }
+        """)
         
-        layout.addWidget(QLabel("选择键盘控制方案:   （注：需要重启软件）"))
+        layout.addWidget(title_label)
         layout.addWidget(self.scheme_combo)
         layout.addWidget(self.scheme_description)
+        layout.addStretch()  # 添加弹性空间
         
         self.setLayout(layout)
         
         # 更新初始方案说明
         self._update_scheme_description()
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        # 添加内边距
+        self.setContentsMargins(
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg']
+        )
     
     def _load_settings(self):
         """加载设置"""
@@ -255,33 +450,30 @@ class KeyboardControlGroup(QGroupBox):
         self.scheme_description.setText(descriptions.get(scheme_id, ""))
     
     def _get_combo_box_style(self):
-        """获取下拉框样式 - 与设置界面保持一致"""
-        return """
-            QComboBox {
-                font-family: "微软雅黑"; background-color: white; color: black; 
-                border: 2px solid gray; border-radius: 10px; padding: 5px;
-            }
-            QComboBox::drop-down {
-                border-left-width: 2px; border-left-color: gray; border-left-style: solid;
-                border-top-right-radius: 10px; border-bottom-right-radius: 10px;
-                width: 30px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 5px solid black;
-                width: 0px;
-                height: 0px;
-            }
-            QComboBox:hover {
-                background-color: #f0f0f0;
-            }
+        global_font = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        return f"""
+        QComboBox {{
+            font-family: "{global_font}"; background-color: white; color: black; 
+            border: 2px solid gray; border-radius: 10px; padding: 5px;
+        }}
+        QComboBox::drop-down {{
+            border-left-width: 2px; border-left-color: gray; border-left-style: solid;
+            border-top-right-radius: 10px; border-bottom-right-radius: 10px;
+            width: 30px;
+        }}
+        QComboBox::down-arrow {{
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid black;
+            width: 0px;
+            height: 0px;
+        }}
         """
 
 
 class WindowSizeGroup(QGroupBox):
-    """窗口尺寸设置组"""
+    """窗口尺寸设置组 - 卡片式设计"""
     
     def __init__(self, parent=None):
         super().__init__("窗口尺寸设置", parent)
@@ -289,102 +481,268 @@ class WindowSizeGroup(QGroupBox):
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
         self._load_settings()
+        self._apply_card_style()
     
     def _init_ui(self):
-        """初始化UI"""
+        """初始化UI - 使用统一控件样式"""
         layout = QFormLayout()
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])  # 添加垂直间距
         
-        # 窗口尺寸选择 - 应用设置界面样式
+        # 标题标签 - 使用统一样式
+        title_label = QLabel("预设窗口尺寸:")
+        title_label.setStyleSheet("font-weight: bold; color: #333;")
+        
+        # 窗口尺寸选择 - 使用统一下拉框样式
         self.size_combo = QComboBox()
-        self.size_combo.addItems(CustomConfig.WINDOW_SIZES)
+        self.size_combo.addItems(misc_func.CustomConfig.get_window_sizes())
         self.size_combo.currentTextChanged.connect(self._on_size_changed)
-        self.size_combo.setStyleSheet(self._get_combo_box_style())
+        self.size_combo.setStyleSheet(CustomConfig.UNIFIED_STYLES['combo'])
         # 安装滚轮事件过滤器
         self.size_combo.installEventFilter(self.wheel_filter)
         
-        layout.addRow("预设窗口尺寸:", self.size_combo)
+        layout.addRow(title_label, self.size_combo)
         
         self.setLayout(layout)
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg'],
+            CustomConfig.SPACING_SYSTEM['lg']
+        )
     
     def _load_settings(self):
         """加载设置"""
         window_size = self.settings_manager.Custom.get_value("window_size", "1024x768")
-        if window_size in CustomConfig.WINDOW_SIZES:
+        if window_size in misc_func.CustomConfig.get_window_sizes():
             self.size_combo.setCurrentText(window_size)
     
     def _on_size_changed(self, size: str):
         """窗口尺寸改变事件"""
         self.settings_manager.Custom.set_value("window_size", size)
-    
-    def _get_combo_box_style(self):
-        """获取下拉框样式 - 与设置界面保持一致"""
-        return """
-            QComboBox {
-                font-family: "微软雅黑"; background-color: white; color: black; 
-                border: 2px solid gray; border-radius: 10px; padding: 5px;
-            }
-            QComboBox::drop-down {
-                border-left-width: 2px; border-left-color: gray; border-left-style: solid;
-                border-top-right-radius: 10px; border-bottom-right-radius: 10px;
-                width: 30px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 5px solid black;
-                width: 0px;
-                height: 0px;
-            }
-            QComboBox:hover {
-                background-color: #f0f0f0;
-            }
-        """
 
 
 class ColorSettingsGroup(QGroupBox):
-    """颜色设置组"""
+    """颜色设置组 - 卡片式设计"""
+    
+    # 主题预设
+    COLOR_THEMES = {
+        "默认": {
+            "background": "#69E0A5",
+            "notification_info": "#3498db",
+            "notification_warning": "#f0da12",
+            "notification_error": "#db3444"
+        },
+        "深色": {
+            "background": "#2b2b2b",
+            "notification_info": "#1e88e5",
+            "notification_warning": "#ffb300",
+            "notification_error": "#e53935"
+        },
+        "护眼": {
+            "background": "#cce8cf",
+            "notification_info": "#4caf50",
+            "notification_warning": "#ff9800",
+            "notification_error": "#f44336"
+        }
+    }
     
     def __init__(self, parent=None):
         super().__init__("颜色设置", parent)
         self.settings_manager = SettingsManager()
+        self.wheel_filter = WheelEventFilter()  # 添加滚轮事件过滤器
         self._init_ui()
         self._load_settings()
+        self._apply_card_style()
     
     def _init_ui(self):
-        """初始化UI"""
-        layout = QFormLayout()
+        """初始化UI - 使用网格布局增强视觉效果"""
+        layout = QGridLayout()
+        layout.setHorizontalSpacing(CustomConfig.SPACING_SYSTEM['lg'])  # 水平间距
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])    # 垂直间距
         
-        # 背景颜色
+        # 主题预设选择器
+        theme_label = QLabel("主题预设:")
+        theme_label.setStyleSheet("font-weight: bold; color: #333;")
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["自定义"] + misc_func.CustomConfig.get_theme_names())
+        self.theme_combo.currentTextChanged.connect(self._on_theme_changed)
+        self.theme_combo.setStyleSheet(CustomConfig.UNIFIED_STYLES['combo'])
+        # 安装滚轮事件过滤器，禁用滚轮响应
+        self.theme_combo.installEventFilter(self.wheel_filter)
+        
+        # 创建颜色选择器
         self.background_color = ColorPickerWidget()
-        self.background_color.color_changed.connect(
-            lambda color: self.settings_manager.Custom.set_value("background_color", color)
-        )
-        
-        # 信息通知颜色
         self.info_color = ColorPickerWidget()
-        self.info_color.color_changed.connect(
-            lambda color: self.settings_manager.Custom.set_value("notification_info_color", color)
-        )
-        
-        # 警告通知颜色
         self.warning_color = ColorPickerWidget()
-        self.warning_color.color_changed.connect(
-            lambda color: self.settings_manager.Custom.set_value("notification_warning_color", color)
-        )
-        
-        # 错误通知颜色
         self.error_color = ColorPickerWidget()
+        
+        # 连接信号
+        self.background_color.color_changed.connect(
+            lambda color: self._on_color_changed("background_color", color)
+        )
+        self.info_color.color_changed.connect(
+            lambda color: self._on_color_changed("notification_info_color", color)
+        )
+        self.warning_color.color_changed.connect(
+            lambda color: self._on_color_changed("notification_warning_color", color)
+        )
         self.error_color.color_changed.connect(
-            lambda color: self.settings_manager.Custom.set_value("notification_error_color", color)
+            lambda color: self._on_color_changed("notification_error_color", color)
         )
         
-        layout.addRow("背景颜色:", self.background_color)
-        layout.addRow("信息通知颜色:", self.info_color)
-        layout.addRow("警告通知颜色:", self.warning_color)
-        layout.addRow("错误通知颜色:", self.error_color)
+        # 添加标签和颜色选择器到网格
+        layout.addWidget(theme_label, 0, 0)
+        layout.addWidget(self.theme_combo, 0, 1)
+        layout.addWidget(QLabel("背景颜色:"), 1, 0)
+        layout.addWidget(self.background_color, 1, 1)
+        layout.addWidget(QLabel("信息通知颜色:"), 2, 0)
+        layout.addWidget(self.info_color, 2, 1)
+        layout.addWidget(QLabel("警告通知颜色:"), 3, 0)
+        layout.addWidget(self.warning_color, 3, 1)
+        layout.addWidget(QLabel("错误通知颜色:"), 4, 0)
+        layout.addWidget(self.error_color, 4, 1)
+        
+        # 设置列拉伸
+        layout.setColumnStretch(1, 1)
         
         self.setLayout(layout)
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
+    
+    def _on_theme_changed(self, theme_name: str):
+        """主题预设改变事件"""
+        if theme_name and theme_name != "自定义":
+            # 获取主题颜色
+            theme_colors = misc_func.CustomConfig.get_theme_colors(theme_name)
+            
+            # 应用主题颜色到颜色选择器
+            self.background_color.set_color(theme_colors["background"])
+            self.info_color.set_color(theme_colors["notification_info"])
+            self.warning_color.set_color(theme_colors["notification_warning"])
+            self.error_color.set_color(theme_colors["notification_error"])
+            
+            # 保存到设置
+            self.settings_manager.Custom.set_value("background_color", theme_colors["background"])
+            self.settings_manager.Custom.set_value("notification_info_color", theme_colors["notification_info"])
+            self.settings_manager.Custom.set_value("notification_warning_color", theme_colors["notification_warning"])
+            self.settings_manager.Custom.set_value("notification_error_color", theme_colors["notification_error"])
+            
+            # 保存当前主题名称，不切换到自定义
+            self.settings_manager.Custom.set_value("current_theme", theme_name)
+            
+            # 立即应用主题到整个应用程序
+            self._apply_theme_to_app(theme_colors)
+    
+    def _apply_theme_to_app(self, theme_colors: dict):
+        """应用主题到整个应用程序"""
+        try:
+            # 获取主窗口实例
+            main_window = self.window()
+            if main_window and hasattr(main_window, 'tab_manager'):
+                # 应用主题样式到主窗口
+                self._apply_colors_to_main_window(main_window, theme_colors)
+                
+                # 更新所有页面的样式
+                if hasattr(main_window.tab_manager, 'tabs'):
+                    for tab_name, tab_widget in main_window.tab_manager.tabs.items():
+                        if hasattr(tab_widget, 'setStyleSheet'):
+                            self._apply_theme_to_widget(tab_widget, theme_colors)
+        except Exception as e:
+            print(f"应用主题时出错: {e}")
+    
+    def _apply_colors_to_main_window(self, main_window, theme_colors: dict):
+        """应用颜色到主窗口"""
+        # 检查是否需要白色文字
+        use_white_text = misc_func.CustomConfig.should_use_white_text(theme_colors["background"])
+        text_color = "#FFFFFF" if use_white_text else "#333333"
+        
+        # 创建主窗口样式
+        main_style = f"""
+        QMainWindow {{
+            background-color: {theme_colors["background"]};
+            color: {text_color};
+        }}
+        
+        QTabWidget::pane {{
+            background-color: {theme_colors["background"]};
+            border: 1px solid #CCCCCC;
+        }}
+        
+        QTabBar::tab {{
+            background-color: {theme_colors["background"]};
+            color: {text_color};
+            padding: 8px 16px;
+            border: 1px solid #CCCCCC;
+            margin-right: 2px;
+        }}
+        
+        QTabBar::tab:selected {{
+            background-color: {theme_colors["notification_info"]};
+            border-bottom: 2px solid {theme_colors["notification_info"]};
+        }}
+        
+        QTabBar::tab:hover {{
+            background-color: {theme_colors["notification_info"]};
+        }}
+        """
+        
+        main_window.setStyleSheet(main_style)
+    
+    def _apply_theme_to_widget(self, widget, theme_colors: dict):
+        """应用主题到具体控件"""
+        # 检查是否需要白色文字
+        use_white_text = misc_func.CustomConfig.should_use_white_text(theme_colors["background"])
+        text_color = "#FFFFFF" if use_white_text else "#333333"
+        
+        # 基础样式
+        widget_style = f"""
+        QWidget {{
+            background-color: {theme_colors["background"]};
+            color: {text_color};
+        }}
+        
+        QLabel {{
+            color: {text_color};
+        }}
+        
+        QGroupBox {{
+            color: {text_color};
+            border: 2px solid {theme_colors["notification_info"]};
+            border-radius: 8px;
+            margin-top: 8px;
+            padding-top: 8px;
+        }}
+        
+        QGroupBox::title {{
+            color: {text_color};
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 5px 0 5px;
+        }}
+        """
+        
+        widget.setStyleSheet(widget_style)
+    
+    def _on_color_changed(self, color_key: str, color: str):
+        """颜色改变事件"""
+        # 保存颜色设置
+        self.settings_manager.Custom.set_value(color_key, color)
+        
+        # 当用户手动修改颜色时，切换到自定义主题
+        self.theme_combo.blockSignals(True)  # 阻止信号避免循环
+        self.theme_combo.setCurrentText("自定义")
+        self.theme_combo.blockSignals(False)
+        self.settings_manager.Custom.set_value("current_theme", "自定义")
     
     def _load_settings(self):
         """加载颜色设置"""
@@ -413,10 +771,18 @@ class ColorSettingsGroup(QGroupBox):
             CustomConfig.DEFAULT_COLORS["notification_error"]
         )
         self.error_color.set_color(error_color)
+        
+        # 加载当前主题
+        current_theme = self.settings_manager.Custom.get_value("current_theme", "自定义")
+        
+        # 设置当前主题（不触发信号）
+        self.theme_combo.blockSignals(True)
+        self.theme_combo.setCurrentText(current_theme)
+        self.theme_combo.blockSignals(False)
 
 
 class FontSettingsGroup(QGroupBox):
-    """字体设置组"""
+    """字体设置组 - 卡片式设计"""
     
     def __init__(self, parent=None):
         super().__init__("字体设置", parent)
@@ -424,44 +790,71 @@ class FontSettingsGroup(QGroupBox):
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
         self._load_settings()
+        self._apply_card_style()
     
     def _init_ui(self):
-        """初始化UI"""
+        """初始化UI - 使用统一控件样式"""
         layout = QFormLayout()
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])  # 添加垂直间距
         
-        # 全局字体 - 应用设置界面样式
-        self.global_font = QLineEdit()
-        self.global_font.textChanged.connect(
-            lambda text: self.settings_manager.Custom.set_value("global_font", text)
+        # 标题标签 - 使用统一样式
+        font_label = QLabel("全局字体:")
+        font_label.setStyleSheet("font-weight: bold; color: #333;")
+        
+        # 全局字体 - 使用字体选择器
+        self.global_font = QFontComboBox()
+        self.global_font.setFontFilters(QFontComboBox.ScalableFonts)  # 只显示可缩放字体
+        self.global_font.setMinimumWidth(200)  # 设置最小宽度
+        self.global_font.currentFontChanged.connect(
+            lambda font: self.settings_manager.Custom.set_value("global_font", font.family())
         )
-        self.global_font.setStyleSheet(self._get_input_style())
-        # 注意：全局字体输入框不安装滚轮过滤器，因为用户可能需要滚动查看长字体名称
+        self.global_font.setStyleSheet(CustomConfig.UNIFIED_STYLES['combo'])
+        # 安装滚轮事件过滤器
+        self.global_font.installEventFilter(self.wheel_filter)
         
-        # 最小字号 - 应用设置界面样式
+        # 标题标签 - 使用统一样式
+        min_label = QLabel("最小字号:")
+        min_label.setStyleSheet("font-weight: bold; color: #333;")
+        
+        # 最小字号 - 使用统一SpinBox样式
         self.min_font_size = QSpinBox()
         self.min_font_size.setRange(8, 50)
         self.min_font_size.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("min_font_size", str(value))
         )
-        self.min_font_size.setStyleSheet(self._get_spinbox_style())
+        self.min_font_size.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        self.min_font_size.setSuffix(" pt")
         # 安装滚轮事件过滤器
         self.min_font_size.installEventFilter(self.wheel_filter)
         
-        # 最大字号 - 应用设置界面样式
+        # 标题标签 - 使用统一样式
+        max_label = QLabel("最大字号:")
+        max_label.setStyleSheet("font-weight: bold; color: #333;")
+        
+        # 最大字号 - 使用统一SpinBox样式
         self.max_font_size = QSpinBox()
         self.max_font_size.setRange(10, 100)
         self.max_font_size.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("max_font_size", str(value))
         )
-        self.max_font_size.setStyleSheet(self._get_spinbox_style())
+        self.max_font_size.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        self.max_font_size.setSuffix(" pt")
         # 安装滚轮事件过滤器
         self.max_font_size.installEventFilter(self.wheel_filter)
         
-        layout.addRow("全局字体:", self.global_font)
-        layout.addRow("最小字号:", self.min_font_size)
-        layout.addRow("最大字号:", self.max_font_size)
+        layout.addRow(font_label, self.global_font)
+        layout.addRow(min_label, self.min_font_size)
+        layout.addRow(max_label, self.max_font_size)
         
         self.setLayout(layout)
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
     
     def _load_settings(self):
         """加载设置"""
@@ -470,7 +863,12 @@ class FontSettingsGroup(QGroupBox):
             "global_font",
             CustomConfig.DEFAULT_FONTS["global_font"]
         )
-        self.global_font.setText(global_font)
+        # 在字体选择器中找到并设置当前字体
+        font_db = QFontDatabase()
+        available_families = font_db.families()
+        if global_font in available_families:
+            font = font_db.font(global_font, "", 12)
+            self.global_font.setCurrentFont(font)
         
         # 最小字号
         min_size = int(self.settings_manager.Custom.get_value(
@@ -486,30 +884,50 @@ class FontSettingsGroup(QGroupBox):
         ))
         self.max_font_size.setValue(max_size)
     
-    def _get_input_style(self):
-        """获取输入框样式 - 与设置界面保持一致"""
-        return "QLineEdit { background-color: white; color: black; border: 2px solid gray; border-radius: 10px; padding: 5px; }"
+    def _filter_chinese_fonts(self):
+        """过滤并只显示支持中文的字体"""
+        # 常见的中文字体列表
+        chinese_fonts = [
+            "微软雅黑", "Microsoft YaHei",
+            "宋体", "SimSun",
+            "黑体", "SimHei", 
+            "楷体", "KaiTi",
+            "仿宋", "FangSong",
+            "新宋体", "NSimSun",
+            "华文宋体", "STSong",
+            "华文黑体", "STHeiti",
+            "华文楷体", "STKaiti",
+            "华文仿宋", "STFangsong",
+            "Arial Unicode MS",
+            "Lucida Sans Unicode"
+        ]
+        
+        # 获取字体数据库
+        font_db = QFontDatabase()
+        available_families = font_db.families()
+        
+        # 创建支持中文的字体列表
+        supported_chinese_fonts = []
+        for font_name in chinese_fonts:
+            if font_name in available_families:
+                supported_chinese_fonts.append(font_name)
+        
+        # 如果没有找到中文字体，保留所有字体
+        if not supported_chinese_fonts:
+            return
+            
+        # 清空当前字体列表
+        self.global_font.clear()
+        
+        # 只添加支持中文的字体
+        for font_name in supported_chinese_fonts:
+            self.global_font.addItem(font_name)
     
-    def _get_spinbox_style(self):
-        """获取SpinBox样式 - 与设置界面保持一致"""
-        return """
-            QSpinBox {
-                font-family: "微软雅黑"; background-color: white; color: black; 
-                border: 2px solid gray; border-radius: 10px; padding: 5px;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                border: 1px solid gray;
-                background-color: #f0f0f0;
-                border-radius: 5px;
-            }
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                background-color: #e0e0e0;
-            }
-        """
+
 
 
 class NotificationSettingsGroup(QGroupBox):
-    """通知设置组"""
+    """通知设置组 - 卡片式设计"""
     
     def __init__(self, parent=None):
         super().__init__("通知设置", parent)
@@ -517,10 +935,12 @@ class NotificationSettingsGroup(QGroupBox):
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
         self._load_settings()
+        self._apply_card_style()
     
     def _init_ui(self):
-        """初始化UI"""
+        """初始化UI - 使用统一控件样式"""
         layout = QFormLayout()
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
         
         # 动画时长设置 - 应用设置界面样式
         self.animation_appear = QSpinBox()
@@ -529,7 +949,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.animation_appear.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("animation_appear", str(value))
         )
-        self.animation_appear.setStyleSheet(self._get_spinbox_style())
+        self.animation_appear.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.animation_appear.installEventFilter(self.wheel_filter)
         
@@ -539,7 +959,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.animation_disappear.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("animation_disappear", str(value))
         )
-        self.animation_disappear.setStyleSheet(self._get_spinbox_style())
+        self.animation_disappear.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.animation_disappear.installEventFilter(self.wheel_filter)
         
@@ -549,7 +969,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.animation_move.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("animation_move", str(value))
         )
-        self.animation_move.setStyleSheet(self._get_spinbox_style())
+        self.animation_move.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.animation_move.installEventFilter(self.wheel_filter)
         
@@ -559,7 +979,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.position_m.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("position_m", str(value))
         )
-        self.position_m.setStyleSheet(self._get_spinbox_style())
+        self.position_m.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.position_m.installEventFilter(self.wheel_filter)
         
@@ -571,7 +991,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.position_n.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("position_n", str(value))
         )
-        self.position_n.setStyleSheet(self._get_double_spinbox_style())
+        self.position_n.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.position_n.installEventFilter(self.wheel_filter)
         
@@ -583,7 +1003,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.width_ratio.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("width_ratio", str(value))
         )
-        self.width_ratio.setStyleSheet(self._get_double_spinbox_style())
+        self.width_ratio.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.width_ratio.installEventFilter(self.wheel_filter)
         
@@ -594,7 +1014,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.height_ratio.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("height_ratio", str(value))
         )
-        self.height_ratio.setStyleSheet(self._get_double_spinbox_style())
+        self.height_ratio.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.height_ratio.installEventFilter(self.wheel_filter)
         
@@ -604,7 +1024,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.max_visible.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("max_visible", str(value))
         )
-        self.max_visible.setStyleSheet(self._get_spinbox_style())
+        self.max_visible.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.max_visible.installEventFilter(self.wheel_filter)
         
@@ -613,7 +1033,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.offset_n.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("offset_n", str(value))
         )
-        self.offset_n.setStyleSheet(self._get_spinbox_style())
+        self.offset_n.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.offset_n.installEventFilter(self.wheel_filter)
         
@@ -625,7 +1045,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.spacing_n.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("spacing_n", str(value))
         )
-        self.spacing_n.setStyleSheet(self._get_double_spinbox_style())
+        self.spacing_n.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.spacing_n.installEventFilter(self.wheel_filter)
         
@@ -636,7 +1056,7 @@ class NotificationSettingsGroup(QGroupBox):
         self.auto_close_time.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("auto_close_time", str(value))
         )
-        self.auto_close_time.setStyleSheet(self._get_spinbox_style())
+        self.auto_close_time.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
         # 安装滚轮事件过滤器
         self.auto_close_time.installEventFilter(self.wheel_filter)
         
@@ -654,6 +1074,14 @@ class NotificationSettingsGroup(QGroupBox):
         layout.addRow("自动关闭时间:", self.auto_close_time)
         
         self.setLayout(layout)
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
     
     def _load_settings(self):
         """加载设置"""
@@ -716,39 +1144,7 @@ class NotificationSettingsGroup(QGroupBox):
             CustomConfig.DEFAULT_NOTIFICATIONS["auto_close_time"]
         )))
     
-    def _get_spinbox_style(self):
-        """获取SpinBox样式 - 与设置界面保持一致"""
-        return """
-            QSpinBox {
-                font-family: "微软雅黑"; background-color: white; color: black; 
-                border: 2px solid gray; border-radius: 10px; padding: 5px;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                border: 1px solid gray;
-                background-color: #f0f0f0;
-                border-radius: 5px;
-            }
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                background-color: #e0e0e0;
-            }
-        """
-    
-    def _get_double_spinbox_style(self):
-        """获取DoubleSpinBox样式 - 与设置界面保持一致"""
-        return """
-            QDoubleSpinBox {
-                font-family: "微软雅黑"; background-color: white; color: black; 
-                border: 2px solid gray; border-radius: 10px; padding: 5px;
-            }
-            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
-                border: 1px solid gray;
-                background-color: #f0f0f0;
-                border-radius: 5px;
-            }
-            QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
-                background-color: #e0e0e0;
-            }
-        """
+
 
 
 class CustomPage(QWidget):
@@ -878,6 +1274,9 @@ class CustomPage(QWidget):
         
         # 初始字体更新
         self._update_fonts()
+        
+        # 启动时自动应用设置（不弹窗）
+        self._apply_settings_silently()
     
     def resizeEvent(self, event):
         """处理窗口大小变化事件"""
@@ -918,6 +1317,10 @@ class CustomPage(QWidget):
         
         # 应用字体到所有控件（除了全局字体输入框）
         self._apply_fonts_to_widgets(other_font, small_font)
+        
+        # 更新按钮样式（因为字体可能改变）
+        self.reset_button.setStyleSheet(self._get_button_style())
+        self.apply_button.setStyleSheet(self._get_button_style())
     
     def _apply_fonts_to_widgets(self, font, small_font):
         """应用字体到所有控件"""
@@ -940,7 +1343,6 @@ class CustomPage(QWidget):
                             self.color_group.warning_color,
                             self.color_group.error_color]:
             color_picker.color_input.setFont(font)
-            color_picker.palette_button.setFont(font)
         
         # 应用字体到字体设置组（注意：全局字体输入框不应用字体）
         self.font_group.setFont(font)
@@ -968,6 +1370,9 @@ class CustomPage(QWidget):
         
         # 应用字体到所有表单标签
         self._apply_font_to_form_labels(font)
+        
+        # 应用字体到所有输入框和选择框
+        self._apply_font_to_inputs_and_combos(font)
     
     def _apply_font_to_form_labels(self, font):
         """应用字体到所有表单标签（左侧标题）"""
@@ -976,6 +1381,25 @@ class CustomPage(QWidget):
             if isinstance(widget, QLabel):
                 # 检查是否是表单标签（通常表单标签有特定的文本内容）
                 # 这里我们简单地假设所有QLabel都是表单标签
+                widget.setFont(font)
+            
+            # 递归遍历所有子控件
+            for child in widget.children():
+                if isinstance(child, QWidget):
+                    apply_font_recursive(child)
+        
+        # 从内容部件开始递归应用字体
+        apply_font_recursive(self.content_widget)
+    
+    def _apply_font_to_inputs_and_combos(self, font):
+        """应用字体到所有输入框和选择框"""
+        # 递归函数，遍历所有子控件
+        def apply_font_recursive(widget):
+            # 应用字体到输入框
+            if isinstance(widget, (QLineEdit, QSpinBox, QDoubleSpinBox)):
+                widget.setFont(font)
+            # 应用字体到选择框
+            elif isinstance(widget, QComboBox):
                 widget.setFont(font)
             
             # 递归遍历所有子控件
@@ -1029,11 +1453,21 @@ class CustomPage(QWidget):
     
     def _apply_settings(self):
         """应用设置"""
+        self._apply_settings_silently()
+        QMessageBox.information(self, "应用成功", "个性化设置已应用，部分设置需要重启程序才能生效")
+    
+    def _apply_settings_silently(self):
+        """静默应用设置（不弹窗）"""
+        # 获取共享内存管理器
+        shared_manager = get_shared_memory_manager()
+        
         # 应用窗口尺寸
         window_size = self.settings_manager.Custom.get_value("window_size", "1024x768")
         if self.parent_window:
             width, height = map(int, window_size.split('x'))
             self.parent_window.resize(width, height)
+            # 广播窗口尺寸更改
+            shared_manager.broadcast_window_size_change(width, height)
         
         # 应用背景颜色
         bg_color = self.settings_manager.Custom.get_value(
@@ -1043,18 +1477,87 @@ class CustomPage(QWidget):
         if self.parent_window:
             self.parent_window.setStyleSheet(f"background-color: {bg_color};")
         
+        # 应用个性化页面自身的背景颜色
+        self.setStyleSheet(f"background-color: {bg_color};")
+        
         # 更新字体
         self._update_fonts()
         
-        QMessageBox.information(self, "应用成功", "个性化设置已应用，部分设置需要重启程序才能生效")
+        # 广播设置更改
+        settings_data = {
+            'window_size': window_size,
+            'background_color': bg_color,
+            'global_font': self.settings_manager.Custom.get_value("global_font", "微软雅黑"),
+            'min_font_size': self.settings_manager.Custom.get_value("min_font_size", "22"),
+            'max_font_size': self.settings_manager.Custom.get_value("max_font_size", "42"),
+            'keyboard_scheme': self.settings_manager.Custom.get_value("keyboard_scheme", "1"),
+            'notification_colors': {
+                'info': self.settings_manager.Custom.get_value("info_color", CustomConfig.DEFAULT_COLORS["notification_info"]),
+                'warning': self.settings_manager.Custom.get_value("warning_color", CustomConfig.DEFAULT_COLORS["notification_warning"]),
+                'error': self.settings_manager.Custom.get_value("error_color", CustomConfig.DEFAULT_COLORS["notification_error"])
+            },
+            'notification_settings': {
+                'animation_appear': self.settings_manager.Custom.get_value("animation_appear", "400"),
+                'animation_disappear': self.settings_manager.Custom.get_value("animation_disappear", "400"),
+                'animation_move': self.settings_manager.Custom.get_value("animation_move", "500"),
+                'position_m': self.settings_manager.Custom.get_value("position_m", "12"),
+                'position_n': self.settings_manager.Custom.get_value("position_n", "12.25"),
+                'width_ratio': self.settings_manager.Custom.get_value("width_ratio", "1"),
+                'height_ratio': self.settings_manager.Custom.get_value("height_ratio", "0.5"),
+                'max_visible': self.settings_manager.Custom.get_value("max_visible", "5"),
+                'offset_n': self.settings_manager.Custom.get_value("offset_n", "1"),
+                'spacing_n': self.settings_manager.Custom.get_value("spacing_n", "1.25"),
+                'auto_close_time': self.settings_manager.Custom.get_value("auto_close_time", "3000")
+            }
+        }
+        
+        # 广播字体更改
+        font_data = {
+            'global_font': settings_data['global_font'],
+            'min_font_size': settings_data['min_font_size'],
+            'max_font_size': settings_data['max_font_size']
+        }
+        shared_manager.broadcast_font_change(font_data)
+        
+        # 广播主题更改
+        theme_data = {
+            'background_color': bg_color,
+            'notification_colors': settings_data['notification_colors']
+        }
+        shared_manager.broadcast_theme_change(theme_data)
+        
+        # 广播总体设置更改
+        shared_manager.broadcast_settings_change('custom_page', settings_data)
+        
+        # 强制重新加载当前页面以应用新设置
+        self._reload_page()
+    
+    def _reload_page(self):
+        """重新加载页面以应用最新设置"""
+        try:
+            # 重新加载所有设置
+            self.keyboard_group._load_settings()
+            self.window_size_group._load_settings()
+            self.color_group._load_settings()
+            self.font_group._load_settings()
+            self.notification_group._load_settings()
+            
+            # 更新UI显示
+            self._update_fonts()
+            
+            print("个性化页面：已重新加载以应用最新设置")
+        except Exception as e:
+            print(f"个性化页面重新加载失败: {e}")
     
     def _get_button_style(self):
-        """获取按钮样式 - 与设置界面保持一致"""
-        return """
-            QPushButton {
-                font-family: "微软雅黑"; background-color: white; color: black;
+        """获取按钮样式 - 使用用户设置的字体"""
+        # 获取用户设置的字体
+        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        return f"""
+            QPushButton {{
+                font-family: "{global_font_name}"; background-color: white; color: black;
                 border: 2px solid gray; border-radius: 5px; font-weight: bold;
                 padding: 8px 16px;
-            }
-            QPushButton:hover { background-color: #f0f0f0; }
+            }}
+            QPushButton:hover {{ background-color: #f0f0f0; }}
         """

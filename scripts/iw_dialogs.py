@@ -2,15 +2,14 @@
 import sys
 import os
 import random
-from typing import Optional, Tuple, Callable
+from typing import Optional
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QPushButton, QTextEdit, QFileDialog, 
+    QApplication, QWidget, QPushButton, 
     QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
-    QInputDialog, QComboBox, QLineEdit, QFormLayout, QTreeWidget, 
-    QTreeWidgetItem, QCheckBox
+     QLineEdit, QFormLayout
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QRect
-from PyQt5.QtGui import QPainter, QColor, QPen, QFont
+from PyQt5.QtCore import Qt, QTimer, QRect
+from PyQt5.QtGui import QPainter, QColor, QPen
 
 
 class AnimationConfig:
@@ -413,35 +412,35 @@ def show_closing_dialog(parent: Optional[QWidget] = None) -> ClosingDialog:
 
 
 #检查模式
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    
-    mode=int(input("检查模式\n输入需要检查的窗口\n1-加载框\n2-页码偏移\n3-清空确认\n4-关闭确认"))
-    #创建对话框
-    if mode == 1:
-        loading_dialog = DialogFactory.create_loading_dialog()
-        loading_dialog.show()
-        QTimer.singleShot(2000, loading_dialog.close)
-        QTimer.singleShot(2000, app.quit)
-    elif mode == 2:
-        loading_dialog = DialogFactory.create_page_offset_dialog()
-        loading_dialog.show()
-        QTimer.singleShot(10000, loading_dialog.close)
-        QTimer.singleShot(10000, app.quit)
-    elif mode == 3:
-        loading_dialog = DialogFactory.create_clear_confirmation_dialog()
-        loading_dialog.show()
-        QTimer.singleShot(10000, loading_dialog.close)
-        QTimer.singleShot(10000, app.quit)
-    else:
-        loading_dialog = DialogFactory.create_closing_dialog()
-        loading_dialog.show()
-        QTimer.singleShot(10000, loading_dialog.close)
-        QTimer.singleShot(10000, app.quit)
-    
-    
-    
-    sys.exit(app.exec_())
+# if __name__ == "__main__":
+#     app = QApplication(sys.argv)
+#     
+#     mode=int(input("检查模式\n输入需要检查的窗口\n1-加载框\n2-页码偏移\n3-清空确认\n4-关闭确认"))
+#     #创建对话框
+#     if mode == 1:
+#         loading_dialog = DialogFactory.create_loading_dialog()
+#         loading_dialog.show()
+#         QTimer.singleShot(2000, loading_dialog.close)
+#         QTimer.singleShot(2000, app.quit)
+#     elif mode == 2:
+#         loading_dialog = DialogFactory.create_page_offset_dialog()
+#         loading_dialog.show()
+#         QTimer.singleShot(10000, loading_dialog.close)
+#         QTimer.singleShot(10000, app.quit)
+#     elif mode == 3:
+#         loading_dialog = DialogFactory.create_clear_confirmation_dialog()
+#         loading_dialog.show()
+#         QTimer.singleShot(10000, loading_dialog.close)
+#         QTimer.singleShot(10000, app.quit)
+#     else:
+#         loading_dialog = DialogFactory.create_closing_dialog()
+#         loading_dialog.show()
+#         QTimer.singleShot(10000, loading_dialog.close)
+#         QTimer.singleShot(10000, app.quit)
+#     
+#     
+#     
+#     sys.exit(app.exec_())
 
-if __name__ == "__main__":
-    print(0)
+# if __name__ == "__main__":
+#     print(0)

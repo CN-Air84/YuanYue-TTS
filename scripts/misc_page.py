@@ -2,17 +2,16 @@
 import sys
 import os
 import base64
-import tempfile
 import requests
-from typing import Optional
 from PyQt5.QtWidgets import (
     QWidget, QPushButton, QGridLayout, QMessageBox, QApplication,
     QDialog, QVBoxLayout, QTextEdit, QFileDialog, QLabel, QHBoxLayout,
-    QTreeWidget, QTreeWidgetItem, QFormLayout, QLineEdit
+    QTreeWidget, QTreeWidgetItem, QLineEdit
 )
-from PyQt5.QtCore import Qt, QRect, QThread, pyqtSignal, QUrl
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices
 import certifi
+from shared_memory_manager import get_shared_memory_manager
 
 
 
@@ -116,51 +115,61 @@ class TextResultDialog(QDialog):
         
         self.text_edit = QTextEdit()
         self.text_edit.setPlainText(content)
-        self.text_edit.setStyleSheet("""
-            QTextEdit {
-                background-color: white;
-                color: black;
-                border: 2px solid gray;
-                border-radius: 10px;
-                font-family: "微软雅黑";
-                font-size: 12px;
-            }
+        
+        # 从共享内存管理器获取字体设置
+        shared_manager = get_shared_memory_manager()
+        if shared_manager and hasattr(shared_manager, 'current_settings'):
+            global_font = shared_manager.current_settings.get('global_font', '微软雅黑')
+        else:
+            global_font = '微软雅黑'
+            
+        self.text_edit.setStyleSheet(f"""
+        QTextEdit {{
+            background-color: white;
+            color: black;
+            border: 2px solid gray;
+            border-radius: 10px;
+            font-family: "{global_font}";
+            font-size: 12px;
+            }}
         """)
+
         layout.addWidget(self.text_edit)
         
         button_layout = QHBoxLayout()
         
         self.copy_button = QPushButton("复制结果")
-        self.copy_button.setStyleSheet("""
-            QPushButton {
-                font-family: "微软雅黑";
-                background-color: white;
-                color: black;
-                border: 2px solid gray;
-                border-radius: 5px;
-                padding: 5px 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #f0f0f0;
-            }
+        self.copy_button.setStyleSheet(f"""
+            QPushButton {{
+            font-family: "{global_font}";
+            background-color: white;
+            color: black;
+            border: 2px solid gray;
+            border-radius: 5px;
+            padding: 5px 10px;
+            font-weight: bold;
+            }}
+            QPushButton:hover {{
+            background-color: #f0f0f0;
+            }}
         """)
+
         self.copy_button.clicked.connect(self.copy_text)
         
         self.close_button = QPushButton("关闭")
-        self.close_button.setStyleSheet("""
-            QPushButton {
-                font-family: "微软雅黑";
-                background-color: white;
-                color: black;
-                border: 2px solid gray;
-                border-radius: 5px;
-                padding: 5px 10px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #f0f0f0;
-            }
+        self.close_button.setStyleSheet(f"""
+            QPushButton {{
+            font-family: "{global_font}";
+            background-color: white;
+            color: black;
+            border: 2px solid gray;
+            border-radius: 5px;
+            padding: 5px 10px;
+            font-weight: bold;
+            }}
+            QPushButton:hover {{
+            background-color: #f0f0f0;
+            }}
         """)
         self.close_button.clicked.connect(self.accept)
         
@@ -190,7 +199,16 @@ class TextResultDialog(QDialog):
         
         base_font_size = int(base_font_size)
         button_font_size = int(base_font_size * 0.5)
-        button_font = QFont("微软雅黑", button_font_size)
+        
+        # 从共享内存管理器获取字体设置
+        shared_manager = get_shared_memory_manager()
+        if shared_manager and hasattr(shared_manager, 'current_settings'):
+            global_font = shared_manager.current_settings.get('global_font', '微软雅黑')
+        else:
+            global_font = '微软雅黑'
+            
+        button_font = QFont(global_font, button_font_size)
+
         
         self.copy_button.setFont(button_font)
         self.close_button.setFont(button_font)
@@ -198,6 +216,77 @@ class TextResultDialog(QDialog):
     def resizeEvent(self, event):
         self._update_fonts()
         super().resizeEvent(event)
+    
+    def _connect_shared_memory_signals(self):
+        """连接共享内存信号"""
+        # 连接字体更改信号
+        self.shared_manager.font_changed.connect(self._on_font_changed_from_shared_memory)
+        # 连接主题更改信号
+        self.shared_manager.theme_changed.connect(self._on_theme_changed_from_shared_memory)
+        # 连接窗口尺寸更改信号
+        self.shared_manager.window_size_changed.connect(self._on_window_size_changed_from_shared_memory)
+        # 连接设置更改信号
+        self.shared_manager.settings_changed.connect(self._on_settings_changed_from_shared_memory)
+    
+    def _on_font_changed_from_shared_memory(self, font_data):
+        """从共享内存接收字体更改"""
+        try:
+            # 更新字体设置
+            self._update_fonts()
+            print(f"杂项页面：字体已更新 - {font_data}")
+        except Exception as e:
+            print(f"杂项页面字体更新失败: {e}")
+    
+    def _on_theme_changed_from_shared_memory(self, theme_data):
+        """从共享内存接收主题更改"""
+        try:
+            # 应用背景颜色
+            bg_color = theme_data.get('background_color', '#69E0A5')
+            self.setStyleSheet(f"background-color: {bg_color};")
+            print(f"杂项页面：主题已更新 - {theme_data}")
+        except Exception as e:
+            print(f"杂项页面主题更新失败: {e}")
+    
+    def _on_window_size_changed_from_shared_memory(self, width, height):
+        """从共享内存接收窗口尺寸更改"""
+        try:
+            # 重新布局控件
+            if hasattr(self, 'resizeEvent'):
+                # 触发重新布局
+                self.resize(self.width(), self.height())
+            print(f"杂项页面：窗口尺寸已更新 - {width}x{height}")
+        except Exception as e:
+            print(f"杂项页面窗口尺寸更新失败: {e}")
+    
+    def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
+        """从共享内存接收设置更改"""
+        try:
+            if page_name == 'custom_page':
+                # 如果是来自个性化页面的设置更改，更新相关设置
+                print(f"杂项页面：接收到个性化页面设置更新 - {settings_data}")
+                # 重新加载页面以应用新设置
+                self._reload_page(settings_data)
+        except Exception as e:
+            print(f"杂项页面设置更新失败: {e}")
+    
+    def _reload_page(self, settings_data=None):
+        """重新加载页面以应用最新设置"""
+        try:
+            # 更新字体
+            self._update_fonts()
+            
+            # 更新主题样式
+            if settings_data:
+                bg_color = settings_data.get('background_color', '#69E0A5')
+                self.setStyleSheet(f"background-color: {bg_color};")
+            
+            # 重新布局控件（触发resize事件）
+            if hasattr(self, 'resizeEvent'):
+                self.resize(self.width(), self.height())
+            
+            print("杂项页面：已重新加载以应用最新设置")
+        except Exception as e:
+            print(f"杂项页面重新加载失败: {e}")
     
     def copy_text(self):
         clipboard = QApplication.clipboard()
@@ -227,23 +316,31 @@ class PDFDownloadDialog(QDialog):
         else:
             self.resize(800, 600)
         
-        self.setStyleSheet("""
-            QDialog {background-color: #69E0A5;}
-            QPushButton {
-                font-family: "微软雅黑"; background-color: white; color: black;
-                border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
-            }
-            QPushButton:hover {background-color: #f0f0f0;}
-            QLabel {font-family: "微软雅黑"; font-size: 14px;}
-            QLineEdit {
-                font-family: "微软雅黑"; background-color: white; color: black;
-                border: 2px solid gray; border-radius: 10px; padding: 5px;
-            }
-            QTreeWidget {
-                font-family: "微软雅黑"; background-color: white; color: black;
-                border: 2px solid gray; border-radius: 5px;
-            }
+        # 从共享内存管理器获取字体设置
+        shared_manager = get_shared_memory_manager()
+        if shared_manager and hasattr(shared_manager, 'current_settings'):
+            global_font = shared_manager.current_settings.get('global_font', '微软雅黑')
+        else:
+            global_font = '微软雅黑'
+            
+        self.setStyleSheet(f"""
+        QDialog {{background-color: #69E0A5;}}
+        QPushButton {{
+            font-family: "{global_font}"; background-color: white; color: black;
+            border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
+        }}
+        QPushButton:hover {{background-color: #f0f0f0;}}
+        QLabel {{font-family: "{global_font}"; font-size: 14px;}}
+        QLineEdit {{
+            font-family: "{global_font}"; background-color: white; color: black;
+            border: 2px solid gray; border-radius: 10px; padding: 5px;
+        }}
+        QTreeWidget {{
+            font-family: "{global_font}"; background-color: white; color: black;
+            border: 2px solid gray; border-radius: 5px;
+        }}
         """)
+
         
         main_layout = QVBoxLayout()
         
@@ -529,8 +626,8 @@ class AboutDialog(QDialog):
             '——————————————————\n'
             '另：若发现ghfast加速功能无法使用，很有可能是ghfast被限制了。请在github交issue提醒我，万分感谢。\n'
             '——————————————————\n'
-            "by Air84 2025.11.16\n"
-            "version:SimeonTest 0.6 Alpha-Release"
+            "by Air84 2025.12.10\n"
+            "version:SimeonTest 0.7 "
         )
         self.content_label.setAlignment(Qt.AlignCenter)
         self.content_label.setWordWrap(True)
@@ -673,6 +770,9 @@ class MiscPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
+        
+        # 获取共享内存管理器
+        self.shared_manager = get_shared_memory_manager()
         
         self._init_ui()
     
@@ -845,16 +945,50 @@ class MiscPage(QWidget):
         if button:
             QMessageBox.information(self, "功能预留", 
                                   f"还不知道要做什么……\n要是有啥好点子可以来github交个PR/issue，\n感谢您的支持")
+    
+    def _connect_shared_memory_signals(self):
+        """连接共享内存信号"""
+        # 连接字体变化信号
+        self.shared_manager.font_changed.connect(self._on_font_changed_from_shared_memory)
+        
+        # 连接主题变化信号
+        self.shared_manager.theme_changed.connect(self._on_theme_changed_from_shared_memory)
+        
+        # 连接窗口大小变化信号
+        self.shared_manager.window_size_changed.connect(self._on_window_size_changed_from_shared_memory)
+        
+        # 连接设置变化信号
+        self.shared_manager.settings_changed.connect(self._on_settings_changed_from_shared_memory)
+    
+    def _on_font_changed_from_shared_memory(self, font_data):
+        """从共享内存接收字体变化"""
+        print(f"杂项页面：字体已更新 - {font_data}")
+        self._update_fonts()
+    
+    def _on_theme_changed_from_shared_memory(self, theme_data):
+        """从共享内存接收主题变化"""
+        print(f"杂项页面：主题已更新 - {theme_data}")
+        # 这里可以添加主题更新的具体逻辑
+    
+    def _on_window_size_changed_from_shared_memory(self, width, height):
+        """从共享内存接收窗口大小变化"""
+        print(f"杂项页面：窗口大小已更新 - {width}x{height}")
+        self._update_fonts()
+    
+    def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
+        """从共享内存接收设置变化"""
+        print(f"杂项页面：设置已更新 - {page_name} - {settings_data}")
 
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = QWidget()
-    window.setWindowTitle("杂项功能测试")
-    window.resize(800, 600)
-    misc_page = MiscPage(window)
-    layout = QVBoxLayout()
-    layout.addWidget(misc_page)
-    window.setLayout(layout)
-    window.show()
-    sys.exit(app.exec_())
+# 测试代码已注释，避免在运行主程序时创建额外的窗口
+# if __name__ == "__main__":
+#     app = QApplication(sys.argv)
+#     window = QWidget()
+#     window.setWindowTitle("杂项功能测试")
+#     window.resize(800, 600)
+#     misc_page = MiscPage(window)
+#     layout = QVBoxLayout()
+#     layout.addWidget(misc_page)
+#     window.setLayout(layout)
+#     window.show()
+#     sys.exit(app.exec_())

@@ -1,12 +1,13 @@
 # coding=utf-8
 import threading
-from typing import Dict, List, Callable, Any
+from typing import Callable
 from PyQt5.QtWidgets import (QWidget, QPushButton, QSlider, QTextEdit, QCheckBox, QComboBox, QLabel)
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot
 from PyQt5.QtGui import QFont
 
 from misc_func import AudioConfig, VoiceConfig, ContentHasher, AudioFileManager, InputValidator
 from iw_text_import import show_text_import_dialog
+from shared_memory_manager import get_shared_memory_manager
 
 '''
 本段代码在SimeonTest Re1时使用 DeepSeek 重构，
@@ -125,12 +126,14 @@ class ParameterControl:
     
     def _get_button_style(self) -> str:
         """获取按钮样式"""
-        return """
-            QPushButton {
-                font-family: "微软雅黑"; background-color: white; color: black;
+        # 从父窗口获取全局字体设置
+        global_font = self.parent.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        return f"""
+            QPushButton {{
+                font-family: "{global_font}"; background-color: white; color: black;
                 border: 2px solid gray; border-radius: 5px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #f0f0f0; }
+            }}
+            QPushButton:hover {{ background-color: #f0f0f0; }}
         """
 
 
@@ -177,9 +180,10 @@ class VoiceSelection:
     
     def _get_combo_box_style(self) -> str:
         """获取下拉框样式"""
+        global_font = self.parent.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
         return """
             QComboBox {
-                font-family: "微软雅黑"; background-color: white; color: black; 
+                font-family: \""""+global_font+"""\"; background-color: white; color: black; 
                 border: 2px solid gray; border-radius: 10px; padding: 5px;
             }
             QComboBox::drop-down {
@@ -217,8 +221,8 @@ class TextEditSection:
         self.text_edit.textChanged.connect(self._update_content)
         self.text_edit.setStyleSheet("QTextEdit { background-color: white; color: black; border: 3px solid gray; border-radius: 10px; }")
         
-        # 文本框文字固定为16点字号
-        text_edit_font = QFont("微软雅黑", 9)
+        global_font = self.parent.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        text_edit_font = QFont(global_font, 9)
         self.text_edit.setFont(text_edit_font)
         
         # 创建缩窄的透明覆盖按钮（让开文本框滑动条）
@@ -400,9 +404,10 @@ class PreviewControl:
     
     def _get_button_style(self, normal_color: str, hover_color: str) -> str:
         """获取按钮样式"""
+        global_font = self.parent.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
         return f"""
             QPushButton {{
-                font-family: "微软雅黑"; background-color: {normal_color}; color: white;
+                font-family: "{global_font}"; background-color: {normal_color}; color: white;
                 border: 2px solid gray; border-radius: 5px;
             }}
             QPushButton:hover {{ background-color: {hover_color}; }}
@@ -544,9 +549,13 @@ class GenerationPage(QWidget):
         self.config = parent.config if parent else AudioConfig()
         self.signals = GenerationSignals()
         
+        # 获取共享内存管理器
+        self.shared_manager = get_shared_memory_manager()
+        
         # 初始化组件
         self._init_components()
         self._connect_signals()
+        self._connect_shared_memory_signals()
         
     def _init_components(self):
         """初始化所有组件"""
@@ -577,6 +586,17 @@ class GenerationPage(QWidget):
         self.signals.preview_generated.connect(self._on_preview_generated_safe)
         self.signals.preview_error.connect(self._handle_preview_error_safe)
         self.signals.update_button_state.connect(self._update_button_state_safe)
+    
+    def _connect_shared_memory_signals(self):
+        """连接共享内存信号"""
+        # 连接字体更改信号
+        self.shared_manager.font_changed.connect(self._on_font_changed_from_shared_memory)
+        # 连接主题更改信号
+        self.shared_manager.theme_changed.connect(self._on_theme_changed_from_shared_memory)
+        # 连接窗口尺寸更改信号
+        self.shared_manager.window_size_changed.connect(self._on_window_size_changed_from_shared_memory)
+        # 连接设置更改信号
+        self.shared_manager.settings_changed.connect(self._on_settings_changed_from_shared_memory)
         
     def resizeEvent(self, event):
         """处理页面大小变化事件"""
@@ -694,6 +714,67 @@ class GenerationPage(QWidget):
 
         # 更新字体
         self._update_fonts()
+    
+    def _on_font_changed_from_shared_memory(self, font_data):
+        """从共享内存接收字体更改"""
+        try:
+            # 更新字体设置
+            if hasattr(self, '_update_fonts'):
+                self._update_fonts()
+            print(f"生成页面：字体已更新 - {font_data}")
+        except Exception as e:
+            print(f"生成页面字体更新失败: {e}")
+    
+    def _on_theme_changed_from_shared_memory(self, theme_data):
+        """从共享内存接收主题更改"""
+        try:
+            # 应用背景颜色
+            bg_color = theme_data.get('background_color', '#69E0A5')
+            self.setStyleSheet(f"background-color: {bg_color};")
+            print(f"生成页面：主题已更新 - {theme_data}")
+        except Exception as e:
+            print(f"生成页面主题更新失败: {e}")
+    
+    def _on_window_size_changed_from_shared_memory(self, width, height):
+        """从共享内存接收窗口尺寸更改"""
+        try:
+            # 重新布局控件
+            if hasattr(self, 'resizeEvent'):
+                # 触发重新布局
+                self.resize(self.width(), self.height())
+            print(f"生成页面：窗口尺寸已更新 - {width}x{height}")
+        except Exception as e:
+            print(f"生成页面窗口尺寸更新失败: {e}")
+    
+    def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
+        """从共享内存接收设置更改"""
+        try:
+            if page_name == 'custom_page':
+                # 如果是来自个性化页面的设置更改，更新相关设置
+                print(f"生成页面：接收到个性化页面设置更新 - {settings_data}")
+                # 重新加载页面以应用新设置
+                self._reload_page(settings_data)
+        except Exception as e:
+            print(f"生成页面设置更新失败: {e}")
+    
+    def _reload_page(self, settings_data=None):
+        """重新加载页面以应用最新设置"""
+        try:
+            # 更新字体
+            self._update_fonts()
+            
+            # 更新主题样式
+            if settings_data:
+                bg_color = settings_data.get('background_color', '#69E0A5')
+                self.setStyleSheet(f"background-color: {bg_color};")
+            
+            # 重新布局控件（触发resize事件）
+            if hasattr(self, 'resizeEvent'):
+                self.resize(self.width(), self.height())
+            
+            print("生成页面：已重新加载以应用最新设置")
+        except Exception as e:
+            print(f"生成页面重新加载失败: {e}")
 
     def _layout_volume_controls(self, width, height, n, m, scale_factor, right_offset, progress_y, control_buttons_y, control_button_height):
         """布局音量控制控件"""
@@ -756,7 +837,8 @@ class GenerationPage(QWidget):
         
         # 计算其他字体大小
         other_font_size = int(base_font_size * 0.5)
-        other_font = QFont("微软雅黑", other_font_size)
+        global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        other_font = QFont(global_font, other_font_size)
         
         # 应用字体到音量控制标签
         self.preview_control.volume_label.setFont(other_font)

@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (QWidget, QPushButton, QSlider, QLineEdit, QComboBox
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from misc_func import SettingsManager, CustomConfig
+from shared_memory_manager import get_shared_memory_manager
 '''
 本段代码完全由DeepSeek编写。
 AI太好用了你们知道吗
@@ -164,6 +165,29 @@ class VoiceSection(SettingsSection):
         if not success:
             self.parent.parent_window.notification_manager.show_message("无法保存音色设置", "E", 5000)
             
+        global_font = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        return f"""
+        QComboBox {{
+            font-family: "{global_font}"; background-color: white; color: black; 
+        border: 2px solid gray; border-radius: 10px; padding: 5px;
+        }}
+        QComboBox::drop-down {{
+            border-left-width: 2px; border-left-color: gray; border-left-style: solid;
+        border-top-right-radius: 10px; border-bottom-right-radius: 10px;
+        width: 30px;
+        }}
+        QComboBox::down-arrow {{
+        image: none;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 5px solid black;
+        width: 0px;
+        height: 0px;
+        }}
+        QComboBox:hover {{
+        background-color: #f0f0f0;
+        }}
+        """
     def _get_combo_box_style(self):
         """获取下拉框样式"""
         return """
@@ -188,7 +212,6 @@ class VoiceSection(SettingsSection):
                 background-color: #f0f0f0;
             }
         """
-
 
 class SavePathSection(SettingsSection):
     """保存路径设置部分"""
@@ -623,7 +646,11 @@ class SettingsPage(QWidget):
         self.settings_manager = SettingsManager()
         self.sections = []
         
+        # 获取共享内存管理器
+        self.shared_manager = get_shared_memory_manager()
+        
         self._init_ui()
+        self._connect_shared_memory_signals()
         
     def _init_ui(self):
         """初始化UI"""
@@ -670,6 +697,7 @@ class SettingsPage(QWidget):
         
         super().resizeEvent(event)
         
+    """更新字体大小"""
     def _update_fonts(self):
         """更新字体大小"""
         if not self.parent_window:
@@ -686,14 +714,87 @@ class SettingsPage(QWidget):
         base_font_size = max(self.parent_window.min_font_size, min(self.parent_window.max_font_size, base_font_size))
         
         other_font_size = int(base_font_size * 0.5)
-        other_font = QFont("微软雅黑", other_font_size)
+        # 从设置中获取全局字体，默认为微软雅黑
+        global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        other_font = QFont(global_font, other_font_size)
         
         small_font_size = int(other_font_size * 0.8)
-        small_font = QFont("微软雅黑", small_font_size)
+        small_font = QFont(global_font, small_font_size)
         
         # 更新所有部分的字体
         for section in self.sections:
             section.update_fonts(other_font, small_font)
+    
+    def _connect_shared_memory_signals(self):
+        """连接共享内存信号"""
+        # 连接字体更改信号
+        self.shared_manager.font_changed.connect(self._on_font_changed_from_shared_memory)
+        # 连接主题更改信号
+        self.shared_manager.theme_changed.connect(self._on_theme_changed_from_shared_memory)
+        # 连接窗口尺寸更改信号
+        self.shared_manager.window_size_changed.connect(self._on_window_size_changed_from_shared_memory)
+        # 连接设置更改信号
+        self.shared_manager.settings_changed.connect(self._on_settings_changed_from_shared_memory)
+    
+    def _on_font_changed_from_shared_memory(self, font_data):
+        """从共享内存接收字体更改"""
+        try:
+            # 更新字体设置
+            self._update_fonts()
+            print(f"设置页面：字体已更新 - {font_data}")
+        except Exception as e:
+            print(f"设置页面字体更新失败: {e}")
+    
+    def _on_theme_changed_from_shared_memory(self, theme_data):
+        """从共享内存接收主题更改"""
+        try:
+            # 应用背景颜色
+            bg_color = theme_data.get('background_color', '#69E0A5')
+            self.setStyleSheet(f"background-color: {bg_color};")
+            print(f"设置页面：主题已更新 - {theme_data}")
+        except Exception as e:
+            print(f"设置页面主题更新失败: {e}")
+    
+    def _on_window_size_changed_from_shared_memory(self, width, height):
+        """从共享内存接收窗口尺寸更改"""
+        try:
+            # 重新布局控件
+            if hasattr(self, 'resizeEvent'):
+                # 触发重新布局
+                self.resize(self.width(), self.height())
+            print(f"设置页面：窗口尺寸已更新 - {width}x{height}")
+        except Exception as e:
+            print(f"设置页面窗口尺寸更新失败: {e}")
+    
+    def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
+        """从共享内存接收设置更改"""
+        try:
+            if page_name == 'custom_page':
+                # 如果是来自个性化页面的设置更改，更新相关设置
+                print(f"设置页面：接收到个性化页面设置更新 - {settings_data}")
+                # 重新加载页面以应用新设置
+                self._reload_page(settings_data)
+        except Exception as e:
+            print(f"设置页面设置更新失败: {e}")
+    
+    def _reload_page(self, settings_data=None):
+        """重新加载页面以应用最新设置"""
+        try:
+            # 更新字体
+            self._update_fonts()
+            
+            # 更新主题样式
+            if settings_data:
+                bg_color = settings_data.get('background_color', '#69E0A5')
+                self.setStyleSheet(f"background-color: {bg_color};")
+            
+            # 重新布局控件（触发resize事件）
+            if hasattr(self, 'resizeEvent'):
+                self.resize(self.width(), self.height())
+            
+            print("设置页面：已重新加载以应用最新设置")
+        except Exception as e:
+            print(f"设置页面重新加载失败: {e}")
 
 if __name__ == "__main__":
     print(0)

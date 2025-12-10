@@ -214,5 +214,4 @@ def opendocx(file_path: str) -> etree._Element:
 
 
 if __name__ == "__main__":
-
     print(0)

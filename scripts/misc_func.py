@@ -63,10 +63,10 @@ class CustomConfig:
     
     # 默认颜色配置
     DEFAULT_COLORS = {
-        "background": "#69E0A5",
-        "notification_info": "#3498db",
-        "notification_warning": "#f0da12",
-        "notification_error": "#db3444"
+        "background": "#DFDFDF",
+            "notification_info": "#C8D4DF",
+            "notification_warning": "#DFD8C6",
+            "notification_error": "#DFCCC8"
     }
     
     # 默认字体配置
@@ -96,6 +96,104 @@ class CustomConfig:
         "直接从github服务器获取（海外首选）",
         "ghfast（国内首选）"
     ]
+    
+    # 精简的窗口尺寸预设 - 只保留常用尺寸
+    WINDOW_SIZES = [
+        "1024x720",    #默认
+        "1024x768",    # 标准
+        "1280x720",    # HD
+        "1280x800",    # 宽屏
+        "1366x768",    # 笔记本常见
+        "1440x900",    # 19寸宽屏
+        "1600x900",    # 20寸宽屏
+        "1920x1080",   # Full HD
+        "1920x1200"    # WUXGA
+    ]
+    
+    @classmethod
+    def get_window_sizes(cls) -> List[str]:
+        """获取窗口尺寸列表"""
+        return cls.WINDOW_SIZES
+    
+    @classmethod
+    def validate_window_size(cls, size: str) -> bool:
+        """验证窗口尺寸是否有效"""
+        return size in cls.WINDOW_SIZES
+    
+    # 主题预设配置
+    THEME_PRESETS = {
+        "晶瓷白": {
+            "background": "#DFDFDF",
+            "notification_info": "#C8D4DF",
+            "notification_warning": "#DFD8C6",
+            "notification_error": "#DFCCC8"
+        },
+        "水墨黑": {
+            "background": "#363636",
+            "notification_info": "#1E3A5F",
+            "notification_warning": "#4A3520",
+            "notification_error": "#4B2420"
+        },
+        "爱眼绿": {
+            "background": "#C5C9C5",
+            "notification_info": "#D4E7D4",
+            "notification_warning": "#F2E8D9",
+            "notification_error": "#F2D9D9"
+        },
+        "绮彩红": {
+            "background": "#CFC9C9",
+            "notification_info": "#FFE0E6",
+            "notification_warning": "#FFE8CC",
+            "notification_error": "#FFCCCC"
+        },
+        "仁物蓝": {
+            "background": "#E5E8EF",
+            "notification_info": "#D4E1FF",
+            "notification_warning": "#FFE8D4",
+            "notification_error": "#FFD4D4"
+        }
+    }
+    
+    @classmethod
+    def get_theme_presets(cls) -> Dict[str, Dict[str, str]]:
+        """获取主题预设"""
+        return cls.THEME_PRESETS
+    
+    @classmethod
+    def get_theme_names(cls) -> List[str]:
+        """获取主题名称列表"""
+        return list(cls.THEME_PRESETS.keys())
+    
+    @classmethod
+    def get_theme_colors(cls, theme_name: str) -> Dict[str, str]:
+        """获取指定主题的颜色配置"""
+        return cls.THEME_PRESETS.get(theme_name, cls.DEFAULT_COLORS)
+    
+    @classmethod
+    def should_use_white_text(cls, background_color: str) -> bool:
+        """判断背景颜色是否需要白色文字
+        
+        Args:
+            background_color: 背景颜色（HEX格式，如#121212）
+            
+        Returns:
+            True: 需要使用白色文字
+            False: 使用默认黑色文字
+        """
+        # 移除#号并转换为RGB
+        hex_color = background_color.lstrip('#')
+        if len(hex_color) != 6:
+            return False
+            
+        try:
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            
+            # 如果RGB三项均小于96，使用白色文字
+            return r < 96 and g < 96 and b < 96
+        except (ValueError, IndexError):
+            return False
 class AudioConfig:
     """音频配置数据类"""
     
@@ -127,7 +225,7 @@ class AudioConfig:
         return (
             
             "欢迎使用源悦TTS。用户没有输入文本。"
-            "源悦TTS 2025年11月13日编译"
+            "源悦TTS 2025年12月10日编译"
         )
     
     def update_timestamp(self):
