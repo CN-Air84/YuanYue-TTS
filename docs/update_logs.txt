@@ -34,10 +34,13 @@
     RinTest    0.2.5    · 代码拆分 
     RinTest    0.2.5.1  · 预览清理重写 · 设置界面布局修改 + 添加音频拉伸开关
     SimeonTest 0.3.1    · 将弹窗改为消息提示动画
+    //SimTest0.5 第一次自定义更新
     SimeonTest 0.4      + 添加自定义页面
     SimeonTest 0.4.1    + 丰富自定义内容 · 应用标注样式
     SimeonTest 0.4.2    + 实装消息框颜色修改
+    //SimTest Re1 代码优化
     SimeonTest Re1      ! 全体重写
+    //SimTest0.5 第一次人性化更新
     SimeonTest 0.5      + 添加键控预览
     SimeonTest 0.5.1    + 键控预览实装
     SimeonTest 0.5.1.1  · 修复键控配置热切换
@@ -47,9 +50,22 @@
     SimeonTest 0.5.3.1  · 杂项程序规范化 · 界面应用标准样式
     SimeonTest 0.5.4    + 杂项页面增加“关于”
     SimeonTest 0.5Release 各功能再次检查。发布到Github。
-    //SimTest0.6没啥主题，就是小修小补之类的、然后优化某些细节。
+    //SimTest0.6 没啥主题，就是小修小补之类的、然后优化某些细节。
     SimeonTest 0.6      + 添加ghfast加速功能 · 移动音量条 - 删除音频前进功能
     SimeonTest 0.6fix   · 修复一些问题，比如根本打不开什么的
     SimeonTest 0.6.1    · 初步支持Win7系统
     SimeonTest 0.6.2    · 首页文本预览框字号加大 · 在线导入-文件下载提示框-提示文字优化（现在可以将文件名称显示全了）
+    //SimTest0.7 第一次现代化更新
+    SimeonTest 0.7      ·增加多线程下载功能 
+                        ·增加gh-proxy下载加速 
+                        · 大幅改进自定义功能
+                            现代化UI
+                            新增五套自定义主题
+                            支持选择字体
+                            自定义字体应用范围更加广泛
+                            略微删减窗口尺寸预设
+                        · 欢迎页面（待完善）
+                        · 异步加载 加快启动速度
+                        · 音频预览修复
+                        · 不再支持Win7
     
