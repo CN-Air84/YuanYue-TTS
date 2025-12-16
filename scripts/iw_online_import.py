@@ -11,12 +11,11 @@ from PyQt5.QtWidgets import (QApplication, QPushButton, QLineEdit, QTreeWidget,
                             QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
                             QTreeWidgetItem)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import  QFont
+from PyQt5.QtGui import QFont
 
 from PIL import Image
 import certifi
 import fitz  # PyMuPDF
-PYTMUPDF_AVAILABLE = True #沟槽的我VS沟槽的之前的我 lol
 
 try:
     from misc_func import SettingsManager
@@ -26,11 +25,11 @@ except ImportError:
 
 from iw_dialogs import LoadingDialog, PageOffsetDialog
 
-#AI线程
 class AIOCRWorker(QThread):
+    """AI OCR识别线程"""
     finished_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
-    debug_signal = pyqtSignal(str, str)  #类型, 内容
+    debug_signal = pyqtSignal(str, str)  # 类型, 内容
     
     def __init__(self, api_key, image_path, prompt):
         super().__init__()
@@ -75,8 +74,8 @@ class AIOCRWorker(QThread):
             
         except Exception as e:
             self.error_signal.emit(f"ChatGLM识别失败: {str(e)}")
-#在线导入对话框
 class OnlineImportDialog(QDialog):
+    """在线导入对话框"""
     def __init__(self, parent=None, window_size=None):
         super().__init__(parent)
         self.window_size = window_size
@@ -92,6 +91,7 @@ class OnlineImportDialog(QDialog):
         self.load_root_directory()
 
     def init_ui(self):
+        """初始化UI界面"""
         self.setWindowTitle("从教科书中导入 - 选择一本教科书并指定内容：")
         if self.window_size:
             self.setGeometry(self.window_size)
@@ -99,8 +99,10 @@ class OnlineImportDialog(QDialog):
             self.resize(800, 600)
         
         global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑") if self.parent_window else "微软雅黑"
+        # 获取用户设置的背景颜色，默认为#E5E8EF
+        background_color = self.settings_manager.get_Custom_value("background_color", "#E5E8EF") if self.settings_manager else "#E5E8EF"
         self.setStyleSheet(f"""
-            QDialog {{background-color: #69E0A5;}}
+            QDialog {{background-color: {background_color};}}
             QPushButton {{font-family: "{global_font}"; background-color: white; color: black;
                     border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;}}
             QPushButton:hover {{background-color: #f0f0f0;}}
@@ -113,7 +115,7 @@ class OnlineImportDialog(QDialog):
         
         main_layout = QVBoxLayout()
         
-        #路径导航和操作按钮
+        # 路径导航和操作按钮
         nav_layout = QHBoxLayout()
         
         self.back_button = QPushButton("返回上级", self)
@@ -252,7 +254,7 @@ class OnlineImportDialog(QDialog):
             
             #添加目录项
             for item in contents:
-                #跳过不该有的文件夹
+                # 跳过不需要显示的文件夹
                 if item['name'] == '.cache':
                     continue
                 elif '刷习题' in item['name']:
@@ -288,6 +290,12 @@ class OnlineImportDialog(QDialog):
         
         if github_acceleration == 1:  # ghfast镜像
             return f"https://ghfast.top/{original_url}"
+        elif github_acceleration == 2:  # ghproxy主站            
+            return f"https://gh-proxy.org/{original_url}"
+        elif github_acceleration == 3:  # ghproxy HK            
+            return f"https://hk.gh-proxy.org/{original_url}"
+        elif github_acceleration == 4:  # ghproxy edgeone
+            return f"https://edgeone.gh-proxy.org/{original_url}"
         else:  # 默认直接从GitHub获取
             return original_url
 
@@ -363,7 +371,7 @@ class OnlineImportDialog(QDialog):
         """AI处理PDF"""
         loading_dialog = LoadingDialog(self)
         text_per_line=int((len(self.selected_pdf_name)-8)/2)
-        loading_dialog.text_label.setText(f"正在处理 ……\n{self.selected_pdf_name[8:8+text_per_line]}\n{self.selected_pdf_name[8+text_per_line:9+2*text_per_line]}")#目前是前8个字符不要 苦一苦大学用户 骂名我来担
+        loading_dialog.text_label.setText(f"正在处理 ……\n{self.selected_pdf_name[8:8+text_per_line]}\n{self.selected_pdf_name[8+text_per_line:9+2*text_per_line]}")  # 显示处理中的PDF名称
         loading_dialog.show()
         QApplication.processEvents()
         try:
@@ -397,33 +405,41 @@ class OnlineImportDialog(QDialog):
             
             return None
         except Exception as e:
-            print(f"检查本地PDF失败: {e}")
+            # 检查本地PDF失败，静默处理
             return None
 
     def _download_pdf_and_process(self, user_page, extract_type, loading_dialog):
         """下载PDF并处理"""
         try:
+            #导入多线程下载模块
+            from multi_thread_downloader import download
+            
             #获取下载URL
             pdf_url = self._get_pdf_download_url(self.selected_file_info)
             
             # 根据GitHub下载加速设置构建最终下载URL
             final_download_url = self._get_download_url(pdf_url)
             
-            response = requests.get(final_download_url, stream=True, verify=certifi.where(), timeout=30)
-            response.raise_for_status()
-            
-            pdf_data = b""
-            for chunk in response.iter_content(chunk_size=8192):
-                pdf_data += chunk
-                QApplication.processEvents()
-            
             #保存PDF文件
             pdf_name = self.selected_file_info.get('name', 'unknown.pdf')
-            saved_pdf_path = self._save_pdf_to_directory(pdf_data, pdf_name)
+            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
+            saved_pdf_path = os.path.join(downloads_dir, pdf_name)
+            
+            #获取用户设置的下载线程数
+            thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 5
+            
+            #使用多线程下载器下载文件
+            download(
+                url=final_download_url,
+                save_dir=downloads_dir,
+                filename=pdf_name,
+                thread_num=thread_num,  # 使用用户设置的线程数
+                verify_ssl=False  # 禁用SSL验证以提高兼容性
+            )
             
             loading_dialog.close()
             
-            if saved_pdf_path:
+            if os.path.exists(saved_pdf_path):
                 self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
                 #询问实际页码
                 self.ask_for_page_offset(saved_pdf_path, user_page, extract_type)
@@ -453,7 +469,8 @@ class OnlineImportDialog(QDialog):
                 setting_name = f"pdfOffset_{pdf_name}"
                 self.settings_manager.set_offset_value(setting_name, str(offset))
         except Exception as e:
-            print(f"保存页码偏移量失败: {e}")
+            # 保存页码偏移量失败，静默处理
+            pass
 
     def _get_page_offset(self, pdf_name):
         """从设置文件获取页码偏移量"""
@@ -465,7 +482,7 @@ class OnlineImportDialog(QDialog):
                     return int(offset_str)
             return None
         except Exception as e:
-            print(f"获取页码偏移量失败: {e}")
+            # 获取页码偏移量失败，静默处理
             return None
 
     def process_pdf_with_offset(self, pdf_path, user_page, extract_type):
@@ -485,14 +502,15 @@ class OnlineImportDialog(QDialog):
     def _open_pdf_file(self, pdf_path):
         """使用系统默认方式打开PDF文件"""
         try:
-            if sys.platform == "win32":#windows
+            if sys.platform == "win32":  # Windows
                 os.startfile(pdf_path)
-            elif sys.platform == "darwin":#mac
+            elif sys.platform == "darwin":  # Mac
                 os.system(f"open '{pdf_path}'")
-            else:  #Linux
+            else:  # Linux
                 os.system(f"xdg-open '{pdf_path}'")
         except Exception as e:
-            print(f"打开PDF文件失败: {e}")
+            # 打开PDF文件失败，静默处理
+            pass
 
     def process_single_page(self, pdf_path, page_number, extract_type):
         """处理单页PDF"""
@@ -577,7 +595,7 @@ class OnlineImportDialog(QDialog):
             
             return filepath
         except Exception as e:
-            print(f"保存PDF失败: {str(e)}")
+            # 保存PDF失败，静默处理
             return ""
 
     def process_image_with_ai(self, image_path, extract_type, pdf_path=""):

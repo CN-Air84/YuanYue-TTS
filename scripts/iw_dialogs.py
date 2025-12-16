@@ -11,9 +11,16 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen
 
+# 尝试导入SettingsManager
+try:
+    from misc_func import SettingsManager
+    SETTINGS_AVAILABLE = True
+except ImportError:
+    SETTINGS_AVAILABLE = False
+
 
 class AnimationConfig:
-    """动画配置常量"""
+    """动画配置"""
     ANIMATION_DURATION = 35  # 动画更新间隔(毫秒)
     WIDGET_SIZE = 80  # 动画部件尺寸
     RECT_MARGIN = 10  # 矩形边距
@@ -23,7 +30,7 @@ class AnimationConfig:
 
 
 class AnimationWidget(QWidget):
-    """自定义动画部件"""
+    """动画部件"""
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -61,62 +68,80 @@ class AnimationWidget(QWidget):
 
 
 class DialogStyleManager:
-    """对话框样式管理器"""
+    """样式管理器"""
+    
+    @staticmethod
+    def _get_background_color() -> str:
+        """获取用户设置的背景颜色"""
+        if SETTINGS_AVAILABLE:
+            try:
+                settings_manager = SettingsManager()
+                return settings_manager.get_Custom_value("background_color", "#D2D4D3")
+            except:
+                pass
+        return "#D2D4D3"
     
     @staticmethod
     def get_loading_dialog_style() -> str:
         """获取加载对话框样式"""
-        return """
-            QDialog {background-color: #D2D4D3;}
-            QLabel {font-family: "微软雅黑"; font-size: 16px; color: #333333;}
+        background_color = DialogStyleManager._get_background_color()
+        return f"""
+            QDialog {{background-color: {background_color};}}
+            QLabel {{font-family: "微软雅黑"; font-size: 16px; color: #333333;}}
         """
     
     @staticmethod
     def get_page_offset_dialog_style() -> str:
         """获取页码偏移对话框样式"""
-        return """
-            QDialog {background-color: #D2D4D3;}
-            QPushButton {
+        background_color = DialogStyleManager._get_background_color()
+        return f"""
+            QDialog {{background-color: {background_color};}}
+            QPushButton {{
                 font-family: "微软雅黑"; background-color: white; color: black;
                 border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
-            }
-            QPushButton:hover {background-color: #f0f0f0;}
-            QLabel {font-family: "微软雅黑"; font-size: 14px;}
-            QLineEdit {
+            }}
+            QPushButton:hover {{background-color: #f0f0f0;}}
+            QLabel {{font-family: "微软雅黑"; font-size: 14px;}}
+            QLineEdit {{
                 font-family: "微软雅黑"; background-color: white; color: black;
                 border: 2px solid gray; border-radius: 5px; padding: 5px;
-            }
+            }}
         """
     
     @staticmethod
     def get_confirmation_dialog_style() -> str:
         """获取确认对话框样式"""
-        return """
-            QDialog {background-color: #D2D4D3;}
-            QPushButton {
+        background_color = DialogStyleManager._get_background_color()
+        return f"""
+            QDialog {{background-color: {background_color};}}
+            QPushButton {{
                 font-family: "微软雅黑"; background-color: white; color: black;
                 font-size: 10px; padding: 1px;
-            }
-            QPushButton:hover {background-color: #f0f0f0;}
-            QLabel {color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold;}
+            }}
+            QPushButton:hover {{background-color: #f0f0f0;}}
+            QLabel {{color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold;}}
         """
     
     @staticmethod
     def get_closing_dialog_style() -> str:
         """获取关闭对话框样式"""
-        return """
-            QDialog {background-color: #D2D4D3;}
-            QPushButton {
+        background_color = DialogStyleManager._get_background_color()
+        return f"""
+            QDialog {{background-color: {background_color};}}
+            QPushButton {{
                 font-family: "微软雅黑"; background-color: white; color: black;
                 font-size: 24px; padding: 1px;
-            }
-            QPushButton:hover {background-color: #f0f0f0;}
-            QLabel {color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold;}
+            }}
+            QPushButton:hover {{background-color: #f0f0f0;}}
+            QLabel {{color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold;}}
         """
 
 
 class LoadingDialog(QDialog):
-    """加载对话框"""
+    """加载对话框
+    
+    用于显示加载动画和提示信息的模态对话框。
+    """
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -165,7 +190,7 @@ class LoadingDialog(QDialog):
 
 
 class PageOffsetDialog(QDialog):
-    """页码偏移量询问对话框"""
+    """页码偏移对话框"""
     
     def __init__(self, parent: Optional[QWidget] = None, pdf_name: str = "", 
                  user_page: str = "", pdf_path: str = ""):
@@ -244,14 +269,15 @@ class PageOffsetDialog(QDialog):
     def _open_pdf_file(self, pdf_path: str) -> None:
         """使用系统默认方式打开PDF文件"""
         try:
-            if sys.platform == "win32":#windows
+            if sys.platform == "win32":  # Windows
                 os.startfile(pdf_path)
-            elif sys.platform == "darwin":#mac
+            elif sys.platform == "darwin":  # Mac
                 os.system(f"open '{pdf_path}'")
-            else:#Linux
+            else:  # Linux
                 os.system(f"xdg-open '{pdf_path}'")
         except Exception as e:
-            print(f"打开PDF文件失败: {e}")
+            # 打开PDF文件失败，静默处理
+            pass
     
     def _confirm(self) -> None:
         """确认按钮处理"""
@@ -264,7 +290,10 @@ class PageOffsetDialog(QDialog):
 
 
 class ClearConfirmationDialog(QDialog):
-    """清空确认对话框"""
+    """清空确认对话框
+    
+    用于确认用户是否要清空内容的对话框，包含随机排列的是/否按钮以防止误操作。
+    """
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -320,51 +349,9 @@ class ClearConfirmationDialog(QDialog):
         self.reject()
 
 
-class ClosingDialog(QDialog):
-    """关闭确认对话框"""
-    
-    def __init__(self, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.result = False
-        self.buttons = []
-        self._init_ui()
-        
-    def _init_ui(self) -> None:
-        """初始化UI"""
-        self.setWindowTitle("提示")  # 空标题
-        self.setFixedSize(400, 200)
-        self.setStyleSheet(DialogStyleManager.get_closing_dialog_style())
-        
-        layout = QVBoxLayout()
-        label = QLabel("点击\"确认\"以退出文本编辑界面。\n而非点击右上角的\"X\"。")
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-        
-        # 确认按钮布局
-        button_layout = QHBoxLayout()
-        self._create_confirmation_buttons(button_layout)
-        layout.addLayout(button_layout)
-        
-        self.setLayout(layout)
-    
-    def _create_confirmation_buttons(self, layout: QHBoxLayout) -> None:
-        """创建确认按钮"""
-        confirmation_texts = ['好', '知道了', '确认', '明白']
-        
-        for text in confirmation_texts:
-            button = QPushButton(text, self)
-            button.clicked.connect(self._on_confirmation_clicked)
-            self.buttons.append(button)
-            layout.addWidget(button)
-    
-    def _on_confirmation_clicked(self) -> None:
-        """确认按钮点击处理"""
-        self.result = True
-        self.accept()
-
 
 class DialogFactory:
-    """对话框启动器"""
+    """对话框工厂"""
     
     @staticmethod
     def create_loading_dialog(parent: Optional[QWidget] = None) -> LoadingDialog:
@@ -383,10 +370,7 @@ class DialogFactory:
         """创建清空确认对话框"""
         return ClearConfirmationDialog(parent)
     
-    @staticmethod
-    def create_closing_dialog(parent: Optional[QWidget] = None) -> ClosingDialog:
-        """创建关闭确认对话框"""
-        return ClosingDialog(parent)
+
 
 
 #沟槽的向后兼容
@@ -406,41 +390,4 @@ def show_clear_confirmation_dialog(parent: Optional[QWidget] = None) -> ClearCon
     return DialogFactory.create_clear_confirmation_dialog(parent)
 
 
-def show_closing_dialog(parent: Optional[QWidget] = None) -> ClosingDialog:
-    """显示关闭确认对话框（向后兼容）"""
-    return DialogFactory.create_closing_dialog(parent)
 
-
-#检查模式
-# if __name__ == "__main__":
-#     app = QApplication(sys.argv)
-#     
-#     mode=int(input("检查模式\n输入需要检查的窗口\n1-加载框\n2-页码偏移\n3-清空确认\n4-关闭确认"))
-#     #创建对话框
-#     if mode == 1:
-#         loading_dialog = DialogFactory.create_loading_dialog()
-#         loading_dialog.show()
-#         QTimer.singleShot(2000, loading_dialog.close)
-#         QTimer.singleShot(2000, app.quit)
-#     elif mode == 2:
-#         loading_dialog = DialogFactory.create_page_offset_dialog()
-#         loading_dialog.show()
-#         QTimer.singleShot(10000, loading_dialog.close)
-#         QTimer.singleShot(10000, app.quit)
-#     elif mode == 3:
-#         loading_dialog = DialogFactory.create_clear_confirmation_dialog()
-#         loading_dialog.show()
-#         QTimer.singleShot(10000, loading_dialog.close)
-#         QTimer.singleShot(10000, app.quit)
-#     else:
-#         loading_dialog = DialogFactory.create_closing_dialog()
-#         loading_dialog.show()
-#         QTimer.singleShot(10000, loading_dialog.close)
-#         QTimer.singleShot(10000, app.quit)
-#     
-#     
-#     
-#     sys.exit(app.exec_())
-
-# if __name__ == "__main__":
-#     print(0)

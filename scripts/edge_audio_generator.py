@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 @dataclass
 class GenerationConfig:
-    """音频生成配置数据类"""
+    """音频生成配置"""
     content: str
     voice: str
     speed: int
@@ -23,7 +23,7 @@ class GenerationConfig:
 
 
 class AudioParameterFormatter:
-    """音频参数格式化器"""
+    """音频参数格式化工具"""
     
     @staticmethod
     def format_parameter(value: int, unit: str) -> str:
@@ -55,19 +55,17 @@ class AudioParameterFormatter:
 
 
 class FilePathManager:
-    """文件路径管理器"""
+    """文件路径管理工具"""
     
     @staticmethod
     def ensure_save_directory_exists(save_path: str) -> bool:
         """确保保存目录存在"""
         save_dir = os.path.dirname(save_path)
         if not os.path.exists(save_dir):
-            print(f"创建保存目录: {save_dir}")
             try:
                 os.makedirs(save_dir)
                 return True
             except Exception as e:
-                print(f"创建目录失败: {e}")
                 raise
         return True
     
@@ -86,14 +84,12 @@ class FilePathManager:
 
 
 class AudioStretcher:
-    """音频拉伸处理器"""
+    """音频拉伸处理工具"""
     
     @staticmethod
     def apply_audio_stretch(input_path: str, stretch_factor: float) -> str:
         """应用音频拉伸（变速不变调）- 使用FFmpeg"""
         try:
-            print(f"应用音频拉伸: {stretch_factor}倍")
-            
             # 创建输出文件路径
             base, ext = os.path.splitext(input_path)
             output_path = f"{base}_stretched{ext}"
@@ -102,21 +98,15 @@ class AudioStretcher:
             cmd = AudioStretcher._build_ffmpeg_command(input_path, output_path, stretch_factor)
             
             # 执行命令
-            print(f"执行FFmpeg命令: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
-                print(f"FFmpeg拉伸失败: {result.stderr}")
-                print(f"FFmpeg标准输出: {result.stdout}")
                 return input_path
             
-            print(f"音频拉伸成功: {input_path} -> {output_path}")
             return output_path
             
         except Exception as e:
             # 如果拉伸失败，返回原文件
-            print(f"音频拉伸失败: {e}")
-            traceback.print_exc()
             return input_path
     
     @staticmethod
@@ -148,24 +138,11 @@ class AudioStretcher:
 
 
 class InputValidator:
-    """输入验证器"""
+    """输入验证工具"""
     
     @staticmethod
     def validate_inputs(config: GenerationConfig) -> Tuple[bool, str]:
         """验证输入参数"""
-        # 添加详细调试输出
-        print(f"=== 输入验证详情 (生成音频) ===")
-        print(f"验证语音ID: '{config.voice}'")
-        print(f"语音ID长度: {len(config.voice)}")
-        print(f"是否包含中文括号'（': {'（' in config.voice}")
-        print(f"字符编码检查:")
-        for i, char in enumerate(config.voice):
-            print(f"  字符 {i}: '{char}' (ASCII: {ord(char)})")
-        print(f"文本内容: '{config.content[:30]}...'" if len(config.content) > 30 else f"文本内容: '{config.content}'")
-        print(f"保存路径: {config.save_path}")
-        print(f"Python版本: {platform.python_version()}")
-        print(f"=======================")
-        
         empty_fields = []
         
         if not config.save_path.strip():
@@ -174,45 +151,27 @@ class InputValidator:
             empty_fields.append("语音选项")
 
         if empty_fields:
-            print("没有指定路径")
             return False, "没有指定路径"
         
         if "（" in config.voice:
-            print(f"⚠️  验证失败: 语音ID包含中文括号'（'")
             return False, "音色选择错误"
             
-        print("✅ 生成音频输入验证通过")
         return True, ""
     
     @staticmethod
     def validate_preview_inputs(config: GenerationConfig) -> Tuple[bool, str]:
         """验证预览输入参数"""
-        # 添加详细调试输出
-        print(f"=== 输入验证详情 (预览音频) ===")
-        print(f"验证语音ID: '{config.voice}'")
-        print(f"语音ID长度: {len(config.voice)}")
-        print(f"是否包含中文括号'（': {'（' in config.voice}")
-        print(f"字符编码检查:")
-        for i, char in enumerate(config.voice):
-            print(f"  字符 {i}: '{char}' (ASCII: {ord(char)})")
-        print(f"文本内容: '{config.content[:30]}...'" if len(config.content) > 30 else f"文本内容: '{config.content}'")
-        print(f"Python版本: {platform.python_version()}")
-        print(f"=======================")
-        
         if "（" in config.voice:
-            print(f"⚠️  验证失败: 语音ID包含中文括号'（'")
             return False, "音色选择错误"
         
         if not config.content.strip():
-            print("没有输入文本")
             return False, "没有输入文本"
             
-        print("✅ 预览音频输入验证通过")
         return True, ""
 
 
 class EdgeTTSGenerator:
-    """Edge-TTS 生成器"""
+    """Edge-TTS音频生成工具"""
     
     def __init__(self):
         self.parameter_formatter = AudioParameterFormatter()
@@ -229,24 +188,8 @@ class EdgeTTSGenerator:
             pitch = self.parameter_formatter.format_pitch(config.pitch)
             volume = self.parameter_formatter.format_volume(config.volume)
             
-            # 添加详细调试输出
             voice_id = config.voice
             voice_with_neural = voice_id + "Neural"
-            text_preview = text[:50] + "..." if len(text) > 50 else text
-            
-            print(f"=== Edge TTS 指令详情 ===")
-            print(f"原始语音ID: {voice_id}")
-            print(f"带Neural后缀语音ID: {voice_with_neural}")
-            print(f"语速参数: {rate}")
-            print(f"音调参数: {pitch}")
-            print(f"音量参数: {volume}")
-            print(f"文本长度: {len(text)}字符")
-            print(f"文本预览: {text_preview}")
-            print(f"保存路径: {temp_path}")
-            print(f"音频拉伸设置: 启用={config.stretch_enabled}, 拉伸因子={config.stretch_factor}")
-            print(f"Python版本: {platform.python_version()}")
-            print(f"Edge-TTS版本: {edge_tts.__version__ if hasattr(edge_tts, '__version__') else '未知'}")
-            print(f"=======================")
             
             # 尝试使用不同的语音ID格式以增强兼容性
             voice_formats = [
@@ -258,12 +201,10 @@ class EdgeTTSGenerator:
             
             # 去重处理
             voice_formats = list(dict.fromkeys(voice_formats))
-            print(f"尝试的语音ID格式列表: {voice_formats}")
             
             # 尝试不同的语音ID格式
             for i, voice_format in enumerate(voice_formats):
                 try:
-                    print(f"尝试格式 {i+1}/{len(voice_formats)}: {voice_format}")
                     #生成音频
                     communicate = edge_tts.Communicate(
                         text=text, 
@@ -274,22 +215,18 @@ class EdgeTTSGenerator:
                     )
                     
                     communicate.save_sync(temp_path)
-                    print(f"✅ 音频生成成功，使用语音格式: {voice_format}")
                     return True
                 except Exception as inner_e:
-                    print(f"❌ 格式 {voice_format} 失败: {str(inner_e)}")
                     # 如果是最后一次尝试仍然失败，则抛出原始异常
                     if i == len(voice_formats) - 1:
                         raise
             
         except Exception as e:
-            print(f"Edge-TTS生成音频失败: {e}")
-            traceback.print_exc()
             return False
 
 
 class AudioGenerator:
-    """音频生成器，负责数值合规性检测和音频生成"""
+    """音频生成主控制器"""
     
     def __init__(self):
         self.validator = InputValidator()
@@ -299,8 +236,6 @@ class AudioGenerator:
         
     def generate_audio(self, config: GenerationConfig, callback: Optional[Callable] = None) -> bool:
         """生成音频文件 - 支持回调版本"""
-        print("开始生成音频")
-    
         success, message = self.validator.validate_inputs(config)
         if not success:
             if callback:
@@ -324,9 +259,6 @@ class AudioGenerator:
             else:
                 error_msg = f"生成音频时发生错误: {str(e)}"
                 
-            print(f"错误详情: {error_type}: {str(e)}")
-            traceback.print_exc()
-            
             if callback:
                 callback(False, error_msg)
             return False
@@ -344,7 +276,6 @@ class AudioGenerator:
             # 额外的兼容性验证：检查语音ID是否包含非法字符
             if any(char in config.voice for char in ['(', ')', '（', '）', '[', ']', '{', '}', ' ', '\t', '\n']):
                 clean_voice = ''.join(char for char in config.voice if char not in ['(', ')', '（', '）', '[', ']', '{', '}', ' ', '\t', '\n'])
-                print(f"检测到语音ID包含特殊字符，已清理为: {clean_voice}")
                 # 创建配置副本并使用清理后的语音ID
                 config = GenerationConfig(
                     content=config.content,
@@ -368,21 +299,8 @@ class AudioGenerator:
             pitch = AudioParameterFormatter.format_pitch(config.pitch)
             volume = AudioParameterFormatter.format_volume(config.volume)
             
-            print("开始生成预览音频...")
-            print(f"音频拉伸设置: 启用={config.stretch_enabled}, 拉伸因子={config.stretch_factor}")
-            
             #延迟导入Edge-TTS模块
             import edge_tts
-            
-            # 添加调试输出，显示完整的指令信息
-            print(f"[DEBUG] Edge TTS Command Parameters:")
-            print(f"[DEBUG] Voice: {config.voice}")
-            print(f"[DEBUG] Voice with Neural suffix: {config.voice + 'Neural'}")
-            print(f"[DEBUG] Speed: {rate}")
-            print(f"[DEBUG] Pitch: {pitch}")
-            print(f"[DEBUG] Volume: {volume}")
-            print(f"[DEBUG] Text length: {len(text)} characters")
-            print(f"[DEBUG] Text preview: {text[:100]}..." if len(text) > 100 else f"[DEBUG] Text: {text}")
             
             #生成预览
             communicate = edge_tts.Communicate(
@@ -394,12 +312,10 @@ class AudioGenerator:
             )
             
             communicate.save_sync(temp_path)
-            print(f"预览音频已生成: {temp_path}")
             
             #应用音频拉伸
             if (hasattr(config, 'stretch_enabled') and config.stretch_enabled and 
                 hasattr(config, 'stretch_factor') and config.stretch_factor != 1.0):
-                print(f"应用音频拉伸到预览音频: 拉伸因子={config.stretch_factor}")
                 stretched_path = self.stretcher.apply_audio_stretch(temp_path, config.stretch_factor)
                 
                 #拉伸成功
@@ -410,28 +326,18 @@ class AudioGenerator:
                     except:
                         pass
                     temp_path = stretched_path
-                    print(f"使用拉伸后的预览音频: {temp_path}")
                 else:
-                    print("音频拉伸失败或未生成新文件，使用原始音频")
+                    pass  # 音频拉伸失败或未生成新文件，使用原始音频
             else:
-                print("音频拉伸未启用或拉伸因子为1.0，跳过拉伸")
-            
-            print("预览音频处理完成")
+                pass  # 音频拉伸未启用或拉伸因子为1.0，跳过拉伸
             
             success_callback(temp_path)
             
         except Exception as e:
-            print(f"生成预览音频时发生错误: {e}")
-            traceback.print_exc()
             error_callback(str(e))
 
     def _prepare_and_generate_audio(self, config: GenerationConfig):
         """准备并生成音频"""
-        print(f"音色: {config.voice}")
-        print(f"参数: 语速={config.speed}, 音调={config.pitch}, "
-              f"音量={config.volume}, 语音={config.voice}, "
-              f"保存路径={config.save_path}")
-        print(f"音频拉伸设置: 启用={config.stretch_enabled}, 拉伸因子={config.stretch_factor}")
         # 生成临时文件     
         self.file_manager.ensure_save_directory_exists(config.save_path)
         
@@ -446,7 +352,6 @@ class AudioGenerator:
         final_path = temp_path
         if (hasattr(config, 'stretch_enabled') and config.stretch_enabled and 
             hasattr(config, 'stretch_factor') and config.stretch_factor != 1.0):
-            print(f"应用音频拉伸到最终音频: 拉伸因子={config.stretch_factor}")
             stretched_path = self.stretcher.apply_audio_stretch(temp_path, config.stretch_factor)
             
             # 拉伸成功
@@ -457,19 +362,15 @@ class AudioGenerator:
                 except:
                     pass
                 final_path = stretched_path
-                print(f"使用拉伸后的最终音频: {final_path}")
             else:
-                print("音频拉伸失败或未生成新文件，使用原始音频")
+                pass  # 音频拉伸失败或未生成新文件，使用原始音频
         else:
-            print("音频拉伸未启用或拉伸因子为1.0，跳过拉伸")
+            pass  # 音频拉伸未启用或拉伸因子为1.0，跳过拉伸
         
         # 重命名
         if final_path != config.save_path:
             shutil.move(final_path, config.save_path)
-        
-        print(f"音频已生成并保存到: {config.save_path}")
 
     def _handle_generation_error(self, error: Exception):
         """处理生成错误"""
-        print(f"生成音频时发生错误: {error}")
-        traceback.print_exc()
+        pass

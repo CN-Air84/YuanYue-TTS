@@ -1,12 +1,13 @@
 # coding=utf-8
+"""
+通知系统模块
+
+提供美观的桌面通知功能，支持多种消息类型和动画效果。
+"""
+
 from PyQt5.QtWidgets import QWidget, QLabel
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, QPoint, QObject
 from PyQt5.QtGui import QFont, QMouseEvent
-
-'''
-本段代码几乎全部由DeepSeek编写，
-感谢小鲸鱼 =）
-'''
 
 # ===== 常量定义 =====
 # 动画时长（毫秒）
@@ -42,12 +43,21 @@ SWIPE_EDGE_THRESHOLD_RATIO = 0.6  # 超出边缘阈值（相对于消息框宽�
 
 
 class Notification(QWidget):
-    """消息通知组件"""
+    """
+    消息通知组件
     
-    # 定义信号
-    closed = pyqtSignal()
+    提供带有动画效果的桌面通知功能，支持手势操作和自定义样式。
+    """
+    
+    closed = pyqtSignal()  # 关闭信号
     
     def __init__(self, parent=None):
+        """
+        初始化通知组件
+        
+        Args:
+            parent: 父窗口对象
+        """
         super().__init__(parent)
         self.parent_window = parent
         self.auto_close_time = DEFAULT_AUTO_CLOSE_TIME
@@ -72,8 +82,8 @@ class Notification(QWidget):
         self._init_animations()
         
     def _init_ui(self):
-        """初始化UI"""
-        # 修复窗口层级问题：使用Dialog标志，保持在应用程序窗口前但不全局置顶
+        """初始化用户界面"""
+        
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -92,7 +102,7 @@ class Notification(QWidget):
         self.close_timer.timeout.connect(self._auto_close)
         
     def _init_animations(self):
-        """初始化动画"""
+        """初始化动画效果"""
         # 出现动画 - 位置和透明度
         self.appear_position_animation = QPropertyAnimation(self, b"pos")
         self.appear_position_animation.setDuration(ANIMATION_DURATION_APPEAR)
@@ -112,12 +122,13 @@ class Notification(QWidget):
         self.move_position_animation.finished.connect(self._on_move_finished)
         
     def show_message(self, message, message_type="info", auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
-        """显示消息
+        """
+        显示消息通知
         
         Args:
-            message: 消息内容
-            message_type: 消息类型 - "info", "warning", "error"
-            auto_close_time: 自动关闭时间(毫秒)
+            message (str): 消息内容
+            message_type (str): 消息类型 - "info", "warning", "error"
+            auto_close_time (int): 自动关闭时间(毫秒)
         """
         self.auto_close_time = auto_close_time
         
@@ -157,7 +168,7 @@ class Notification(QWidget):
             self.close_timer.start(auto_close_time)
     
     def _get_notification_colors(self):
-        """从个性化设置中获取通知颜色"""
+        """从个性化设置中获取通知颜色配置"""
         colors = {
             "info": "#3498db",      # 默认蓝色
             "warning": "#f0da12",   # 默认黄色  
@@ -182,7 +193,12 @@ class Notification(QWidget):
         return colors
     
     def _get_start_position(self):
-        """获取动画起始位置（窗口右侧外）"""
+        """
+        获取动画起始位置（窗口右侧外）
+        
+        Returns:
+            QPoint: 起始位置坐标
+        """
         if not self.parent_window:
             return QPoint(0, 0)
             
@@ -198,7 +214,12 @@ class Notification(QWidget):
         return QPoint(start_x, start_y)
     
     def _get_end_position(self):
-        """获取动画结束位置（窗口右侧外）"""
+        """
+        获取动画结束位置（窗口右侧外）
+        
+        Returns:
+            QPoint: 结束位置坐标
+        """
         if not self.parent_window:
             return QPoint(0, 0)
             
@@ -214,7 +235,7 @@ class Notification(QWidget):
         return QPoint(end_x, end_y)
     
     def _start_appear_animation(self):
-        """启动出现动画"""
+        """启动出现动画效果"""
         self.is_appearing = True
         
         # 设置动画参数
@@ -228,7 +249,15 @@ class Notification(QWidget):
         self._start_opacity_animation(0.0, 1.0, ANIMATION_DURATION_APPEAR, self._on_appear_finished)
     
     def _start_opacity_animation(self, start_opacity, end_opacity, duration, finish_callback):
-        """启动透明度动画"""
+        """
+        启动透明度动画
+        
+        Args:
+            start_opacity (float): 起始透明度
+            end_opacity (float): 结束透明度
+            duration (int): 动画持续时间
+            finish_callback (callable): 动画完成回调函数
+        """
         # 使用QPropertyAnimation进行透明度动画
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(duration)
@@ -239,7 +268,7 @@ class Notification(QWidget):
         self.opacity_animation.start()
     
     def _start_disappear_animation(self):
-        """启动消失动画"""
+        """启动消失动画效果"""
         self.is_disappearing = True
         
         # 设置动画参数
@@ -253,7 +282,12 @@ class Notification(QWidget):
         self._start_opacity_animation(1.0, 0.0, ANIMATION_DURATION_DISAPPEAR, self._on_disappear_finished)
     
     def _start_move_animation(self, new_target_position):
-        """启动上移动画"""
+        """
+        启动上移动画效果
+        
+        Args:
+            new_target_position (QPoint): 新的目标位置
+        """
         if self.is_disappearing:
             return
             
@@ -268,23 +302,23 @@ class Notification(QWidget):
         self.move_position_animation.start()
     
     def _on_appear_finished(self):
-        """出现动画完成"""
+        """出现动画完成回调"""
         self.is_appearing = False
         # 修复透明度问题：确保动画结束后不透明度为100%
         self.setWindowOpacity(1.0)
-        
+    
     def _on_disappear_finished(self):
-        """消失动画完成"""
+        """消失动画完成回调"""
         self.is_disappearing = False
         self.close()
         self.closed.emit()
     
     def _on_move_finished(self):
-        """上移动画完成"""
+        """上移动画完成回调"""
         self.is_moving = False
     
     def _adjust_size_and_position(self):
-        """调整大小和位置"""
+        """调整消息框大小和位置"""
         if not self.parent_window:
             return
             
@@ -333,7 +367,12 @@ class Notification(QWidget):
             self.move(self.target_position)
     
     def set_position_offset(self, offset):
-        """设置位置偏移"""
+        """
+        设置位置偏移量
+        
+        Args:
+            offset (int): 偏移量值
+        """
         self.base_offset = offset
         
         # 计算新的目标位置
@@ -359,7 +398,7 @@ class Notification(QWidget):
             self._start_move_animation(new_target_position)
     
     def update_position_immediately(self):
-        """立即更新位置（不带动画）"""
+        """立即更新位置（不带动画效果）"""
         # 停止所有可能的位置动画
         if self.is_appearing:
             self.appear_position_animation.stop()
@@ -378,7 +417,7 @@ class Notification(QWidget):
         self.move(self.target_position)
     
     def start_disappear_animation(self):
-        """开始消失动画"""
+        """开始消失动画效果"""
         if not self.is_disappearing and not self.is_appearing:
             self._auto_close()
     
@@ -391,12 +430,22 @@ class Notification(QWidget):
         self._start_disappear_animation()
     
     def mouseDoubleClickEvent(self, event: QMouseEvent):
-        """双击关闭消息"""
+        """
+        鼠标双击事件处理
+        
+        Args:
+            event (QMouseEvent): 鼠标事件对象
+        """
         if event.button() == Qt.LeftButton:
             self._auto_close()
     
     def closeEvent(self, event):
-        """关闭事件"""
+        """
+        窗口关闭事件处理
+        
+        Args:
+            event (QCloseEvent): 关闭事件对象
+        """
         self.close_timer.stop()
         if self.is_appearing:
             self.appear_position_animation.stop()
@@ -414,7 +463,12 @@ class Notification(QWidget):
     # ===== 点击穿透和手势滑动功能 =====
     
     def set_click_through_enabled(self, enabled):
-        """设置点击穿透是否启用"""
+        """
+        设置点击穿透是否启用
+        
+        Args:
+            enabled (bool): 是否启用点击穿透
+        """
         self.click_through_enabled = enabled
     
     def update_click_through_state(self):
@@ -429,21 +483,36 @@ class Notification(QWidget):
             self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
     
     def keyPressEvent(self, event):
-        """键盘按下事件"""
+        """
+        键盘按下事件处理
+        
+        Args:
+            event (QKeyEvent): 键盘事件对象
+        """
         if event.key() == Qt.Key_Control:
             self.ctrl_pressed = True
             self.update_click_through_state()
         super().keyPressEvent(event)
     
     def keyReleaseEvent(self, event):
-        """键盘释放事件"""
+        """
+        键盘释放事件处理
+        
+        Args:
+            event (QKeyEvent): 键盘事件对象
+        """
         if event.key() == Qt.Key_Control:
             self.ctrl_pressed = False
             self.update_click_through_state()
         super().keyReleaseEvent(event)
     
     def mousePressEvent(self, event: QMouseEvent):
-        """鼠标按下事件 - 用于手势滑动"""
+        """
+        鼠标按下事件处理 - 用于手势滑动
+        
+        Args:
+            event (QMouseEvent): 鼠标事件对象
+        """
         if event.button() == Qt.LeftButton and not self.ctrl_pressed:
             self.drag_start_pos = event.globalPos()
             self.drag_current_pos = event.globalPos()
@@ -454,7 +523,12 @@ class Notification(QWidget):
             self.close_timer.stop()
     
     def mouseMoveEvent(self, event: QMouseEvent):
-        """鼠标移动事件 - 用于手势滑动"""
+        """
+        鼠标移动事件处理 - 用于手势滑动
+        
+        Args:
+            event (QMouseEvent): 鼠标事件对象
+        """
         if self.is_dragging and not self.ctrl_pressed:
             self.drag_current_pos = event.globalPos()
             
@@ -479,7 +553,12 @@ class Notification(QWidget):
                         self.setWindowOpacity(opacity)
     
     def mouseReleaseEvent(self, event: QMouseEvent):
-        """鼠标释放事件 - 用于手势滑动"""
+        """
+        鼠标释放事件处理 - 用于手势滑动
+        
+        Args:
+            event (QMouseEvent): 鼠标事件对象
+        """
         if event.button() == Qt.LeftButton and self.is_dragging and not self.ctrl_pressed:
             self.is_dragging = False
             
@@ -510,7 +589,7 @@ class Notification(QWidget):
                     self.close_timer.start(self.auto_close_time)
     
     def _start_swipe_disappear_animation(self):
-        """启动滑动消失动画"""
+        """启动滑动消失动画效果"""
         # 计算目标位置（完全滑出屏幕右侧）
         if self.parent_window:
             parent_right = self.parent_window.geometry().right()
@@ -537,12 +616,12 @@ class Notification(QWidget):
         self.fade_animation.start()
     
     def _on_swipe_finished(self):
-        """滑动消失动画完成"""
+        """滑动消失动画完成回调"""
         self.close()
         self.closed.emit()
     
     def _start_return_animation(self):
-        """启动返回原位的动画"""
+        """启动返回原位的动画效果"""
         return_animation = QPropertyAnimation(self, b"pos")
         return_animation.setDuration(300)
         return_animation.setEasingCurve(QEasingCurve.OutCubic)
@@ -559,9 +638,19 @@ class Notification(QWidget):
 
 
 class NotificationManager(QObject):
-    """消息管理器"""
+    """
+    消息管理器
+    
+    管理多个通知消息的显示、位置和生命周期。
+    """
     
     def __init__(self, parent_window):
+        """
+        初始化消息管理器
+        
+        Args:
+            parent_window: 父窗口对象
+        """
         super().__init__()
         self.parent_window = parent_window
         self.notifications = []
@@ -572,12 +661,13 @@ class NotificationManager(QObject):
             parent_window.installEventFilter(self)
     
     def show_message(self, message, message_type="info", auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
-        """显示消息
+        """
+        显示消息通知
         
         Args:
-            message: 消息内容
-            message_type: 消息类型 - "I"(info), "W"(warning), "E"(error)
-            auto_close_time: 自动关闭时间(毫秒)
+            message (str): 消息内容
+            message_type (str): 消息类型 - "I"(info), "W"(warning), "E"(error)
+            auto_close_time (int): 自动关闭时间(毫秒)
         """
         # 转换消息类型代码
         type_map = {
@@ -595,7 +685,7 @@ class NotificationManager(QObject):
         # 添加到消息列表
         self.notifications.append(notification)
         
-        # 立即更新所有消息位置（包括正在进入动画的消息）
+        # 立即更新所有消息位置
         self._update_positions_immediately()
         
         # 如果超过最大可见数，让最早的消息开始退出动画
@@ -607,7 +697,12 @@ class NotificationManager(QObject):
                     break
     
     def _remove_notification(self, notification):
-        """移除消息"""
+        """
+        移除指定消息
+        
+        Args:
+            notification (Notification): 要移除的通知对象
+        """
         if notification in self.notifications:
             self.notifications.remove(notification)
             self._update_positions_immediately()
@@ -634,7 +729,7 @@ class NotificationManager(QObject):
             notification.set_position_offset(offset)
     
     def update_all_positions_immediately(self):
-        """立即更新所有消息框的位置（不带动画）"""
+        """立即更新所有消息框的位置（不带动画效果）"""
         if not self.parent_window:
             return
             
@@ -666,7 +761,16 @@ class NotificationManager(QObject):
         self.notifications.clear()
     
     def eventFilter(self, obj, event):
-        """事件过滤器，用于监听父窗口移动和调整大小事件"""
+        """
+        事件过滤器，用于监听父窗口移动和调整大小事件
+        
+        Args:
+            obj: 事件对象
+            event: 事件类型
+            
+        Returns:
+            bool: 是否继续处理事件
+        """
         from PyQt5.QtCore import QEvent
         if obj == self.parent_window and (event.type() == QEvent.Move or event.type() == QEvent.Resize):
             # 父窗口移动或调整大小时，立即更新所有消息位置（不带动画）
@@ -675,35 +779,82 @@ class NotificationManager(QObject):
 
 
 class NotificationFactory:
-    """通知工厂类 - 提供创建通知的便捷方法"""
+    """
+    通知工厂类
+    
+    提供创建不同类型通知的便捷方法。
+    """
     
     @staticmethod
     def create_info_notification(manager, message, auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
-        """创建信息通知"""
+        """
+        创建信息类型通知
+        
+        Args:
+            manager (NotificationManager): 通知管理器实例
+            message (str): 消息内容
+            auto_close_time (int): 自动关闭时间(毫秒)
+        """
         manager.show_message(message, "info", auto_close_time)
     
     @staticmethod
     def create_warning_notification(manager, message, auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
-        """创建警告通知"""
+        """
+        创建警告类型通知
+        
+        Args:
+            manager (NotificationManager): 通知管理器实例
+            message (str): 消息内容
+            auto_close_time (int): 自动关闭时间(毫秒)
+        """
         manager.show_message(message, "warning", auto_close_time)
     
     @staticmethod
     def create_error_notification(manager, message, auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
-        """创建错误通知"""
+        """
+        创建错误类型通知
+        
+        Args:
+            manager (NotificationManager): 通知管理器实例
+            message (str): 消息内容
+            auto_close_time (int): 自动关闭时间(毫秒)
+        """
         manager.show_message(message, "error", auto_close_time)
     
     @staticmethod
     def create_short_notification(manager, message, message_type="info"):
-        """创建短时通知（1.5秒）"""
+        """
+        创建短时通知（1.5秒）
+        
+        Args:
+            manager (NotificationManager): 通知管理器实例
+            message (str): 消息内容
+            message_type (str): 消息类型
+        """
         manager.show_message(message, message_type, 1500)
     
     @staticmethod
     def create_long_notification(manager, message, message_type="info"):
-        """创建长时通知（5秒）"""
+        """
+        创建长时通知（5秒）
+        
+        Args:
+            manager (NotificationManager): 通知管理器实例
+            message (str): 消息内容
+            message_type (str): 消息类型
+        """
         manager.show_message(message, message_type, 5000)
 
 
 # 向后兼容的便捷函数
 def show_notification(manager, message, message_type="I", auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
-    """显示通知的便捷函数（向后兼容）"""
+    """
+    显示通知的便捷函数（向后兼容）
+    
+    Args:
+        manager (NotificationManager): 通知管理器实例
+        message (str): 消息内容
+        message_type (str): 消息类型 - "I"(info), "W"(warning), "E"(error)
+        auto_close_time (int): 自动关闭时间(毫秒)
+    """
     manager.show_message(message, message_type, auto_close_time)

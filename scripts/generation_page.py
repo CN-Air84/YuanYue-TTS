@@ -19,7 +19,7 @@ it looks neat, though.
 '''
 
 class GenerationSignals(QObject):
-    """生成页面信号类，用于线程安全通信"""
+    """生成页面信号类"""
     
     generation_complete = pyqtSignal(bool, str)
     preview_generated = pyqtSignal(str)
@@ -28,7 +28,7 @@ class GenerationSignals(QObject):
 
 
 class ParameterControl:
-    """参数控制类 - 管理单个参数的控制组件"""
+    """参数控制类"""
     
     def __init__(self, parent, name: str, display_name: str, min_val: int, max_val: int, 
                  callback: Callable, initial_value: int = 0):
@@ -541,7 +541,7 @@ class GenerationControl:
 
 
 class GenerationPage(QWidget):
-    """生成页面 - 重构为模块化结构"""
+    """生成页面"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -721,9 +721,10 @@ class GenerationPage(QWidget):
             # 更新字体设置
             if hasattr(self, '_update_fonts'):
                 self._update_fonts()
-            print(f"生成页面：字体已更新 - {font_data}")
+            # 字体更新成功
         except Exception as e:
-            print(f"生成页面字体更新失败: {e}")
+            # 字体更新失败处理
+            pass
     
     def _on_theme_changed_from_shared_memory(self, theme_data):
         """从共享内存接收主题更改"""
@@ -731,9 +732,10 @@ class GenerationPage(QWidget):
             # 应用背景颜色
             bg_color = theme_data.get('background_color', '#69E0A5')
             self.setStyleSheet(f"background-color: {bg_color};")
-            print(f"生成页面：主题已更新 - {theme_data}")
+            # 主题更新成功
         except Exception as e:
-            print(f"生成页面主题更新失败: {e}")
+            # 主题更新失败处理
+            pass
     
     def _on_window_size_changed_from_shared_memory(self, width, height):
         """从共享内存接收窗口尺寸更改"""
@@ -742,20 +744,22 @@ class GenerationPage(QWidget):
             if hasattr(self, 'resizeEvent'):
                 # 触发重新布局
                 self.resize(self.width(), self.height())
-            print(f"生成页面：窗口尺寸已更新 - {width}x{height}")
+            # 窗口尺寸更新成功
         except Exception as e:
-            print(f"生成页面窗口尺寸更新失败: {e}")
+            # 窗口尺寸更新失败处理
+            pass
     
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置更改"""
         try:
             if page_name == 'custom_page':
                 # 如果是来自个性化页面的设置更改，更新相关设置
-                print(f"生成页面：接收到个性化页面设置更新 - {settings_data}")
+                # 接收个性化页面设置更新
                 # 重新加载页面以应用新设置
                 self._reload_page(settings_data)
         except Exception as e:
-            print(f"生成页面设置更新失败: {e}")
+            # 设置更新失败处理
+            pass
     
     def _reload_page(self, settings_data=None):
         """重新加载页面以应用最新设置"""
@@ -772,9 +776,10 @@ class GenerationPage(QWidget):
             if hasattr(self, 'resizeEvent'):
                 self.resize(self.width(), self.height())
             
-            print("生成页面：已重新加载以应用最新设置")
+            # 页面重新加载成功
         except Exception as e:
-            print(f"生成页面重新加载失败: {e}")
+            # 页面重新加载失败处理
+            pass
 
     def _layout_volume_controls(self, width, height, n, m, scale_factor, right_offset, progress_y, control_buttons_y, control_button_height):
         """布局音量控制控件"""
@@ -864,7 +869,7 @@ class GenerationPage(QWidget):
     # 音频预览相关方法
     def _generate_preview_audio(self):
         """生成预览音频"""
-        print("开始生成预览音频")
+        # 开始生成预览音频
         
         # 修复问题①：如果文本框没有文本，使用默认文本
         if not self.config.content.strip():
@@ -873,7 +878,7 @@ class GenerationPage(QWidget):
             self.config.content = default_config.content
             # 更新文本框显示
             self.text_edit_section.set_text(self.config.content)
-            print(f"使用默认文本: {self.config.content}")
+            # 使用默认文本
         
         if not self._validate_preview_inputs():
             return
@@ -907,7 +912,7 @@ class GenerationPage(QWidget):
         # 使用新的消息系统
         self.parent_window.notification_manager.show_message("预览音频生成完成", "I", 3000)
         
-        print(f"预览音频生成完成: {file_path}")
+        # 预览音频生成完成
 
     def _handle_preview_error_thread(self, error: str):
         """处理预览错误 - 线程版本"""
@@ -916,7 +921,7 @@ class GenerationPage(QWidget):
     @pyqtSlot(str)
     def _handle_preview_error_safe(self, error: str):
         """处理预览错误 - 线程安全版本"""
-        print(f"生成预览音频时发生错误: {error}")
+        # 生成预览音频时发生错误
         self.preview_control.preview_button.setEnabled(True)
         self.preview_control.update_preview_button_state(False, False)
         self.parent_window.has_preview = False
@@ -927,7 +932,7 @@ class GenerationPage(QWidget):
     # 音频生成相关方法
     def _generate_audio(self):
         """生成音频文件 - 异步版本"""
-        print("开始生成音频")
+        # 开始生成音频
         
         if not self._validate_inputs():
             return
@@ -961,11 +966,11 @@ class GenerationPage(QWidget):
         if success:
             # 使用新的消息系统
             self.parent_window.notification_manager.show_message("音频成功生成并保存", "I", 3000)
-            print("音频生成成功")
+            # 音频生成成功
         else:
             # 使用新的消息系统
             self.parent_window.notification_manager.show_message(f"音频生成失败: {message}", "E", 5000)
-            print(f"音频生成失败: {message}")
+            # 音频生成失败
 
     # 验证方法
     def _validate_preview_inputs(self) -> bool:
@@ -974,7 +979,7 @@ class GenerationPage(QWidget):
         if not success:
             # 使用新的消息系统
             self.parent_window.notification_manager.show_message(message, "W", 5000)
-            print(message)
+            # 验证失败
             return False
         return True
 
@@ -984,7 +989,7 @@ class GenerationPage(QWidget):
         if not success:
             # 使用新的消息系统
             self.parent_window.notification_manager.show_message(message, "W", 5000)
-            print(message)
+            # 验证失败
             return False
         return True
 
@@ -1029,4 +1034,4 @@ class GenerationPage(QWidget):
         return ContentHasher.get_cache_key(self.config)
 
 if __name__ == "__main__":
-    print(0)
+    pass

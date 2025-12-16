@@ -43,7 +43,7 @@ def setup_encoding():
 setup_encoding()
 
 class AsyncInitializer:
-    """异步初始化管理器（使用QTimer在主线程中延迟初始化）"""
+    """异步初始化管理器"""
     
     def __init__(self, parent_window):
         self.parent_window = parent_window
@@ -54,21 +54,17 @@ class AsyncInitializer:
     
     def start(self):
         """开始异步初始化"""
-        print("开始异步初始化...")
         self.timer.start(100)  # 100ms后开始第一个步骤
     
     def _process_initialization(self):
         """处理初始化步骤"""
         if self.current_step == 0:
-            print("异步初始化: 正在初始化选项卡页面...")
             self.parent_window._async_create_tab_pages()
             self.current_step += 1
             self.timer.start(50)  # 50ms后开始下一个步骤
         elif self.current_step == 1:
-            print("异步初始化: 正在初始化非关键组件...")
             self.parent_window._async_init_non_critical_components()
             self.current_step += 1
-            print("异步初始化完成")
             self.timer.stop()
             self.parent_window._on_async_finished()
 
@@ -84,7 +80,7 @@ class FontManager:
         self.default_height = 720
     
     def calculate_font_sizes(self) -> tuple:
-        """计算字体大小"""
+        """计算适应窗口大小的字体尺寸"""
         current_width = self.parent_window.width()
         current_height = self.parent_window.height()
         width_ratio = current_width / self.default_width
@@ -98,54 +94,59 @@ class FontManager:
         return base_font_size, other_font_size, tab_font_size
     
     def update_all_fonts(self):
-        """更新字体"""
+        """更新所有组件的字体"""
         base_font_size, other_font_size, tab_font_size = self.calculate_font_sizes()
         
-        #主窗口
+        # 设置主窗口字体
         base_font = QFont("微软雅黑", base_font_size)
         self.parent_window.setFont(base_font)
         
-        #选项卡
+        # 更新选项卡字体
         tab_font = QFont("微软雅黑", tab_font_size)
         if hasattr(self.parent_window, 'tab_manager'):
             self.parent_window.tab_manager.update_tab_fonts(tab_font)
-        #生成页面
+            
+        # 更新生成页面字体
         if hasattr(self.parent_window, 'generation_page') and self.parent_window.generation_page:
             self._update_generation_page_fonts(other_font_size)
     
     def _update_generation_page_fonts(self, other_font_size: int):
-        """更新生成页面字体"""
+        """更新生成页面各组件字体"""
         page = self.parent_window.generation_page
         other_font = QFont("微软雅黑", other_font_size)
-        #按钮
+        
+        # 更新按钮字体
         self._update_all_buttons_font(page, other_font)
-        #参数控制标签
+        
+        # 更新参数控制标签字体
         if hasattr(page, 'parameter_controls'):
             for control in page.parameter_controls.values():
                 if hasattr(control, 'label'):
                     control.label.setFont(other_font)
-        #加减按钮
+                    
+        # 更新参数控制加减按钮字体
         if hasattr(page, 'parameter_controls'):
             for control in page.parameter_controls.values():
                 if hasattr(control, 'plus_button'):
                     control.plus_button.setFont(other_font)
                 if hasattr(control, 'minus_button'):
                     control.minus_button.setFont(other_font)
-        #其他控件
+                    
+        # 更新其他控件字体
         other_widgets = ['combo_box', 'checkbox', 'hint_label']
         for widget_name in other_widgets:
             if hasattr(page, widget_name):
                 widget = getattr(page, widget_name)
                 widget.setFont(other_font)
         
-        # 文本编辑框
+        # 更新文本编辑框字体
         if hasattr(page, 'text_edit_section'):
             text_edit_font = QFont("微软雅黑", 14)
             page.text_edit_section.text_edit.setFont(text_edit_font)
     
     def _update_all_buttons_font(self, page, font):
-        """更新所有按钮字体"""
-        #预览控制
+        """更新页面中所有按钮的字体"""
+        # 更新预览控制按钮字体
         if hasattr(page, 'preview_control'):
             preview_control = page.preview_control
             button_attrs = ['preview_button', 'pause_button', 'stop_button']
@@ -154,19 +155,19 @@ class FontManager:
                     button = getattr(preview_control, attr)
                     button.setFont(font)
         
-        #生成控制
+        # 更新生成控制按钮字体
         if hasattr(page, 'generation_control'):
             generation_control = page.generation_control
             if hasattr(generation_control, 'button'):
                 generation_control.button.setFont(font)
         
-        #音色选择
+        # 更新音色选择下拉框字体
         if hasattr(page, 'voice_selection'):
             voice_selection = page.voice_selection
             if hasattr(voice_selection, 'combo_box'):
                 voice_selection.combo_box.setFont(font)
         
-        #参数控制加减
+        # 更新参数控制加减按钮字体
         if hasattr(page, 'parameter_controls'):
             for control in page.parameter_controls.values():
                 if hasattr(control, 'plus_button'):
@@ -188,13 +189,16 @@ class TabManager:
         self.tab_buttons = []
         self.tab_configs = []
         self.current_tab_index = 0
+        
     def register_tab(self, name, display_name, widget_class):
-        """注册新卡"""
+        """注册新选项卡"""
         self.tab_configs.append(TabConfig(name, display_name, widget_class))
+        
     def setup_tabs(self):
         """设置选项卡"""
         self._create_tab_buttons()
         self._create_tab_pages()
+        
     def _create_tab_buttons(self):
         """创建选项卡按钮"""
         for i, tab_config in enumerate(self.tab_configs):
@@ -210,7 +214,7 @@ class TabManager:
             page_widget = tab_config.widget_class(self.parent_window)
             self.parent_window.stacked_widget.addWidget(page_widget)
     def switch_to_tab(self, index):
-        """换卡"""
+        """切换到指定索引的选项卡"""
         if index == self.current_tab_index:
             return
         
@@ -219,9 +223,11 @@ class TabManager:
             # 页面尚未创建，需要同步创建
             self._create_tab_page(index)
         
+        # 更新按钮选中状态
         for i, btn in enumerate(self.tab_buttons):
             btn.setChecked(i == index)
-        #换页
+            
+        # 切换页面
         self.parent_window.stacked_widget.setCurrentIndex(index)
         self.current_tab_index = index
         self._on_tab_switched(index)
@@ -233,7 +239,7 @@ class TabManager:
             page_widget = tab_config.widget_class(self.parent_window)
             self.parent_window.stacked_widget.addWidget(page_widget)
     def _on_tab_switched(self, index):
-        """换卡后处理"""
+        """选项卡切换后处理"""
         # 获取当前页面的配置
         if index < len(self.tab_configs):
             tab_config = self.tab_configs[index]
@@ -251,7 +257,7 @@ class TabManager:
             QPushButton:hover { background-color: rgb(220, 220, 220); }
         """
     def resize_tabs(self, width, height):
-        """调整布局"""
+        """调整选项卡按钮布局"""
         tab_bar_width = int(width * 0.1)
         tab_button_height = int(height * 0.08)
         tab_button_width = int(tab_bar_width * 0.8)
@@ -263,7 +269,7 @@ class TabManager:
             btn_y = start_y + i * (tab_button_height + tab_spacing)
             btn.setGeometry(btn_x, btn_y, tab_button_width, tab_button_height)
     def update_tab_fonts(self, font):
-        """字体"""
+        """更新选项卡按钮字体"""
         for btn in self.tab_buttons:
             btn.setFont(font)
 class MainWindow(QWidget):
@@ -313,34 +319,28 @@ class MainWindow(QWidget):
         self.font_manager.update_all_fonts()
     
     def _setup_window_properties(self):
-        """设置窗口属性"""
+        """设置窗口基本属性"""
         self.setWindowTitle('文本转语音')
         self.setGeometry(300, 300, self.default_width, self.default_height)
         self.setMinimumSize(1080, 720)
         # 使用设置中的背景色，如果没有设置则使用默认值
-        background_color = self.settings_manager.get_Custom_value("background_color", "#69E0A5")
+        background_color = self.settings_manager.get_Custom_value("background_color", "#E5E8EF")
         self.setStyleSheet(f"background-color: {background_color};")
         initial_font = QFont("微软雅黑", 26)
         self.setFont(initial_font)
-        # 焦点策略
+        # 设置焦点策略
         self.setFocusPolicy(Qt.StrongFocus)
         
-        # 广播窗口大小变化到共享内存
+        # 广播初始窗口大小到共享内存
         self.shared_manager.broadcast_window_size_change(self.default_width, self.default_height)
     def _setup_tabs(self):
         """设置选项卡系统"""
-
-
-        '''----------'''
-
         # 注册选项卡
         self.tab_manager.register_tab('welcome', '欢迎', self._get_welcome_page_class())
         self.tab_manager.register_tab('generation', '生成', self._get_generation_page_class())
         self.tab_manager.register_tab('settings', '设置', self._get_settings_page_class())
         self.tab_manager.register_tab('personalization', '个性化', self._get_personalization_page_class()) 
         self.tab_manager.register_tab('misc', '杂项', self._get_misc_page_class())
-
-        '''----------'''
 
         # 只创建选项卡按钮，页面将在异步中创建
         self.tab_manager._create_tab_buttons()
@@ -368,7 +368,7 @@ class MainWindow(QWidget):
     
     def _on_async_finished(self):
         """异步初始化完成"""
-        print("异步初始化完成")
+        pass
         self._async_initializer = None
     
     def _async_create_tab_pages(self):
@@ -408,17 +408,18 @@ class MainWindow(QWidget):
         except (ValueError, TypeError):
             self.audio_preview.set_keyboard_scheme(1)
     def resizeEvent(self, event):
-        """处理窗口大小变化"""
+        """处理窗口大小变化事件"""
         width = self.width()
         height = self.height()
         tab_bar_width = int(width * 0.1)
-        content_width = width - tab_bar_width - 10 #这个是右侧间隔
+        content_width = width - tab_bar_width - 10  # 右侧间隔
         self.tab_manager.resize_tabs(width, height)
         self.stacked_widget.setGeometry(tab_bar_width, 0, content_width, height)
         self.font_manager.update_all_fonts()
         
         # 广播窗口大小变化到共享内存
         self.shared_manager.broadcast_window_size_change(width, height)
+        super().resizeEvent(event)
     def keyPressEvent(self, event):
         """处理键盘按键事件"""
         self.audio_preview.handle_key_event(event)
@@ -426,10 +427,11 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         """处理窗口关闭事件"""
-        #强制释放音频
+        # 强制释放音频资源
         self.audio_preview.force_stop_audio()
         self.audio_preview.cleanup_preview_audio()
         event.accept()
+        super().closeEvent(event)
     @property
     def audio_generator(self):
         """获取音频生成器（延迟加载）"""

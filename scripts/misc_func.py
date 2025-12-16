@@ -5,10 +5,8 @@ import datetime
 from typing import Optional, Dict, Any, List, Tuple  # 新增Tuple导入
 import configparser
 '''
-本段代码在SimeonTest Re1时使用 DeepSeek 重构，
-DeepSeek送我的屎山，哎哟我，太香了👍👍👍
-This code uses DeepSeek refactoring at Simeontest RE1,
-deepseek sent me a shit mountain. Oh, my God, it smells so good.(lol)
+本段代码在SimeonTest Re1时使用 DeepSeek 重构
+This code uses DeepSeek refactoring at Simeontest RE1
 '''
 class VoiceConfig:
     """音色配置类 - 管理所有音色相关配置"""
@@ -57,8 +55,7 @@ class VoiceConfig:
                 
         return categories
 class CustomConfig:
-    """个性化配置常量
-        一坨屎山🤣"""
+    """个性化配置常量"""
     
     
     # 默认颜色配置
@@ -94,12 +91,15 @@ class CustomConfig:
     # GitHub下载加速选项
     GITHUB_ACCELERATION_OPTIONS = [
         "直接从github服务器获取（海外首选）",
-        "ghfast（国内首选）"
+        "ghfast（中国大陆首选）",
+        "ghproxy 主站（CloudFlare CDN，大陆备用）",
+        "ghproxy HK（港澳台首选）",
+        "ghproxy edgeone（备用）"
     ]
     
     # 精简的窗口尺寸预设 - 只保留常用尺寸
     WINDOW_SIZES = [
-        "1024x720",    #默认
+        "1024x720",    # 默认
         "1024x768",    # 标准
         "1280x720",    # HD
         "1280x800",    # 宽屏
@@ -223,7 +223,6 @@ class AudioConfig:
     def _generate_default_content(self, now: datetime.datetime) -> str:
         """生成默认文本内容"""
         return (
-            
             "欢迎使用源悦TTS。用户没有输入文本。"
             "源悦TTS 2025年12月10日编译"
         )
@@ -277,7 +276,7 @@ class StringConfigSection(ConfigSection):
                 return self.settings_manager.config[self.section_name].get(key, default)
             return default
         except Exception as e:
-            print(f"读取配置失败 [{self.section_name}.{key}]: {e}")
+            # 静默处理配置读取错误，返回默认值
             return default
     
     def set_value(self, key: str, value: str) -> bool:
@@ -289,7 +288,7 @@ class StringConfigSection(ConfigSection):
             self.settings_manager.config[self.section_name][key] = str(value)
             return self.settings_manager._save_config()
         except Exception as e:
-            print(f"设置配置失败 [{self.section_name}.{key}]: {e}")
+            # 静默处理配置设置错误
             return False
 class IntConfigSection(ConfigSection):
     """整数配置段落"""
@@ -539,6 +538,28 @@ class SettingsManager:
     def set_github_acceleration(self, value: int) -> bool:
         """设置GitHub下载加速选项"""
         return self.Custom.set_value('github_acceleration', str(value))
+    
+    # 下载线程数相关方法（新增）
+    def get_download_thread_num(self) -> int:
+        """获取下载线程数"""
+        try:
+            thread_num_str = self.Custom.get_value('download_thread_num', '5')
+            thread_num = int(thread_num_str) if thread_num_str else 5
+            # 确保线程数在合理范围内
+            return max(1, min(32, thread_num))
+        except (ValueError, TypeError):
+            return 5
+    
+    def set_download_thread_num(self, value: int) -> bool:
+        """设置下载线程数"""
+        try:
+            # 验证输入值
+            thread_num = int(value)
+            if not 0 < thread_num <= 32:
+                return False
+            return self.Custom.set_value('download_thread_num', str(thread_num))
+        except (ValueError, TypeError):
+            return False
     
     # 工具方法
     def get_all_settings(self) -> Dict[str, Dict[str, str]]:

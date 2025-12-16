@@ -21,7 +21,7 @@ class TextImportConfig:
     """文本导入配置类"""
     
     DEFAULT_STYLE = """
-        QDialog {background-color: #69E0A5;}
+        QDialog {background-color: #E5E8EF;}
         QPushButton {
             font-family: "微软雅黑"; background-color: white; color: black;
             border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
@@ -231,7 +231,7 @@ class TextImportDialog(QDialog):
         self.text_content = ""
         self.initial_text = initial_text
         
-        #初始化管理器
+        # 初始化管理器
         self.settings_manager = SettingsManager() if SETTINGS_AVAILABLE else None
         self.import_manager = TextImportManager(self.settings_manager)
         
@@ -241,19 +241,38 @@ class TextImportDialog(QDialog):
     def _init_ui(self) -> None:
         """初始化UI"""
         self.setWindowTitle("文本导入")
-        self.setStyleSheet(TextImportConfig.DEFAULT_STYLE)
+        # 获取用户设置的背景颜色，默认为#E5E8EF
+        background_color = self.settings_manager.get_Custom_value("background_color", "#E5E8EF") if self.settings_manager else "#E5E8EF"
+        # 动态生成样式表
+        dynamic_style = f"""
+        QDialog {{background-color: {background_color};}}
+        QPushButton {{
+            font-family: "微软雅黑"; background-color: white; color: black;
+            border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
+        }}
+        QPushButton:hover {{background-color: #f0f0f0;}}
+        QTextEdit {{
+            background-color: white; color: black; border: 2px solid gray; 
+            border-radius: 10px; font-family: "微软雅黑"; font-size: 14px;
+        }}
+        QComboBox {{
+            font-family: "微软雅黑"; background-color: white; color: black;
+            border: 2px solid gray; border-radius: 10px; padding: 5px;
+        }}
+        """
+        self.setStyleSheet(dynamic_style)
         
         if self.window_size:
             self.setGeometry(self.window_size)
         
         main_layout = QVBoxLayout()
         
-        #创建文本编辑器
+        # 创建文本编辑器
         self.text_edit = QTextEdit(self)
         self.text_edit.setPlainText(self.initial_text)
         main_layout.addWidget(self.text_edit)
         
-        #创建按钮布局
+        # 创建按钮布局
         button_layout = QHBoxLayout()
         self._create_import_buttons(button_layout)
         main_layout.addLayout(button_layout)
@@ -280,7 +299,7 @@ class TextImportDialog(QDialog):
     
     def _setup_connections(self) -> None:
         """设置信号连接"""
-        #初始化控制器和处理器
+        # 初始化控制器和处理器
         self.text_controller = TextEditController(self.text_edit)
         self.button_handler = ImportButtonHandler(
             self, self.text_controller, self.import_manager
@@ -336,8 +355,6 @@ class TextImportDialogFactory:
         result = dialog.exec_()
         return dialog.get_imported_text() if result == QDialog.Accepted else None
 
-#向后兼容
-#我真的是服了
 def show_text_import_dialog(parent: Optional[QWidget] = None,
                            window_size: Optional[QRect] = None,
                            initial_text: str = "") -> Optional[str]:
@@ -357,10 +374,3 @@ def show_text_import_dialog(parent: Optional[QWidget] = None,
     )
 
 
-#检查模式
-# if __name__ == "__main__":
-#     app = QApplication(sys.argv)
-#     imported_text = show_text_import_dialog(initial_text="这是初始文本")
-#     print(f"导入的文本: {imported_text}")
-#     
-#     sys.exit(app.exec_())

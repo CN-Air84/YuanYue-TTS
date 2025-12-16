@@ -20,10 +20,8 @@ class AudioState:
     current_audio_length: float = 0.0
     current_audio_position: float = 0.0
     volume: float = 1.0
-    # 新增时间跟踪字段 - 简化时间状态管理
-    time_reference: float = 0.0      # 时间基准点：系统时间 - 音频位置
-    # 新增跳转冷却期字段
-    seek_cooldown_until: float = 0.0  # 跳转冷却期结束时间
+    time_reference: float = 0.0
+    seek_cooldown_until: float = 0.0 
 
 
 class KeyboardControlScheme:
@@ -52,7 +50,6 @@ class KeyboardControlScheme:
 class PygameManager:
     def __init__(self):
         self.pygame_initialized = False
-        # 延迟初始化：不在构造函数中立即初始化pygame
         
     def _init_pygame(self) -> bool:
         if not self.pygame_initialized:
@@ -335,26 +332,24 @@ class AudioPreview:
             self._seek_relative(-5)
 
     def _perform_seek(self, target_position: float):
-        """核心跳转方法 - 统一处理所有跳转逻辑，解决时间基准不一致问题"""
+        """执行音频跳转操作，确保时间基准一致性"""
         if not self.state.is_playing or self.state.current_audio_length <= 0:
             return
-            
-        # 边界保护：防止越界跳转
         target_position = max(0.0, min(target_position, self.state.current_audio_length))
         
-        print(f"[DEBUG] 跳转请求: {target_position:.2f}s, 当前长度: {self.state.current_audio_length:.2f}s")
+        # 添加调试信息
+        print(f"Seeking to position: {target_position}")
         
-        # 停止当前播放
+        # 停止当前播放并重新定位
         self.pygame_manager.stop_audio()
         
-        # 更新时间基准点：当前时间 - 目标位置，确保时间计算一致性
         self.state.time_reference = time.time() - target_position
         self.state.current_audio_position = target_position
         
         # 从新位置开始播放
         self._play_audio_file(self.parent_window.current_audio_path, target_position)
         
-        # 设置跳转冷却期：防止频繁跳转导致状态混乱
+        # 设置跳转冷却期以防止频繁更新
         current_time = time.time()
         self.state.seek_cooldown_until = current_time + 0.3
         
@@ -362,18 +357,17 @@ class AudioPreview:
         self.audio_signals.position_changed.emit(target_position)
 
     def _seek_relative(self, seconds: float = 5.0):
-        """相对跳转 - 基于当前位置进行跳转，解决后退时间不准确问题"""
+        """相对跳转 - 基于当前位置进行跳转"""
         if not self.state.is_playing or self.state.current_audio_length <= 0:
             return
             
-        # 获取当前播放位置（使用重构后的位置计算方法）
+        # 获取当前播放位置
         current_position = self.get_current_playback_position()
-        print(f"[DEBUG] 相对跳转: 当前位置={current_position:.2f}s, 跳转秒数={seconds}s")
         
         # 计算目标位置
         target_position = current_position + seconds
         
-        # 使用核心跳转方法确保时间基准一致性
+        # 执行跳转
         self._perform_seek(target_position)
         
         # 显示跳转提示
@@ -414,22 +408,17 @@ class AudioPreview:
         self._play_audio_file(self.parent_window.current_audio_path)
 
     def _play_audio_file(self, file_path: str, start_position: float = 0.0):
-        """播放音频文件 - 初始化时间基准点，确保时间一致性"""
+        """播放音频文件并初始化时间基准点"""
         try:
-            print(f"[DEBUG] 开始播放音频: {os.path.basename(file_path)}, 起始位置: {start_position:.2f}s")
-            
             if not self.pygame_manager._init_pygame():
-                print(f"[DEBUG] Pygame初始化失败")
                 return
                 
             if not self.pygame_manager.load_audio(file_path):
-                print(f"[DEBUG] 音频文件加载失败: {file_path}")
                 return
                 
             self.pygame_manager.set_volume(self.state.volume)
                 
             if not self.pygame_manager.play_audio(start_position):
-                print(f"[DEBUG] 音频播放启动失败")
                 return
             
             self.state.current_audio_length = self.pygame_manager.get_audio_length(file_path)
@@ -437,7 +426,6 @@ class AudioPreview:
             
             # 初始化时间基准点：当前时间 - 起始位置，为后续时间计算提供基准
             self.state.time_reference = time.time() - start_position
-            print(f"[DEBUG] 时间基准点初始化: {self.state.time_reference:.2f}s")
             
             self.state.is_playing = True
             self.state.is_paused = False
@@ -457,11 +445,8 @@ class AudioPreview:
                 self.audio_signals.playback_finished.emit
             )
             self.playback_monitor.start()
-            print(f"[DEBUG] 播放监控线程启动成功")
             
         except Exception as e:
-            print(f"[DEBUG] 播放音频异常: {str(e)}")
-            traceback.print_exc()
             self.parent_window.notification_manager.show_message(f"播放音频时发生错误: {str(e)}", "E", 5000)
 
     def _on_playback_finished(self):
@@ -502,11 +487,7 @@ class AudioPreview:
             self.playback_monitor = None
 
     def toggle_pause(self):
-        """暂停/继续播放 - 使用时间基准点确保状态一致性
-        
-        关键逻辑：暂停时记录位置，继续时重新计算时间基准点，
-        避免传统时间累加方式带来的累积误差
-        """
+        """暂停/继续播放 - 使用时间基准点确保状态一致性"""
         if not self.pygame_manager.pygame_initialized:
             return False
             
@@ -519,7 +500,6 @@ class AudioPreview:
             self.state.is_paused = True
             # 记录暂停时的精确位置
             self.state.current_audio_position = self.get_current_playback_position()
-            print(f"[DEBUG] 暂停播放，位置: {self.state.current_audio_position:.2f}s")
             self.parent_window.generation_page.preview_control.update_pause_button_text(True)
             self.parent_window.notification_manager.show_message("音频已暂停", "I", 1500)
             return True
@@ -528,13 +508,12 @@ class AudioPreview:
             self.pygame_manager.unpause_audio()
             self.state.is_paused = False
             self.state.time_reference = time.time() - self.state.current_audio_position
-            print(f"[DEBUG] 继续播放，新时间基准: {self.state.time_reference:.2f}s, 位置: {self.state.current_audio_position:.2f}s")
             self.parent_window.generation_page.preview_control.update_pause_button_text(False)
             self.parent_window.notification_manager.show_message("音频已继续", "I", 1500)
             return True
 
     def _update_progress(self):
-        """更新播放进度 - 基于时间基准点计算，避免状态不一致"""
+        """更新播放进度 - 基于时间基准点计算"""
         current_time = time.time()
         
         # 跳转冷却期：避免频繁更新导致的UI闪烁
@@ -546,16 +525,11 @@ class AudioPreview:
             not self.state.is_paused and 
             self.pygame_manager.pygame_initialized):
             
-            # 使用重构后的位置计算方法确保准确性
             pos = self.get_current_playback_position()
             
             if self.state.current_audio_length > 0:
                 progress = int((pos / self.state.current_audio_length) * 1000)
                 progress = max(0, min(progress, 1000))
-                
-                # 调试：检测异常进度值
-                if progress < 0 or progress > 1000:
-                    print(f"[DEBUG] 异常进度值: {progress}, 位置: {pos:.2f}s, 长度: {self.state.current_audio_length:.2f}s")
                 
                 self.parent_window.generation_page.preview_control.preview_progress.setValue(progress)
 
@@ -563,13 +537,12 @@ class AudioPreview:
         self.state.is_seeking = seeking
 
     def seek_to_position(self, position: float):
-        """跳转到指定位置 - 使用核心跳转方法确保时间基准一致性"""
+        """跳转到指定位置"""
         if (self.state.is_playing and 
             self.state.current_audio_length > 0 and 
             self.pygame_manager.pygame_initialized):
             
-            print(f"[DEBUG] 跳转到指定位置: {position:.2f}s")
-            # 使用统一的跳转逻辑避免重复代码
+            # 执行跳转
             self._perform_seek(position)
 
     def seek_to_percentage(self, percentage: float):
@@ -602,11 +575,7 @@ class AudioPreview:
         return self.state.volume
     
     def get_current_playback_position(self) -> float:
-        """获取当前播放位置 - 基于时间基准点计算，确保时间一致性
-        
-        重构说明：使用单一时间基准点替代多个时间状态字段，
-        避免暂停/播放状态切换时的时间计算错误
-        """
+        """获取当前播放位置 - 基于时间基准点计算"""
         if not self.state.is_playing or self.state.current_audio_length <= 0:
             return self.state.current_audio_position
             
@@ -621,9 +590,6 @@ class AudioPreview:
         
         # 边界保护：确保位置在音频长度范围内
         bounded_position = max(0.0, min(current_position, self.state.current_audio_length))
-        
-        if abs(current_position - bounded_position) > 0.1:  # 调试：检测边界修正
-            print(f"[DEBUG] 位置边界修正: {current_position:.2f} -> {bounded_position:.2f}s")
             
         return bounded_position
 
@@ -648,7 +614,6 @@ class AudioPreview:
             percentage = position / self.state.current_audio_length
             progress = int(percentage * 1000)
             
-            print(f"[DEBUG] 位置变化信号: {position:.2f}s -> 进度: {progress}/1000")
             self.parent_window.generation_page.preview_control.preview_progress.setValue(progress)
 
     def force_stop_audio(self):

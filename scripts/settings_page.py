@@ -1,19 +1,12 @@
 # coding=utf-8
 from PyQt5.QtWidgets import (QWidget, QPushButton, QSlider, QLineEdit, QComboBox, QLabel, QFileDialog, QCheckBox)
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIntValidator
 from misc_func import SettingsManager, CustomConfig
 from shared_memory_manager import get_shared_memory_manager
-'''
-本段代码完全由DeepSeek编写。
-AI太好用了你们知道吗
-
-This code is written entirely by DeepSeek.
-Ai is so easy to use, you know
-'''
 
 class SettingsSection:
-    """设置部分基类 - 为不同类型的设置提供统一接口"""
+    """设置部分基类，为不同类型的设置提供统一接口"""
     
     def __init__(self, parent, settings_manager):
         self.parent = parent
@@ -21,24 +14,24 @@ class SettingsSection:
         self.widgets = {}
         
     def create_ui(self):
-        """创建UI组件 - 子类必须实现"""
+        """创建UI组件，子类必须实现此方法"""
         raise NotImplementedError("子类必须实现create_ui方法")
         
     def load_settings(self):
-        """加载设置 - 子类必须实现"""
+        """加载设置，子类必须实现此方法"""
         raise NotImplementedError("子类必须实现load_settings方法")
         
     def resize_ui(self, width, height, n, m, scale_factor):
-        """调整UI布局 - 子类必须实现"""
+        """调整UI布局，子类必须实现此方法"""
         raise NotImplementedError("子类必须实现resize_ui方法")
         
     def update_fonts(self, font, small_font=None):
-        """更新字体 - 子类必须实现"""
+        """更新字体，子类必须实现此方法"""
         raise NotImplementedError("子类必须实现update_fonts方法")
 
 
 class ApiKeySection(SettingsSection):
-    """API Key设置部分"""
+    """API密钥设置部分"""
     
     def __init__(self, parent, settings_manager):
         super().__init__(parent, settings_manager)
@@ -51,7 +44,7 @@ class ApiKeySection(SettingsSection):
         ]
         
     def create_ui(self):
-        """创建API Key UI组件"""
+        """创建API密钥UI组件"""
         self.widgets['labels'] = []
         self.widgets['inputs'] = []
         
@@ -79,7 +72,7 @@ class ApiKeySection(SettingsSection):
                 self.widgets['inputs'][i].setText(api_key)
                 
     def resize_ui(self, width, height, n, m, scale_factor):
-        """调整API Key部分布局"""
+        """调整API密钥部分布局"""
         if not self.widgets.get('labels'):
             return
             
@@ -90,17 +83,17 @@ class ApiKeySection(SettingsSection):
             input_field.setGeometry(int(6 * n * scale_factor), current_y, int(8 * n * scale_factor), int(m))
             
     def update_fonts(self, font, small_font=None):
-        """更新API Key部分字体"""
+        """更新API密钥部分字体"""
         for label in self.widgets.get('labels', []):
             label.setFont(font)
         for input_field in self.widgets.get('inputs', []):
             input_field.setFont(font)
             
     def _on_api_key_changed(self, key_name, text):
-        """API Key改变时的处理"""
+        """API密钥改变时的处理"""
         success = self.settings_manager.set_api_key(key_name, text)
         if not success:
-            self.parent.parent_window.notification_manager.show_message("无法保存API Key设置", "E", 5000)
+            self.parent.parent_window.notification_manager.show_message("无法保存API密钥设置", "E", 5000)
             
     def _get_input_style(self):
         """获取输入框样式"""
@@ -637,8 +630,85 @@ class GitHubAccelerationSection(SettingsSection):
         """
 
 
+class DownloadThreadSection(SettingsSection):
+    """电子书下载线程数设置部分"""
+    
+    def __init__(self, parent, settings_manager):
+        super().__init__(parent, settings_manager)
+        
+    def create_ui(self):
+        """创建电子书下载线程数UI组件"""
+        self.widgets['download_thread_label'] = QLabel("电子书下载线程数", self.parent)
+        
+        self.widgets['download_thread_input'] = QLineEdit(self.parent)
+        self.widgets['download_thread_input'].setStyleSheet(self._get_input_style())
+        self.widgets['download_thread_input'].setValidator(QIntValidator(0, 32, self.parent))
+        self.widgets['download_thread_input'].editingFinished.connect(self._on_download_thread_changed)
+        
+    def load_settings(self):
+        """加载电子书下载线程数设置"""
+        thread_num = self.settings_manager.get_download_thread_num()
+        self.widgets['download_thread_input'].setText(str(thread_num))
+        
+    def resize_ui(self, width, height, n, m, scale_factor):
+        """调整电子书下载线程数部分布局"""
+        thread_y = int(10.5 * m)  # 放在GitHub下载加速设置下面
+        self.widgets['download_thread_label'].setGeometry(int(2 * n * scale_factor), thread_y, int(4 * n * scale_factor), int(m))
+        self.widgets['download_thread_input'].setGeometry(int(6 * n * scale_factor), thread_y, int(8 * n * scale_factor), int(m))
+        
+    def update_fonts(self, font, small_font=None):
+        """更新电子书下载线程数部分字体"""
+        self.widgets['download_thread_label'].setFont(font)
+        self.widgets['download_thread_input'].setFont(font)
+        
+    def _on_download_thread_changed(self):
+        """电子书下载线程数改变时的处理"""
+        try:
+            text = self.widgets['download_thread_input'].text().strip()
+            if not text:
+                self.parent.parent_window.notification_manager.show_message("线程数不能为空", "E", 5000)
+                return
+                
+            thread_num = int(text)
+            
+            # 验证输入范围
+            if thread_num < 0 or thread_num > 32:
+                self.parent.parent_window.notification_manager.show_message("线程数必须在0-32之间", "E", 5000)
+                # 恢复原来的值
+                old_thread_num = self.settings_manager.get_download_thread_num()
+                self.widgets['download_thread_input'].setText(str(old_thread_num))
+                return
+                
+            # 保存设置
+            success = self.settings_manager.set_download_thread_num(thread_num)
+            if not success:
+                self.parent.parent_window.notification_manager.show_message("无法保存下载线程数设置", "E", 5000)
+                
+        except ValueError:
+            self.parent.parent_window.notification_manager.show_message("请输入有效的整数", "E", 5000)
+            # 恢复原来的值
+            old_thread_num = self.settings_manager.get_download_thread_num()
+            self.widgets['download_thread_input'].setText(str(old_thread_num))
+            
+    def _get_input_style(self):
+        """获取输入框样式"""
+        return """
+            QLineEdit {
+                font-family: "微软雅黑"; background-color: white; color: black; 
+                border: 2px solid gray; border-radius: 10px; padding: 5px;
+            }
+            QLineEdit:hover {
+                background-color: #f0f0f0;
+            }
+            QLineEdit:focus {
+                border: 2px solid #4CAF50;
+                background-color: #f8f8f8;
+            }
+        """
+
+
 class SettingsPage(QWidget):
-    """设置页面 - 重构为模块化结构"""
+    """设置页面，采用模块化结构设计"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -666,7 +736,8 @@ class SettingsPage(QWidget):
             SavePathSection(self, self.settings_manager),
             SpeedSection(self, self.settings_manager),
             AudioStretchSection(self, self.settings_manager),
-            GitHubAccelerationSection(self, self.settings_manager)  # 新增GitHub下载加速部分
+            GitHubAccelerationSection(self, self.settings_manager),  # GitHub下载加速部分
+            DownloadThreadSection(self, self.settings_manager)  # 新增电子书下载线程数部分
         ]
         
         # 创建各部分的UI
@@ -738,22 +809,18 @@ class SettingsPage(QWidget):
     
     def _on_font_changed_from_shared_memory(self, font_data):
         """从共享内存接收字体更改"""
-        try:
-            # 更新字体设置
-            self._update_fonts()
-            print(f"设置页面：字体已更新 - {font_data}")
-        except Exception as e:
-            print(f"设置页面字体更新失败: {e}")
+        # 更新字体设置
+        self._update_fonts()
     
     def _on_theme_changed_from_shared_memory(self, theme_data):
         """从共享内存接收主题更改"""
         try:
             # 应用背景颜色
-            bg_color = theme_data.get('background_color', '#69E0A5')
+            bg_color = theme_data.get('background_color', '#E5E8EF')
             self.setStyleSheet(f"background-color: {bg_color};")
-            print(f"设置页面：主题已更新 - {theme_data}")
         except Exception as e:
-            print(f"设置页面主题更新失败: {e}")
+            # 主题更新失败，记录错误但不中断程序运行
+            pass
     
     def _on_window_size_changed_from_shared_memory(self, width, height):
         """从共享内存接收窗口尺寸更改"""
@@ -762,20 +829,20 @@ class SettingsPage(QWidget):
             if hasattr(self, 'resizeEvent'):
                 # 触发重新布局
                 self.resize(self.width(), self.height())
-            print(f"设置页面：窗口尺寸已更新 - {width}x{height}")
         except Exception as e:
-            print(f"设置页面窗口尺寸更新失败: {e}")
+            # 窗口尺寸更新失败，记录错误但不中断程序运行
+            pass
     
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置更改"""
         try:
             if page_name == 'custom_page':
                 # 如果是来自个性化页面的设置更改，更新相关设置
-                print(f"设置页面：接收到个性化页面设置更新 - {settings_data}")
                 # 重新加载页面以应用新设置
                 self._reload_page(settings_data)
         except Exception as e:
-            print(f"设置页面设置更新失败: {e}")
+            # 设置更新失败，记录错误但不中断程序运行
+            pass
     
     def _reload_page(self, settings_data=None):
         """重新加载页面以应用最新设置"""
@@ -785,16 +852,16 @@ class SettingsPage(QWidget):
             
             # 更新主题样式
             if settings_data:
-                bg_color = settings_data.get('background_color', '#69E0A5')
+                bg_color = settings_data.get('background_color', '#E5E8EF')
                 self.setStyleSheet(f"background-color: {bg_color};")
             
             # 重新布局控件（触发resize事件）
             if hasattr(self, 'resizeEvent'):
                 self.resize(self.width(), self.height())
-            
-            print("设置页面：已重新加载以应用最新设置")
+                
         except Exception as e:
-            print(f"设置页面重新加载失败: {e}")
+            # 页面重新加载失败，记录错误但不中断程序运行
+            pass
 
 if __name__ == "__main__":
     print(0)

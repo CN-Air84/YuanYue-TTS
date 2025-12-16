@@ -24,7 +24,7 @@ class WelcomePage(QWidget):
     def _reload_page(self, settings_data):
         """重新加载页面以应用最新设置"""
         try:
-            # 这里可以添加具体的重新加载逻辑
+            
             print("欢迎页面：已重新加载以应用最新设置")
         except Exception as e:
             print(f"欢迎页面重新加载失败: {e}")
