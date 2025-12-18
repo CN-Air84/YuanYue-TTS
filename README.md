@@ -229,7 +229,8 @@ __看不清就对了！__
   
   感谢您的支持！
   
-  ![ ](<img width="873" height="436" alt="25 12 18_17 17" src="https://github.com/user-attachments/assets/d08394fc-297a-4ae5-a40c-fa6534e35c1f" />)
+  <img width="1321" height="662" alt="25 12 18_17 19" src="https://github.com/user-attachments/assets/49900857-fcfe-4150-b39b-4b72a0dd4e52" />
+
 </details>
 
 </div>
