@@ -1,3 +1,5 @@
+
+<img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
 <div align="center">
 
 [中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
@@ -26,7 +28,6 @@
 
 
 <div align="center">
-<img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
 ___
 
 ## 目录 
