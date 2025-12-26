@@ -61,9 +61,10 @@ class CustomConfig:
     # 默认颜色配置
     DEFAULT_COLORS = {
         "background": "#DFDFDF",
-            "notification_info": "#C8D4DF",
-            "notification_warning": "#DFD8C6",
-            "notification_error": "#DFCCC8"
+        "highlight_button": "#4682B4",
+        "notification_info": "#C8D4DF",
+        "notification_warning": "#DFD8C6",
+        "notification_error": "#DFCCC8"
     }
     
     # 默认字体配置
@@ -86,6 +87,15 @@ class CustomConfig:
         "offset_n": "1",
         "spacing_n": "1.25",
         "auto_close_time": "3000"
+    }
+    
+    # 默认指示器配置
+    DEFAULT_INDICATOR = {
+        "indicator_animation_speed": "0.03",
+        "indicator_x_offset": "0",
+        "indicator_y_offset": "0",
+        "indicator_width_adjust": "0",
+        "indicator_height_adjust": "0"
     }
     
     # GitHub下载加速选项
@@ -124,30 +134,35 @@ class CustomConfig:
     THEME_PRESETS = {
         "晶瓷白": {
             "background": "#DFDFDF",
+            "highlight_button": "#4682B4",
             "notification_info": "#C8D4DF",
             "notification_warning": "#DFD8C6",
             "notification_error": "#DFCCC8"
         },
         "水墨黑": {
             "background": "#363636",
+            "highlight_button": "#5CAEFF",
             "notification_info": "#1E3A5F",
             "notification_warning": "#4A3520",
             "notification_error": "#4B2420"
         },
         "爱眼绿": {
             "background": "#C5C9C5",
+            "highlight_button": "#46A4B4",
             "notification_info": "#D4E7D4",
             "notification_warning": "#F2E8D9",
             "notification_error": "#F2D9D9"
         },
         "绮彩红": {
             "background": "#CFC9C9",
+            "highlight_button": "#FF6B6B",
             "notification_info": "#FFE0E6",
             "notification_warning": "#FFE8CC",
             "notification_error": "#FFCCCC"
         },
         "仁物蓝": {
             "background": "#E5E8EF",
+            "highlight_button": "#4682D6",
             "notification_info": "#D4E1FF",
             "notification_warning": "#FFE8D4",
             "notification_error": "#FFD4D4"

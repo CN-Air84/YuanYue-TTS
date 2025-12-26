@@ -11,12 +11,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen
 
-# 尝试导入SettingsManager
-try:
-    from misc_func import SettingsManager
-    SETTINGS_AVAILABLE = True
-except ImportError:
-    SETTINGS_AVAILABLE = False
+from misc_func import SettingsManager
+
 
 
 class AnimationConfig:
@@ -73,12 +69,12 @@ class DialogStyleManager:
     @staticmethod
     def _get_background_color() -> str:
         """获取用户设置的背景颜色"""
-        if SETTINGS_AVAILABLE:
-            try:
-                settings_manager = SettingsManager()
-                return settings_manager.get_Custom_value("background_color", "#D2D4D3")
-            except:
-                pass
+        
+        try:
+            settings_manager = SettingsManager()
+            return settings_manager.get_Custom_value("background_color", "#D2D4D3")
+        except:
+            pass
         return "#D2D4D3"
     
     @staticmethod

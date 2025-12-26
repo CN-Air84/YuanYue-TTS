@@ -351,8 +351,13 @@ class Notification(QWidget):
         parent_width = parent_rect.width()
         parent_height = parent_rect.height()
         
-        # 计算 n 和 m 值
-        n = parent_width / 16
+        # 计算渲染区宽度（选项卡栏右边界到窗口右边界）
+        # 选项卡栏宽度为窗口宽度的10%
+        tab_bar_width = int(parent_width * 0.1)
+        render_area_width = parent_width - tab_bar_width
+        
+        # 计算 n 和 m 值（以渲染区为参考）
+        n = render_area_width / 16
         m = parent_height / 16
         
         # 计算相对于父窗口的位置
@@ -385,7 +390,13 @@ class Notification(QWidget):
         parent_width = parent_rect.width()
         parent_height = parent_rect.height()
         
-        n = parent_width / 16
+        # 计算渲染区宽度（选项卡栏右边界到窗口右边界）
+        # 选项卡栏宽度为窗口宽度的10%
+        tab_bar_width = int(parent_width * 0.1)
+        render_area_width = parent_width - tab_bar_width
+        
+        # 计算 n 和 m 值（以渲染区为参考）
+        n = render_area_width / 16
         m = parent_height / 16
         
         new_pos_x = parent_x + int(NOTIFICATION_POSITION_M * n)
@@ -716,8 +727,13 @@ class NotificationManager(QObject):
         parent_rect = self.parent_window.geometry()
         parent_width = parent_rect.width()
         
-        # 计算 n 值
-        n = parent_width / 16
+        # 计算渲染区宽度（选项卡栏右边界到窗口右边界）
+        # 选项卡栏宽度为窗口宽度的10%
+        tab_bar_width = int(parent_width * 0.1)
+        render_area_width = parent_width - tab_bar_width
+        
+        # 计算 n 值（以渲染区为参考）
+        n = render_area_width / 16
         
         # 从最新的消息开始排列
         for i, notification in enumerate(reversed(self.notifications)):
@@ -737,8 +753,13 @@ class NotificationManager(QObject):
         parent_rect = self.parent_window.geometry()
         parent_width = parent_rect.width()
         
-        # 计算 n 值
-        n = parent_width / 16
+        # 计算渲染区宽度（选项卡栏右边界到窗口右边界）
+        # 选项卡栏宽度为窗口宽度的10%
+        tab_bar_width = int(parent_width * 0.1)
+        render_area_width = parent_width - tab_bar_width
+        
+        # 计算 n 值（以渲染区为参考）
+        n = render_area_width / 16
         
         # 更新所有消息框的位置
         for i, notification in enumerate(reversed(self.notifications)):

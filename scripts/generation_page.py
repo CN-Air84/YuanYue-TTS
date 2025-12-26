@@ -135,6 +135,15 @@ class ParameterControl:
             }}
             QPushButton:hover {{ background-color: #f0f0f0; }}
         """
+    
+    def update_font(self, font):
+        """更新控件字体"""
+        self.label.setFont(font)
+        self.plus_button.setFont(font)
+        self.minus_button.setFont(font)
+        # 更新按钮样式以使用新字体
+        self.plus_button.setStyleSheet(self._get_button_style())
+        self.minus_button.setStyleSheet(self._get_button_style())
 
 
 class VoiceSelection:
@@ -203,6 +212,12 @@ class VoiceSelection:
                 background-color: #f0f0f0;
             }
         """
+    
+    def update_font(self, font):
+        """更新控件字体"""
+        self.combo_box.setFont(font)
+        # 更新下拉框样式以使用新字体
+        self.combo_box.setStyleSheet(self._get_combo_box_style())
 
 
 class TextEditSection:
@@ -265,6 +280,10 @@ class TextEditSection:
     def get_text(self) -> str:
         """获取文本内容"""
         return self.text_edit.toPlainText()
+    
+    def update_font(self, font):
+        """更新控件字体"""
+        self.text_edit.setFont(font)
 
 
 class PreviewControl:
@@ -413,6 +432,18 @@ class PreviewControl:
             QPushButton:hover {{ background-color: {hover_color}; }}
         """
     
+    def update_font(self, font):
+        """更新控件字体"""
+        self.preview_button.setFont(font)
+        self.pause_button.setFont(font)
+        self.stop_button.setFont(font)
+        self.volume_label.setFont(font)
+        self.volume_value_label.setFont(font)
+        # 更新按钮样式以使用新字体
+        self.preview_button.setStyleSheet(self._get_button_style("rgb(0, 100, 200)", "rgb(0, 120, 220)"))
+        self.pause_button.setStyleSheet(self._get_button_style("rgb(100, 100, 100)", "rgb(120, 120, 120)"))
+        self.stop_button.setStyleSheet(self._get_button_style("rgb(200, 0, 0)", "rgb(220, 0, 0)"))
+    
     def _get_progress_style(self) -> str:
         """获取进度条样式"""
         return """
@@ -521,27 +552,40 @@ class GenerationControl:
     
     def _set_button_style(self, is_error: bool = False):
         """设置按钮样式"""
+        # 获取全局字体设置
+        global_font = self.parent.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        
         if is_error:
-            style = """
-                QPushButton {
-                    font-family: "微软雅黑"; background-color: red; color: white;
+            style = f"""
+                QPushButton {{
+                    font-family: "{global_font}"; background-color: red; color: white;
                     border: 2px solid gray; border-radius: 10px;
-                }
-                QPushButton:hover { background-color: darkred; }
+                }}
+                QPushButton:hover {{ background-color: darkred; }}
             """
         else:
-            style = """
-                QPushButton {
-                    font-family: "微软雅黑"; background-color: rgb(0, 150, 0); color: white;
+            style = f"""
+                QPushButton {{
+                    font-family: "{global_font}"; background-color: rgb(0, 150, 0); color: white;
                     border: 2px solid gray; border-radius: 10px;
-                }
-                QPushButton:hover { background-color: rgb(0, 180, 0); }
+                }}
+                QPushButton:hover {{ background-color: rgb(0, 180, 0); }}
             """
         self.button.setStyleSheet(style)
+    
+    def update_font(self, font):
+        """更新控件字体"""
+        self.button.setFont(font)
+        # 更新按钮样式以使用新字体
+        # 保持当前的错误状态
+        self._set_button_style()
 
 
 class GenerationPage(QWidget):
     """生成页面"""
+    
+    # 位置偏移常量，用于统一管理布局偏移值
+    POSITION_OFFSET_N = 0.27  # 位置偏移值，单位为n
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -602,14 +646,21 @@ class GenerationPage(QWidget):
         """处理页面大小变化事件"""
         width = self.width()
         height = self.height()
-        n = width / 16
+        
+        # 计算渲染区宽度（选项卡栏右边界到窗口右边界）
+        # 选项卡栏宽度为窗口宽度的10%
+        tab_bar_width = int((width + 10) / 0.9 * 0.1)  # 根据content_width反推tab_bar_width
+        render_area_width = width
+        
+        # 计算 n 和 m 值（以渲染区为参考）
+        n = render_area_width / 16
         m = height / 16
         offset_m = m
 
         # 布局开关和提示文本
         checkbox_size = 20
-        self.checkbox.setGeometry(int(0 * n), int(0 * m - offset_m), checkbox_size, checkbox_size)
-        self.hint_label.setGeometry(int(1 * n), int(0 * m - offset_m), int(2 * n), int(m))
+        self.checkbox.setGeometry(int(GenerationPage.POSITION_OFFSET_N * n), int(0 * m - offset_m), checkbox_size, checkbox_size)
+        self.hint_label.setGeometry(int((GenerationPage.POSITION_OFFSET_N + 1) * n), int(0 * m - offset_m), int(2 * n), int(m))
 
         # 布局水平滑动条及±按钮 - 右半侧元素左边界向右移动0.25n，并缩窄以让出右侧10px
         slider_height = int(0.8 * m)
@@ -634,7 +685,7 @@ class GenerationPage(QWidget):
         self._layout_parameter_control('volume', volume_y, right_offset, scale_factor, n, m, button_size, slider_height)
 
         # 布局文本编辑框 - 左边界向左移动2n，并缩窄
-        text_edit_x = int(0 * n)  # 从2*n改为0*n
+        text_edit_x = int(GenerationPage.POSITION_OFFSET_N * n)  # 从2*n改为0*n
         text_edit_y = int(2 * m - offset_m)
         text_edit_width = int(8 * n * scale_factor)  # 宽度增加2n以保持右边界不变，并缩窄
         text_edit_height = int(11 * m)  # 高度减小，为底部控件让出空间
@@ -647,9 +698,8 @@ class GenerationPage(QWidget):
 
         # 计算按钮位置参数
         # "生成预览"和"生成并保存音频"按钮的位置
-        # 左侧与提示文本左侧对齐 (8.1*n + right_offset)
-        # 右侧与"+"按钮右侧对齐 (14.9*n + button_size + right_offset)
-        buttons_left = int(8.1 * n * scale_factor) + right_offset
+        # 使用与其他元素相同的布局方式
+        buttons_left = int((8.1 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset
         buttons_right = int(14.9 * n * scale_factor) + button_size + right_offset
         total_buttons_width = buttons_right - buttons_left
         button_width = total_buttons_width // 2
@@ -660,9 +710,8 @@ class GenerationPage(QWidget):
         # 每个按钮宽度为 (总宽度 - 间隔) / 2
         button_width = (total_buttons_width - button_spacing) // 2
         
-        # 按钮上移至与音量提示文本下边界间隔5px
-        # 音量提示文本下边界: volume_y + m
-        buttons_y = volume_y + int(m) + 5
+        # 按钮位置 - 放在第8行位置
+        buttons_y = int(8 * m - offset_m)
         
         # 按钮高度保持3*m
         button_height = int(3 * m)
@@ -673,15 +722,14 @@ class GenerationPage(QWidget):
         # 布局"生成并保存音频"按钮 (右侧按钮)
         self.generation_control.button.setGeometry(buttons_left + button_width + button_spacing, buttons_y, button_width, button_height)
 
-        # 音色选择栏上移 - 下移0.15m
-        # 音色选择栏下边界与按钮下边界间隔5px
-        # 按钮下边界: buttons_y + button_height
-        voice_combo_y = buttons_y + button_height + 5 + int(0.15 * m)  # 下移0.15m
+        # 音色选择栏位置 - 放在按钮下方
+        voice_combo_y = int(11 * m - offset_m)  # 放在第11行位置
         voice_combo_height = int(m)
         
-        # 布局下拉框 - 左边界与生成预览左边界对齐，右边界与生成音频并保存右边界对齐
-        voice_combo_width = buttons_right - buttons_left
-        self.voice_selection.combo_box.setGeometry(buttons_left, voice_combo_y, voice_combo_width, voice_combo_height)
+        # 布局下拉框 - 使用与其他元素相同的布局方式
+        voice_combo_x = int((8.1 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset
+        voice_combo_width = buttons_right - voice_combo_x  # 宽度与按钮区域一致
+        self.voice_selection.combo_box.setGeometry(voice_combo_x, voice_combo_y, voice_combo_width, voice_combo_height)
 
         # 播放进度条和暂停停止键下移至播放进度条下边界距离窗口下边界0.25m
         # 窗口下边界: 16*m - offset_m
@@ -691,9 +739,9 @@ class GenerationPage(QWidget):
         progress_y = progress_bottom - progress_height
         
         # 进度条 - 左边界向左移动2n，与文本框对齐，并缩窄
-        progress_x = int(0 * n)  # 从2*n改为0*n
-        # 进度条右边界与"+"键右边界对齐
-        progress_right = int(14.9 * n * scale_factor) + button_size + right_offset
+        progress_x = int(GenerationPage.POSITION_OFFSET_N * n)  # 从2*n改为0*n
+        # 进度条右边界与生成按钮右边界对齐
+        progress_right = buttons_right
         progress_width = progress_right - progress_x
         self.preview_control.preview_progress.setGeometry(progress_x, progress_y, progress_width, progress_height)
         
@@ -784,7 +832,7 @@ class GenerationPage(QWidget):
     def _layout_volume_controls(self, width, height, n, m, scale_factor, right_offset, progress_y, control_buttons_y, control_button_height):
         """布局音量控制控件"""
         
-        volume_x = int(10* n * scale_factor) + right_offset  
+        volume_x = int((10 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset
         volume_y = control_buttons_y 
         
         # 音量标签
@@ -811,10 +859,10 @@ class GenerationPage(QWidget):
         """布局参数控制组件"""
         control = self.parameter_controls[param_name]
         
-        control.label.setGeometry(int(8.1 * n * scale_factor) + right_offset, y_pos, int(2 * n * scale_factor), int(m))
-        control.minus_button.setGeometry(int(10.1 * n * scale_factor) + right_offset, y_pos, button_size, button_size)  
-        control.slider.setGeometry(int(10.8 * n * scale_factor) + right_offset, y_pos, int(4 * n * scale_factor), slider_height)  
-        control.plus_button.setGeometry(int(14.9 * n * scale_factor) + right_offset, y_pos, button_size, button_size)
+        control.label.setGeometry(int((8.1 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset, y_pos, int(2 * n * scale_factor), int(m))
+        control.minus_button.setGeometry(int((10.1 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset, y_pos, button_size, button_size)  
+        control.slider.setGeometry(int((10.8 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset, y_pos, int(4 * n * scale_factor), slider_height)  
+        control.plus_button.setGeometry(int((14.9 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset, y_pos, button_size, button_size)
 
     def _update_fonts(self):
         """更新字体大小"""
@@ -842,12 +890,33 @@ class GenerationPage(QWidget):
         
         # 计算其他字体大小
         other_font_size = int(base_font_size * 0.5)
-        global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        other_font = QFont(global_font, other_font_size)
+        small_font_size = int(base_font_size * 0.4)
         
-        # 应用字体到音量控制标签
-        self.preview_control.volume_label.setFont(other_font)
-        self.preview_control.volume_value_label.setFont(other_font)
+        # 获取全局字体设置
+        global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        base_font = QFont(global_font, base_font_size)
+        other_font = QFont(global_font, other_font_size)
+        small_font = QFont(global_font, small_font_size)
+        
+        # 应用字体到所有ParameterControl控件
+        for control in self.parameter_controls.values():
+            control.update_font(other_font)
+        
+        # 应用字体到VoiceSelection控件
+        self.voice_selection.update_font(other_font)
+        
+        # 应用字体到TextEditSection控件
+        self.text_edit_section.update_font(other_font)
+        
+        # 应用字体到PreviewControl控件
+        self.preview_control.update_font(other_font)
+        
+        # 应用字体到GenerationControl控件
+        self.generation_control.update_font(other_font)
+        
+        # 应用字体到GenerationPage控件
+        self.checkbox.setFont(small_font)
+        self.hint_label.setFont(small_font)
 
     # 参数更新方法
     def _update_speed(self, value: int):

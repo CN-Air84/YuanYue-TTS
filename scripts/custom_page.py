@@ -174,6 +174,34 @@ class CustomConfig:
         "spacing_n": "1.25",
         "auto_close_time": "3000"
     }
+    
+    @staticmethod
+    def get_dynamic_card_style(title_font_size=14):
+        """获取动态卡片样式 - 根据字体大小调整标题样式"""
+        return f"""
+            QGroupBox {{
+                background-color: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 16px;
+                margin-top: 8px;
+                margin-bottom: 8px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 16px;
+                padding: 4px 12px;
+                background-color: #ffffff;
+                color: #333333;
+                font-weight: bold;
+                font-size: {title_font_size}px;
+                border-radius: 6px;
+                border: 1px solid #e0e0e0;
+            }}
+            QLabel {{
+                background-color: transparent;
+            }}
+        """
 
 
 class WheelEventFilter(QObject):
@@ -314,7 +342,24 @@ class KeyboardControlGroup(QGroupBox):
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        # 获取父窗口的字体大小来计算标题字体大小
+        title_font_size = 14  # 默认标题字体大小
+        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+            # 计算基于窗口大小的标题字体大小
+            current_width = self.parent().parent_window.width()
+            current_height = self.parent().parent_window.height()
+            base_width = 1024
+            base_height = 768
+            
+            width_ratio = current_width / base_width
+            height_ratio = current_height / base_height
+            ratio = (width_ratio + height_ratio) / 2
+            
+            # 标题字体大小范围：12-18px
+            title_font_size = max(12, min(18, int(14 * ratio)))
+        
+        # 使用动态卡片样式
+        self.setStyleSheet(CustomConfig.get_dynamic_card_style(title_font_size))
         self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
                               CustomConfig.SPACING_SYSTEM['lg'],
                               CustomConfig.SPACING_SYSTEM['lg'], 
@@ -493,18 +538,21 @@ class ColorSettingsGroup(QGroupBox):
     COLOR_THEMES = {
         "默认": {
             "background": "#E5E8EF",
+            "highlight_button": "#4682B4",
             "notification_info": "#3498db",
             "notification_warning": "#f0da12",
             "notification_error": "#db3444"
         },
         "深色": {
             "background": "#2b2b2b",
+            "highlight_button": "#1e88e5",
             "notification_info": "#1e88e5",
             "notification_warning": "#ffb300",
             "notification_error": "#e53935"
         },
         "护眼": {
             "background": "#cce8cf",
+            "highlight_button": "#4caf50",
             "notification_info": "#4caf50",
             "notification_warning": "#ff9800",
             "notification_error": "#f44336"
@@ -537,6 +585,7 @@ class ColorSettingsGroup(QGroupBox):
         
         # 创建颜色选择器
         self.background_color = ColorPickerWidget()
+        self.highlight_button_color = ColorPickerWidget()
         self.info_color = ColorPickerWidget()
         self.warning_color = ColorPickerWidget()
         self.error_color = ColorPickerWidget()
@@ -544,6 +593,9 @@ class ColorSettingsGroup(QGroupBox):
         # 连接信号
         self.background_color.color_changed.connect(
             lambda color: self._on_color_changed("background_color", color)
+        )
+        self.highlight_button_color.color_changed.connect(
+            lambda color: self._on_color_changed("highlight_button_color", color)
         )
         self.info_color.color_changed.connect(
             lambda color: self._on_color_changed("notification_info_color", color)
@@ -560,12 +612,14 @@ class ColorSettingsGroup(QGroupBox):
         layout.addWidget(self.theme_combo, 0, 1)
         layout.addWidget(QLabel("背景颜色:"), 1, 0)
         layout.addWidget(self.background_color, 1, 1)
-        layout.addWidget(QLabel("信息通知颜色:"), 2, 0)
-        layout.addWidget(self.info_color, 2, 1)
-        layout.addWidget(QLabel("警告通知颜色:"), 3, 0)
-        layout.addWidget(self.warning_color, 3, 1)
-        layout.addWidget(QLabel("错误通知颜色:"), 4, 0)
-        layout.addWidget(self.error_color, 4, 1)
+        layout.addWidget(QLabel("高亮按钮颜色:"), 2, 0)
+        layout.addWidget(self.highlight_button_color, 2, 1)
+        layout.addWidget(QLabel("信息通知颜色:"), 3, 0)
+        layout.addWidget(self.info_color, 3, 1)
+        layout.addWidget(QLabel("警告通知颜色:"), 4, 0)
+        layout.addWidget(self.warning_color, 4, 1)
+        layout.addWidget(QLabel("错误通知颜色:"), 5, 0)
+        layout.addWidget(self.error_color, 5, 1)
         
         # 设置列拉伸
         layout.setColumnStretch(1, 1)
@@ -588,12 +642,14 @@ class ColorSettingsGroup(QGroupBox):
             
             # 应用主题颜色到颜色选择器
             self.background_color.set_color(theme_colors["background"])
+            self.highlight_button_color.set_color(theme_colors["highlight_button"])
             self.info_color.set_color(theme_colors["notification_info"])
             self.warning_color.set_color(theme_colors["notification_warning"])
             self.error_color.set_color(theme_colors["notification_error"])
             
             # 保存到设置
             self.settings_manager.Custom.set_value("background_color", theme_colors["background"])
+            self.settings_manager.Custom.set_value("highlight_button_color", theme_colors["highlight_button"])
             self.settings_manager.Custom.set_value("notification_info_color", theme_colors["notification_info"])
             self.settings_manager.Custom.set_value("notification_warning_color", theme_colors["notification_warning"])
             self.settings_manager.Custom.set_value("notification_error_color", theme_colors["notification_error"])
@@ -612,6 +668,10 @@ class ColorSettingsGroup(QGroupBox):
             if main_window and hasattr(main_window, 'tab_manager'):
                 # 应用主题样式到主窗口
                 self._apply_colors_to_main_window(main_window, theme_colors)
+                
+                # 刷新主窗口主题显示
+                if hasattr(main_window, 'refresh_theme'):
+                    main_window.refresh_theme()
                 
                 # 更新所有页面的样式
                 if hasattr(main_window.tab_manager, 'tabs'):
@@ -714,6 +774,13 @@ class ColorSettingsGroup(QGroupBox):
             CustomConfig.DEFAULT_COLORS["background"]
         )
         self.background_color.set_color(bg_color)
+        
+        # 高亮按钮颜色
+        highlight_color = self.settings_manager.Custom.get_value(
+            "highlight_button_color",
+            "#4682B4"  # 默认钢蓝色
+        )
+        self.highlight_button_color.set_color(highlight_color)
         
         # 通知颜色
         info_color = self.settings_manager.Custom.get_value(
@@ -888,6 +955,241 @@ class FontSettingsGroup(QGroupBox):
 
 
 
+class IndicatorSettingsGroup(QGroupBox):
+    """指示器设置组 - 卡片式设计"""
+    
+    def __init__(self, parent=None):
+        super().__init__("指示器设置", parent)
+        self.settings_manager = SettingsManager()
+        self.wheel_filter = WheelEventFilter()
+        self._init_ui()
+        self._load_settings()
+        self._apply_card_style()
+    
+    def _init_ui(self):
+        """初始化UI"""
+        layout = QFormLayout()
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
+        
+        # X轴偏移设置
+        
+        # X轴偏移设置
+        self.x_offset = QSpinBox()
+        self.x_offset.setRange(-50, 50)
+        self.x_offset.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("indicator_x_offset", str(value))
+        )
+        self.x_offset.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.x_offset.installEventFilter(self.wheel_filter)
+        
+        # Y轴偏移设置
+        self.y_offset = QSpinBox()
+        self.y_offset.setRange(-50, 50)
+        self.y_offset.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("indicator_y_offset", str(value))
+        )
+        self.y_offset.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.y_offset.installEventFilter(self.wheel_filter)
+        
+        # 宽度调整设置
+        self.width_adjust = QSpinBox()
+        self.width_adjust.setRange(-100, 100)
+        self.width_adjust.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("indicator_width_adjust", str(value))
+        )
+        self.width_adjust.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.width_adjust.installEventFilter(self.wheel_filter)
+        
+        # 高度调整设置
+        self.height_adjust = QSpinBox()
+        self.height_adjust.setRange(-100, 100)
+        self.height_adjust.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("indicator_height_adjust", str(value))
+        )
+        self.height_adjust.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.height_adjust.installEventFilter(self.wheel_filter)
+        
+        # 添加到布局
+        layout.addRow("X轴偏移(px):", self.x_offset)
+        layout.addRow("Y轴偏移(px):", self.y_offset)
+        layout.addRow("宽度调整(px):", self.width_adjust)
+        layout.addRow("高度调整(px):", self.height_adjust)
+        
+        self.setLayout(layout)
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
+    
+    def _load_settings(self):
+        """加载设置"""
+        # X轴偏移设置
+        self.x_offset.setValue(int(self.settings_manager.Custom.get_value(
+            "indicator_x_offset",
+            "0"  # 默认值
+        )))
+        
+        # Y轴偏移设置
+        self.y_offset.setValue(int(self.settings_manager.Custom.get_value(
+            "indicator_y_offset",
+            "0"  # 默认值
+        )))
+        
+        # 宽度调整设置
+        self.width_adjust.setValue(int(self.settings_manager.Custom.get_value(
+            "indicator_width_adjust",
+            "0"  # 默认值
+        )))
+        
+        # 高度调整设置
+        self.height_adjust.setValue(int(self.settings_manager.Custom.get_value(
+            "indicator_height_adjust",
+            "0"  # 默认值
+        )))
+
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
+
+
+class AnimationSettingsGroup(QGroupBox):
+    """动画设置组 - 卡片式设计"""
+    
+    def __init__(self, parent=None):
+        super().__init__("动画设置", parent)
+        self.settings_manager = SettingsManager()
+        self.wheel_filter = WheelEventFilter()
+        self._init_ui()
+        self._load_settings()
+        self._apply_card_style()
+    
+    def _init_ui(self):
+        """初始化UI"""
+        layout = QFormLayout()
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
+        
+        # 换页动画速度设置（移除时长限制）
+        self.tab_switch_speed = QSpinBox()
+        self.tab_switch_speed.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
+        self.tab_switch_speed.setSuffix(" ms")
+        self.tab_switch_speed.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("tab_switch_speed", str(value))
+        )
+        self.tab_switch_speed.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.tab_switch_speed.installEventFilter(self.wheel_filter)
+        
+        # 消息框动画速度设置（移除时长限制）
+        self.animation_appear = QSpinBox()
+        self.animation_appear.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
+        self.animation_appear.setSuffix(" ms")
+        self.animation_appear.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("animation_appear", str(value))
+        )
+        self.animation_appear.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.animation_appear.installEventFilter(self.wheel_filter)
+        
+        self.animation_disappear = QSpinBox()
+        self.animation_disappear.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
+        self.animation_disappear.setSuffix(" ms")
+        self.animation_disappear.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("animation_disappear", str(value))
+        )
+        self.animation_disappear.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.animation_disappear.installEventFilter(self.wheel_filter)
+        
+        self.animation_move = QSpinBox()
+        self.animation_move.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
+        self.animation_move.setSuffix(" ms")
+        self.animation_move.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("animation_move", str(value))
+        )
+        self.animation_move.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.animation_move.installEventFilter(self.wheel_filter)
+        
+        # 指示器动画速度设置（改为毫秒单位）
+        self.indicator_animation_speed = QSpinBox()
+        self.indicator_animation_speed.setRange(1,10000)  # 10ms到2000ms，无限制范围
+        self.indicator_animation_speed.setSuffix(" ms")
+        self.indicator_animation_speed.valueChanged.connect(
+            lambda value: self.settings_manager.Custom.set_value("indicator_animation_speed", str(value))
+        )
+        self.indicator_animation_speed.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
+        # 安装滚轮事件过滤器
+        self.indicator_animation_speed.installEventFilter(self.wheel_filter)
+        
+        # 添加到布局
+        layout.addRow("换页动画速度:", self.tab_switch_speed)
+        layout.addRow("消息框出现动画:", self.animation_appear)
+        layout.addRow("消息框消失动画:", self.animation_disappear)
+        layout.addRow("消息框移动动画:", self.animation_move)
+        layout.addRow("指示器动画速度:", self.indicator_animation_speed)
+        
+        self.setLayout(layout)
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        self.setStyleSheet(CustomConfig.CARD_STYLE)
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
+    
+    def _load_settings(self):
+        """加载设置"""
+        # 换页动画速度
+        self.tab_switch_speed.setValue(int(self.settings_manager.Custom.get_value(
+            "tab_switch_speed",
+            "300"  # 默认300ms
+        )))
+        
+        # 消息框动画设置
+        self.animation_appear.setValue(int(self.settings_manager.Custom.get_value(
+            "animation_appear",
+            CustomConfig.DEFAULT_NOTIFICATIONS["animation_appear"]
+        )))
+        
+        self.animation_disappear.setValue(int(self.settings_manager.Custom.get_value(
+            "animation_disappear",
+            CustomConfig.DEFAULT_NOTIFICATIONS["animation_disappear"]
+        )))
+        
+        self.animation_move.setValue(int(self.settings_manager.Custom.get_value(
+            "animation_move",
+            CustomConfig.DEFAULT_NOTIFICATIONS["animation_move"]
+        )))
+        
+        # 指示器动画速度设置（改为毫秒单位）
+        try:
+            # 尝试读取旧格式的小数值并转换为毫秒
+            old_value = self.settings_manager.Custom.get_value("indicator_animation_speed", "50")
+            if "." in old_value:
+                # 如果是小数值（旧格式），转换为毫秒
+                ms_value = int(float(old_value) * 1000)
+            else:
+                # 如果是整数值（新格式），直接使用
+                ms_value = int(old_value)
+            self.indicator_animation_speed.setValue(ms_value)
+        except (ValueError, TypeError):
+            # 如果转换失败，使用默认值
+            self.indicator_animation_speed.setValue(50)
+
+
 class NotificationSettingsGroup(QGroupBox):
     """通知设置组 - 卡片式设计"""
     
@@ -904,40 +1206,9 @@ class NotificationSettingsGroup(QGroupBox):
         layout = QFormLayout()
         layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
         
-        # 动画时长设置
-        self.animation_appear = QSpinBox()
-        self.animation_appear.setRange(100, 5000)
-        self.animation_appear.setSuffix(" ms")
-        self.animation_appear.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("animation_appear", str(value))
-        )
-        self.animation_appear.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
-        # 安装滚轮事件过滤器
-        self.animation_appear.installEventFilter(self.wheel_filter)
-        
-        self.animation_disappear = QSpinBox()
-        self.animation_disappear.setRange(100, 5000)
-        self.animation_disappear.setSuffix(" ms")
-        self.animation_disappear.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("animation_disappear", str(value))
-        )
-        self.animation_disappear.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
-        # 安装滚轮事件过滤器
-        self.animation_disappear.installEventFilter(self.wheel_filter)
-        
-        self.animation_move = QSpinBox()
-        self.animation_move.setRange(100, 5000)
-        self.animation_move.setSuffix(" ms")
-        self.animation_move.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("animation_move", str(value))
-        )
-        self.animation_move.setStyleSheet(CustomConfig.UNIFIED_STYLES['input'])
-        # 安装滚轮事件过滤器
-        self.animation_move.installEventFilter(self.wheel_filter)
-        
         # 位置设置 - 应用设置界面样式
         self.position_m = QSpinBox()
-        self.position_m.setRange(1, 20)
+        self.position_m.setRange(0, 16)
         self.position_m.valueChanged.connect(
             lambda value: self.settings_manager.Custom.set_value("position_m", str(value))
         )
@@ -947,7 +1218,7 @@ class NotificationSettingsGroup(QGroupBox):
         
         # 修改为 QDoubleSpinBox
         self.position_n = QDoubleSpinBox()
-        self.position_n.setRange(1, 20)
+        self.position_n.setRange(0, 16)
         self.position_n.setSingleStep(0.25)
         self.position_n.setDecimals(2)  # 设置小数点位数
         self.position_n.valueChanged.connect(
@@ -1023,9 +1294,6 @@ class NotificationSettingsGroup(QGroupBox):
         self.auto_close_time.installEventFilter(self.wheel_filter)
         
         # 添加到布局
-        layout.addRow("出现动画时长:", self.animation_appear)
-        layout.addRow("消失动画时长:", self.animation_disappear)
-        layout.addRow("移动动画时长:", self.animation_move)
         layout.addRow("位置 M 坐标:", self.position_m)
         layout.addRow("位置 N 坐标:", self.position_n)
         layout.addRow("宽度比例:", self.width_ratio)
@@ -1047,22 +1315,6 @@ class NotificationSettingsGroup(QGroupBox):
     
     def _load_settings(self):
         """加载设置"""
-        # 动画设置
-        self.animation_appear.setValue(int(self.settings_manager.Custom.get_value(
-            "animation_appear",
-            CustomConfig.DEFAULT_NOTIFICATIONS["animation_appear"]
-        )))
-        
-        self.animation_disappear.setValue(int(self.settings_manager.Custom.get_value(
-            "animation_disappear",
-            CustomConfig.DEFAULT_NOTIFICATIONS["animation_disappear"]
-        )))
-        
-        self.animation_move.setValue(int(self.settings_manager.Custom.get_value(
-            "animation_move",
-            CustomConfig.DEFAULT_NOTIFICATIONS["animation_move"]
-        )))
-        
         # 位置设置
         self.position_m.setValue(int(self.settings_manager.Custom.get_value(
             "position_m",
@@ -1203,6 +1455,14 @@ class CustomPage(QWidget):
         self.font_group = FontSettingsGroup(self)
         self.content_layout.addWidget(self.font_group)
         
+        # 指示器设置
+        self.indicator_group = IndicatorSettingsGroup(self)
+        self.content_layout.addWidget(self.indicator_group)
+        
+        # 动画设置
+        self.animation_group = AnimationSettingsGroup(self)
+        self.content_layout.addWidget(self.animation_group)
+        
         # 通知设置
         self.notification_group = NotificationSettingsGroup(self)
         self.content_layout.addWidget(self.notification_group)
@@ -1258,6 +1518,9 @@ class CustomPage(QWidget):
         height_ratio = current_height / self.default_height
         ratio = (width_ratio + height_ratio) / 2
         
+        # 更新卡片样式（标题字体大小）
+        self._update_card_styles()
+        
         base_font_size = (self.min_font_size + 
                          (self.max_font_size - self.min_font_size) * (ratio - 1))
         base_font_size = max(self.min_font_size, min(self.max_font_size, base_font_size))
@@ -1283,6 +1546,33 @@ class CustomPage(QWidget):
         # 更新按钮样式（因为字体可能改变）
         self.reset_button.setStyleSheet(self._get_button_style())
         self.apply_button.setStyleSheet(self._get_button_style())
+    
+    def _update_card_styles(self):
+        """更新所有卡片组的标题样式"""
+        # 计算标题字体大小
+        current_width = self.parent_window.width()
+        current_height = self.parent_window.height()
+        base_width = 1024
+        base_height = 768
+        
+        width_ratio = current_width / base_width
+        height_ratio = current_height / base_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        # 标题字体大小范围：12-18px
+        title_font_size = max(12, min(18, int(14 * ratio)))
+        
+        # 更新所有卡片组的样式
+        dynamic_style = CustomConfig.get_dynamic_card_style(title_font_size)
+        
+        # 应用到各个设置组
+        self.keyboard_group.setStyleSheet(dynamic_style)
+        self.window_size_group.setStyleSheet(dynamic_style)
+        self.color_group.setStyleSheet(dynamic_style)
+        self.font_group.setStyleSheet(dynamic_style)
+        self.indicator_group.setStyleSheet(dynamic_style)
+        self.animation_group.setStyleSheet(dynamic_style)
+        self.notification_group.setStyleSheet(dynamic_style)
     
     def _apply_fonts_to_widgets(self, font, small_font):
         """应用字体到所有控件"""
@@ -1311,12 +1601,25 @@ class CustomPage(QWidget):
         self.font_group.min_font_size.setFont(font)
         self.font_group.max_font_size.setFont(font)
         
+        # 应用字体到指示器设置组
+        self.indicator_group.setFont(font)
+        for widget in [self.indicator_group.x_offset,
+                      self.indicator_group.y_offset,
+                      self.indicator_group.width_adjust,
+                      self.indicator_group.height_adjust]:
+            widget.setFont(font)
+        
+        # 应用字体到动画设置组
+        self.animation_group.setFont(font)
+        for widget in [self.animation_group.tab_switch_speed,
+                      self.animation_group.animation_appear,
+                      self.animation_group.animation_disappear,
+                      self.animation_group.animation_move]:
+            widget.setFont(font)
+        
         # 应用字体到通知设置组
         self.notification_group.setFont(font)
-        for widget in [self.notification_group.animation_appear,
-                      self.notification_group.animation_disappear,
-                      self.notification_group.animation_move,
-                      self.notification_group.position_m,
+        for widget in [self.notification_group.position_m,
                       self.notification_group.position_n,
                       self.notification_group.width_ratio,
                       self.notification_group.height_ratio,
@@ -1392,6 +1695,8 @@ class CustomPage(QWidget):
             # 重置颜色
             for key, value in CustomConfig.DEFAULT_COLORS.items():
                 self.settings_manager.Custom.set_value(f"{key}_color", value)
+            # 重置高亮按钮颜色
+            self.settings_manager.Custom.set_value("highlight_button_color", "#4682B4")
             
             # 重置字体
             for key, value in CustomConfig.DEFAULT_FONTS.items():
@@ -1400,6 +1705,13 @@ class CustomPage(QWidget):
             # 重置通知
             for key, value in CustomConfig.DEFAULT_NOTIFICATIONS.items():
                 self.settings_manager.Custom.set_value(key, value)
+            
+            # 重置指示器设置
+            self.settings_manager.Custom.set_value("indicator_animation_speed", "0.1")
+            self.settings_manager.Custom.set_value("indicator_x_offset", "0")
+            self.settings_manager.Custom.set_value("indicator_y_offset", "0")
+            self.settings_manager.Custom.set_value("indicator_width_adjust", "0")
+            self.settings_manager.Custom.set_value("indicator_height_adjust", "0")
             
             # 重新加载设置
             self.keyboard_group._load_settings()
@@ -1438,6 +1750,15 @@ class CustomPage(QWidget):
         )
         if self.parent_window:
             self.parent_window.setStyleSheet(f"background-color: {bg_color};")
+            # 重新计算并刷新选项卡栏背景颜色
+            self.parent_window._calculate_tab_bar_background_color(bg_color)
+            # 触发重绘以更新选项卡栏背景和高亮按钮
+            self.parent_window.update()
+            
+            # 刷新生成选项卡
+            if hasattr(self.parent_window, 'generation_page') and self.parent_window.generation_page:
+                self.parent_window.generation_page._update_fonts()
+                self.parent_window.generation_page._check_inputs_and_update_button()
         
         # 应用个性化页面自身的背景颜色
         self.setStyleSheet(f"background-color: {bg_color};")
