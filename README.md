@@ -122,7 +122,7 @@ ___
 
 ## 来试试吧：
 
-[首先，安装ffmpeg。点击查看安装教程。](/docs/如何安装ffmpeg.md/)
+[首先，安装ffmpeg。点击查看安装教程。](/docs/如何安装FFmpeg.md)
 
 [然后下载本程序.](/releases/)
 
