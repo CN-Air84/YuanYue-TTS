@@ -236,7 +236,9 @@ class AudioGenerator:
         
     def generate_audio(self, config: GenerationConfig, callback: Optional[Callable] = None) -> bool:
         """生成音频文件 - 支持回调版本"""
+        print(f"[AudioGenerator] 开始验证输入 - voice: '{config.voice}', save_path: '{config.save_path}', content: '{config.content[:30]}...'")
         success, message = self.validator.validate_inputs(config)
+        print(f"[AudioGenerator] 验证结果 - success: {success}, message: '{message}'")
         if not success:
             if callback:
                 callback(False, message)
@@ -313,6 +315,17 @@ class AudioGenerator:
             
             communicate.save_sync(temp_path)
             
+            # 转换为WAV格式（如果目标路径是WAV格式）
+            if config.save_path.lower().endswith('.wav'):
+                wav_path = self._convert_mp3_to_wav(temp_path)
+                if wav_path and os.path.exists(wav_path):
+                    # 删除MP3临时文件
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                    temp_path = wav_path
+            
             #应用音频拉伸
             if (hasattr(config, 'stretch_enabled') and config.stretch_enabled and 
                 hasattr(config, 'stretch_factor') and config.stretch_factor != 1.0):
@@ -348,6 +361,17 @@ class AudioGenerator:
         if not self.tts_generator.generate_audio(config, temp_path):
             raise Exception("Edge-TTS生成音频失败")
         
+        # 转换为WAV格式（如果目标路径是WAV格式）
+        if config.save_path.lower().endswith('.wav'):
+            wav_path = self._convert_mp3_to_wav(temp_path)
+            if wav_path and os.path.exists(wav_path):
+                # 删除MP3临时文件
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+                temp_path = wav_path
+        
         # 应用音频拉伸
         final_path = temp_path
         if (hasattr(config, 'stretch_enabled') and config.stretch_enabled and 
@@ -370,6 +394,38 @@ class AudioGenerator:
         # 重命名
         if final_path != config.save_path:
             shutil.move(final_path, config.save_path)
+
+    def _convert_mp3_to_wav(self, mp3_path: str) -> str:
+        """将MP3文件转换为WAV格式"""
+        try:
+            import subprocess
+            import os
+            
+            # 生成WAV文件路径
+            base_path = os.path.splitext(mp3_path)[0]
+            wav_path = base_path + '.wav'
+            
+            # 使用FFmpeg转换格式
+            cmd = [
+                'ffmpeg', '-i', mp3_path, 
+                '-acodec', 'pcm_s16le',  # 16位PCM编码
+                '-ar', '44100',           # 采样率44.1kHz
+                '-ac', '2',               # 立体声
+                '-y',                     # 覆盖已存在文件
+                wav_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0 and os.path.exists(wav_path):
+                return wav_path
+            else:
+                print(f"[AudioGenerator] MP3转WAV失败: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            print(f"[AudioGenerator] MP3转WAV异常: {e}")
+            return None
 
     def _handle_generation_error(self, error: Exception):
         """处理生成错误"""

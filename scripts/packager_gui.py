@@ -8,9 +8,9 @@ from packaging import version
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox, QGroupBox, QRadioButton, QTextEdit, QFileDialog,
-    QMessageBox
+    QMessageBox, QDateEdit
 )
-from PyQt5.QtCore import QProcess, QEvent
+from PyQt5.QtCore import QProcess, QEvent, QDate
 from PyQt5.QtGui import QIntValidator
 
 
@@ -182,6 +182,17 @@ class PackagerGUI(QWidget):
         options_group.setLayout(options_layout)
         layout.addWidget(options_group)
 
+        # 更新日期输入
+        update_date_layout = QHBoxLayout()
+        update_date_layout.addWidget(QLabel('更新日期:'))
+        self.update_date_input = QDateEdit()
+        self.update_date_input.setDate(QDate.currentDate())
+        self.update_date_input.setCalendarPopup(True)
+        self.update_date_input.setDisplayFormat("yyyy-MM-dd")
+        update_date_layout.addWidget(self.update_date_input)
+        update_date_layout.addStretch()
+        layout.addLayout(update_date_layout)
+
         # 更新内容输入
         update_content_layout = QHBoxLayout()
         update_content_layout.addWidget(QLabel('更新内容:'))
@@ -265,19 +276,19 @@ class PackagerGUI(QWidget):
                 # 获取更新内容
                 update_content = self.update_content_input.toPlainText()
                 
-                # 获取当前日期
-                current_date = time.strftime("%Y-%m-%d")
+                # 获取用户指定的更新日期
+                update_date = self.update_date_input.date().toString("yyyy-MM-dd")
                 
                 # 替换标记
                 content = content.replace('☺packager-replace-version☺', version)
                 content = content.replace('☺packager-replace-version-infos☺', update_content)
-                content = content.replace('☺packager-replace-update-date☺', current_date)
+                content = content.replace('☺packager-replace-update-date☺', update_date)
                 
                 # 写回文件
                 with open(package_filename, 'w', encoding='utf-8') as f:
                     f.write(content)
                     
-                self.log_output.append(f"已完成内容替换: 版本号={version}, 日期={current_date}")
+                self.log_output.append(f"已完成内容替换: 版本号={version}, 日期={update_date}")
             except Exception as e:
                 self.log_output.append(f"内容替换时出错: {str(e)}")
             

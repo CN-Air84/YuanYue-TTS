@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QTextEdit, QFileDialog, QLabel, QHBoxLayout,
     QTreeWidget, QTreeWidgetItem, QLineEdit, QCheckBox
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices
 import certifi
 from shared_memory_manager import get_shared_memory_manager
@@ -23,18 +23,18 @@ from shared_memory_manager import get_shared_memory_manager
 # ===== 常量定义 =====
 # 关于页面图片URL
 ABOUT_IMAGE_URLS = [
-    'https://avatars.githubusercontent.com/u/80259542?s=48&v=4',
-    'https://avatars.githubusercontent.com/u/80259542?s=48&v=4',
-    'https://avatars.githubusercontent.com/u/80259542?s=48&v=4'
+    'https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon.png?raw=true',
+    'https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon.png?raw=true',
+    'https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon.png?raw=true'
 ]
 
 # 关于页面按钮文字和链接
-ABOUT_BUTTON_TEXTS = ["", "", "GitHub项目主页", "Github更新",'','']
+ABOUT_BUTTON_TEXTS = ["Github主页", "Github更新", "", "", "", ""]
 ABOUT_BUTTON_URLS = [
-    "",
-    "",
     "https://github.com/CN-Air84/YuanYue-TTS",
     "https://github.com/CN-Air84/YuanYue-TTS/releases",
+    "",
+    "",
     "",
     ""
 ]
@@ -43,7 +43,7 @@ ABOUT_BUTTON_URLS = [
 MIN_FONT_SIZE = 22
 MAX_FONT_SIZE = 42
 DEFAULT_WIDTH = 1080
-DEFAULT_HEIGHT = 720
+DEFAULT_HEIGHT = 1080
 # ===== 常量定义结束 =====
 
 try:
@@ -139,17 +139,15 @@ class TextResultDialog(QDialog):
         self.setWindowTitle(title)
         self.resize(600, 400)
         
+        if SETTINGS_AVAILABLE:
+            self.global_font = SettingsManager().get_Custom_value('global_font', '微软雅黑')
+        else:
+            self.global_font = '微软雅黑'
+        
         layout = QVBoxLayout()
         
         self.text_edit = QTextEdit()
         self.text_edit.setPlainText(content)
-        
-        # 从共享内存管理器获取字体设置
-        shared_manager = get_shared_memory_manager()
-        if shared_manager and hasattr(shared_manager, 'current_settings'):
-            global_font = shared_manager.current_settings.get('global_font', '微软雅黑')
-        else:
-            global_font = '微软雅黑'
             
         self.text_edit.setStyleSheet(f"""
         QTextEdit {{
@@ -157,7 +155,7 @@ class TextResultDialog(QDialog):
             color: black;
             border: 2px solid gray;
             border-radius: 10px;
-            font-family: "{global_font}";
+            font-family: "{self.global_font}";
             font-size: 12px;
             }}
         """)
@@ -169,7 +167,7 @@ class TextResultDialog(QDialog):
         self.copy_button = QPushButton("复制结果")
         self.copy_button.setStyleSheet(f"""
             QPushButton {{
-            font-family: "{global_font}";
+            font-family: "{self.global_font}";
             background-color: white;
             color: black;
             border: 2px solid gray;
@@ -187,7 +185,7 @@ class TextResultDialog(QDialog):
         self.close_button = QPushButton("关闭")
         self.close_button.setStyleSheet(f"""
             QPushButton {{
-            font-family: "{global_font}";
+            font-family: "{self.global_font}";
             background-color: white;
             color: black;
             border: 2px solid gray;
@@ -339,6 +337,15 @@ class PDFDownloadDialog(QDialog):
         self.current_path = ""
         self.path_history = []
         
+        if SETTINGS_AVAILABLE:
+            self.global_font = self.settings_manager.get_Custom_value('global_font', '微软雅黑')
+            self.min_font_size = int(self.settings_manager.get_Custom_value('min_font_size', '22'))
+            self.max_font_size = int(self.settings_manager.get_Custom_value('max_font_size', '42'))
+        else:
+            self.global_font = '微软雅黑'
+            self.min_font_size = 22
+            self.max_font_size = 42
+        
         self.init_ui()
         self.load_root_directory()
         self._update_fonts()
@@ -350,28 +357,21 @@ class PDFDownloadDialog(QDialog):
             self.setGeometry(self.window_size)
         else:
             self.resize(800, 600)
-        
-        # 从共享内存管理器获取字体设置
-        shared_manager = get_shared_memory_manager()
-        if shared_manager and hasattr(shared_manager, 'current_settings'):
-            global_font = shared_manager.current_settings.get('global_font', '微软雅黑')
-        else:
-            global_font = '微软雅黑'
             
         self.setStyleSheet(f"""
         QDialog {{background-color: #E5E8EF;}}
         QPushButton {{
-            font-family: "{global_font}"; background-color: white; color: black;
+            font-family: "{self.global_font}"; background-color: white; color: black;
             border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
         }}
         QPushButton:hover {{background-color: #f0f0f0;}}
-        QLabel {{font-family: "{global_font}"; font-size: 14px;}}
+        QLabel {{font-family: "{self.global_font}"; font-size: 14px;}}
         QLineEdit {{
-            font-family: "{global_font}"; background-color: white; color: black;
+            font-family: "{self.global_font}"; background-color: white; color: black;
             border: 2px solid gray; border-radius: 10px; padding: 5px;
         }}
         QTreeWidget {{
-            font-family: "{global_font}"; background-color: white; color: black;
+            font-family: "{self.global_font}"; background-color: white; color: black;
             border: 2px solid gray; border-radius: 5px;
         }}
         """)
@@ -439,11 +439,13 @@ class PDFDownloadDialog(QDialog):
     
     def _update_fonts(self):
         """更新界面字体大小"""
-        if not self.parent_window:
-            return
-            
         current_width = self.width()
         current_height = self.height()
+        
+        DEFAULT_WIDTH = 800
+        DEFAULT_HEIGHT = 600
+        MIN_FONT_SIZE = self.min_font_size
+        MAX_FONT_SIZE = self.max_font_size
         
         width_ratio = current_width / DEFAULT_WIDTH
         height_ratio = current_height / DEFAULT_HEIGHT
@@ -455,7 +457,7 @@ class PDFDownloadDialog(QDialog):
         
         base_font_size = int(base_font_size)
         other_font_size = int(base_font_size * 0.5)
-        other_font = QFont("微软雅黑", other_font_size)
+        other_font = QFont(self.global_font, other_font_size)
         
         for widget in [self.path_label, self.save_path_label]:
             widget.setFont(other_font)
@@ -680,84 +682,162 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.parent_window = parent
         self.setWindowTitle("关于")
-        self.resize(700, 600)
+        self.resize(1080, 1200)
+        self.setFixedSize(1080, 1080)
         
-        self.setStyleSheet("""
-            QDialog {background-color: #E5E8EF;}
-            QPushButton {
-                font-family: "微软雅黑"; background-color: white; color: black;
+        self._get_version_info()
+        
+        from misc_func import SettingsManager
+        settings_manager = SettingsManager()
+        self.global_font = settings_manager.get_Custom_value('global_font', '微软雅黑')
+        self.min_font_size = int(settings_manager.get_Custom_value('min_font_size', '22'))
+        self.max_font_size = int(settings_manager.get_Custom_value('max_font_size', '42'))
+        
+        background_color_hex = settings_manager.get_Custom_value('background_color', '#E5E8EF')
+        r = int(background_color_hex[1:3], 16)
+        g = int(background_color_hex[3:5], 16)
+        b = int(background_color_hex[5:7], 16)
+        r = min(255, r + 16)
+        g = min(255, g + 16)
+        b = min(255, b + 16)
+        self.left_background_color = f"#{r:02x}{g:02x}{b:02x}"
+        
+        self.setStyleSheet(f"""
+            QDialog {{background-color: #E5E8EF;}}
+            QPushButton {{
+                font-family: "{self.global_font}"; background-color: white; color: black;
                 border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
-            }
-            QPushButton:hover {background-color: #f0f0f0;}
-            QLabel {font-family: "微软雅黑";}
+            }}
+            QPushButton:hover {{background-color: #f0f0f0;}}
+            QLabel {{font-family: "{self.global_font}";}}
         """)
         
+        self.image_url = "https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon_full_1080%20_inside.png?raw=true"
+        self.cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.image_path = os.path.join(self.cache_dir, "icon_full_1080.png")
+        
         layout = QVBoxLayout()
+        layout.setSpacing(10)
+        layout.setContentsMargins(30, 30, 30, 30)
         
-        # 标题
-        self.title_label = QLabel("关于")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.title_label)
+        # 移除了标题，直接显示图片和内容
         
-        # 正文
-        self.content_label = QLabel(
+        # 图片显示区域
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setFixedHeight(300)
+        layout.addWidget(self.image_label)
+        
+        # 图片和正文之间的间距 - 原来的1/3
+        image_content_spacer = QWidget()
+        image_content_spacer.setFixedHeight(0)  # 原来是弹性的，现在用固定小间距
+        layout.addWidget(image_content_spacer)
+        
+        # 正文区域 - 左右布局
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(20)
+        
+        # 左侧主要介绍
+        left_content_text = (
             "源悦TTS，\n"
             "一款以学生为本、由学生研发、为学生而生的文本转语音程序。\n"
             '——————————————————\n'
-            '大部分外围设施（尤其是官网）还没有准备好，望各位谅解。\n'
-            '此版本为公测版，仍有部分功能未适配/未实现，望各位谅解。\n'
-            '感谢各位的鼎力支持，各位的支持是我的最大动力。\n'
+            '大部分外围设施（尤其是官网）还未准备好，望各位谅解。\n'
+            '此版本为测试版，仍有部分功能未适配/实现，望各位谅解。\n'
+            '感谢各位的鼎力支持，您的支持是我的最大动力。\n'
             '——————————————————\n'
-            '另：若发现ghfast加速功能无法使用，很有可能是ghfast被限制了。请在github交issue提醒我，万分感谢。\n'
+            '我们接受但不推荐您以金钱赞助本程序。\n若仍想打赏的话您可在项目主页找到赞赏码。\n点个Star或者Fork来支持我们吧！\n'
             '——————————————————\n'
-            "by Air84 2025.12.11\n"
-            "version:SimeonTest 0.7 "
+            #'您可以查看\ngithub.com/CN-Air84/CN-Air84/blob/main/README.md\n以加入我们的开发组或内测用户团。\n'
+            '目前开发组或用户团不计划扩招。\n'
+            '——————————————————\n'
+            '您可以在项目主页找到本程序的所有相关信息，\n包括使用说明、更新日志、源代码等。\n'
+            '本项目基于Apache2.0协议开源，\n您可在遵守协议前提下自由使用、修改和分发本代码。'
+
+            
         )
-        self.content_label.setAlignment(Qt.AlignCenter)
-        self.content_label.setWordWrap(True)
-        layout.addWidget(self.content_label)
+        #同时记得调整窗口大小。六百八十五行左右。Ctrl+F:self.resize(1080, 1200)。
+        #以及 self.right_content_label.setMaximumWidth(int(self.width() / 6))。
+        self.left_content_label = QLabel(left_content_text)
+        self.left_content_label.setAlignment(Qt.AlignCenter)
+        self.left_content_label.setWordWrap(True)
+        self.left_content_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {self.left_background_color};
+                border-radius: 15px;
+                padding: 20px;
+            }}
+        """)
+        content_layout.addWidget(self.left_content_label)
         
-        # 图片区
-        image_layout = QHBoxLayout()
-        self.image_labels = []
+        # 右侧版本信息
+        right_content_text = (
+            f"by Air84\n"
+            f"版本号:{self.version}\n"
+            f"更新日期:{self.version_date}\n"
+            f"更新内容:\n{self.update_content}"
+        )
         
-        for i in range(3):
-            image_label = QLabel()
-            image_label.setAlignment(Qt.AlignCenter)
-            image_label.setFixedSize(150, 150)
-            image_label.setStyleSheet("border: 1px solid gray; background-color: white;")
-            image_layout.addWidget(image_label)
-            self.image_labels.append(image_label)
+        self.right_content_label = QLabel(right_content_text)
+        self.right_content_label.setAlignment(Qt.AlignCenter)
+        self.right_content_label.setWordWrap(True)
+        self.right_content_label.setMaximumWidth(int(self.width() / 3))
+        self.right_content_label.setStyleSheet("""
+            QLabel {
+                background-color: white;
+                border-radius: 15px;
+                padding: 20px;
+            }
+        """)
+        content_layout.addWidget(self.right_content_label)
         
-        layout.addLayout(image_layout)
+        layout.addLayout(content_layout)
         
+        # 下方弹簧，让按钮在底部
+        layout.addStretch(1)
+
         # 按钮区域
-        button_layout = QHBoxLayout()
+        button_layout = QGridLayout()
         self.buttons = []
         
         for i, text in enumerate(ABOUT_BUTTON_TEXTS):
             button = QPushButton(text)
-            button.setStyleSheet("""
-                QPushButton {
-                    font-family: "微软雅黑"; background-color: white; color: black;
-                    border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
-                }
-                QPushButton:hover {background-color: #f0f0f0;}
+            button.setStyleSheet(f"""
+                QPushButton {{
+                    font-family: "{self.global_font}"; background-color: white; color: black;
+                    border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 8px;
+                }}
+                QPushButton:hover {{background-color: #f0f0f0;}}
             """)
-            button.clicked.connect(lambda checked, idx=i: self.open_url(idx))
-            button_layout.addWidget(button)
+            row = i // 2
+            col = i % 2
+            button_layout.addWidget(button, row, col)
             self.buttons.append(button)
+            
+            if i == 0:
+                button.clicked.connect(self.on_button_0_clicked)
+            elif i == 1:
+                button.clicked.connect(self.on_button_1_clicked)
+            elif i == 2:
+                button.clicked.connect(self.on_button_2_clicked)
+            elif i == 3:
+                button.clicked.connect(self.on_button_3_clicked)
+            elif i == 4:
+                button.clicked.connect(self.on_button_4_clicked)
+            elif i == 5:
+                button.clicked.connect(self.on_button_5_clicked)
         
         layout.addLayout(button_layout)
         
         # 关闭按钮
         close_button = QPushButton("关闭")
-        close_button.setStyleSheet("""
-            QPushButton {
-                font-family: "微软雅黑"; background-color: white; color: black;
-                border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
-            }
-            QPushButton:hover {background-color: #f0f0f0;}
+        close_button.setStyleSheet(f"""
+            QPushButton {{
+                font-family: "{self.global_font}"; background-color: white; color: black;
+                border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 8px;
+            }}
+            QPushButton:hover {{background-color: #f0f0f0;}}
         """)
         close_button.clicked.connect(self.accept)
         layout.addWidget(close_button)
@@ -765,17 +845,71 @@ class AboutDialog(QDialog):
         self.setLayout(layout)
         
         # 加载图片
-        self.load_images()
+        self._load_about_image()
         
         self._update_fonts()
     
+    def _load_about_image(self):
+        """加载关于页面图片"""
+        if os.path.exists(self.image_path):
+            self._display_image()
+        else:
+            self._download_image()
+    
+    def _download_image(self):
+        """后台静默下载图片"""
+        def download_thread():
+            try:
+                final_url = self._get_download_url(self.image_url)
+                response = requests.get(final_url, timeout=30)
+                if response.status_code == 200:
+                    with open(self.image_path, 'wb') as f:
+                        f.write(response.content)
+                    QTimer.singleShot(0, self._display_image)
+            except Exception as e:
+                print(f"下载图片失败: {e}")
+        
+        import threading
+        thread = threading.Thread(target=download_thread, daemon=True)
+        thread.start()
+    
+    def _display_image(self):
+        """显示图片"""
+        if os.path.exists(self.image_path):
+            pixmap = QPixmap(self.image_path)
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(1080, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.image_label.setPixmap(scaled_pixmap)
+    
+    def _get_version_info(self):
+        """从VersionInfos获取版本信息"""
+        self.version = "未知版本"
+        self.version_date = "未知日期"
+        self.update_content = ""
+        
+        try:
+            from main_window_package import version_info
+            self.version = version_info.version()
+            self.version_date = version_info.update_date()
+            self.update_content = version_info.update_content()
+        except ImportError:
+            try:
+                from main_window import version_info
+                self.version = version_info.version()
+                self.version_date = version_info.update_date()
+                self.update_content = version_info.update_content()
+            except (ImportError, AttributeError):
+                pass
+    
     def _update_fonts(self):
         """更新界面字体大小"""
-        if not self.parent_window:
-            return
-            
         current_width = self.width()
         current_height = self.height()
+        
+        DEFAULT_WIDTH = 1280
+        DEFAULT_HEIGHT = 1080
+        MIN_FONT_SIZE = self.min_font_size
+        MAX_FONT_SIZE = self.max_font_size
         
         width_ratio = current_width / DEFAULT_WIDTH
         height_ratio = current_height / DEFAULT_HEIGHT
@@ -786,66 +920,22 @@ class AboutDialog(QDialog):
         base_font_size = max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, base_font_size))
         
         base_font_size = int(base_font_size)
-        title_font_size = int(base_font_size * 1.125 * 0.5)
-        content_font_size = int(base_font_size * 0.5)
-        button_font_size = int(base_font_size * 0.5 * 0.5)
+        font_size = int(base_font_size * 0.48)
+        title_font_size = int(font_size * 1.5)
         
-        # 获取字体
-        font_name = "微软雅黑"
-        if self.parent_window and hasattr(self.parent_window, 'settings_manager'):
-            settings_manager = self.parent_window.settings_manager
-            custom_font = settings_manager.Custom.get_value("global_font", "微软雅黑")
-            font_name = custom_font
-        
-        title_font = QFont(font_name, title_font_size)
+        title_font = QFont(self.global_font, title_font_size)
         title_font.setBold(True)
         
-        content_font = QFont(font_name, content_font_size)
-        button_font = QFont(font_name, button_font_size)
+        content_font = QFont(self.global_font, font_size)
+        button_font = QFont(self.global_font, font_size)
         
-        self.title_label.setFont(title_font)
-        self.content_label.setFont(content_font)
+        self.left_content_label.setFont(content_font)
+        self.right_content_label.setFont(content_font)
         
         for button in self.buttons:
             button.setFont(button_font)
     
-    def resizeEvent(self, event):
-        """处理窗口大小变化事件"""
-        self._update_fonts()
-        super().resizeEvent(event)
-    
-    def load_images(self):
-        """加载关于页面图片"""
-        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        
-        for i, url in enumerate(ABOUT_IMAGE_URLS):
-            if not url:
-                continue
-                
-            cache_path = os.path.join(cache_dir, f"about_image_{i}.png")
-            
-            # 先翻缓存
-            if os.path.exists(cache_path):
-                pixmap = QPixmap(cache_path)
-                if not pixmap.isNull():
-                    self.image_labels[i].setPixmap(pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    continue
-            
-            try:
-                response = requests.get(url, timeout=10)
-                if response.status_code == 200:
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(response.content)
-                    if not pixmap.isNull():
-                        self.image_labels[i].setPixmap(pixmap.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                        pixmap.save(cache_path, "PNG")
-                    else:
-                        self.image_labels[i].setText("获取错误")
-                else:
-                    self.image_labels[i].setText("获取错误")
-            except Exception as e:
-                self.image_labels[i].setText("获取错误")
+
     
     def open_url(self, index):
         """
@@ -856,6 +946,208 @@ class AboutDialog(QDialog):
         """
         if index < len(ABOUT_BUTTON_URLS) and ABOUT_BUTTON_URLS[index]:
             QDesktopServices.openUrl(QUrl(ABOUT_BUTTON_URLS[index]))
+    
+    def on_button_0_clicked(self):
+        if ABOUT_BUTTON_URLS[0]:
+            QDesktopServices.openUrl(QUrl(ABOUT_BUTTON_URLS[0]))
+    
+    def get_latest_github_release(self):
+        """
+        获取GitHub最新版本号和下载链接
+        
+        Returns:
+            dict: 包含tag_name和browser_download_url的字典，失败返回None
+        """
+        url = "https://api.github.com/repos/CN-Air84/YuanYue-TTS/releases/latest"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                release_info = response.json()
+                assets = release_info.get('assets', [])
+                if assets:
+                    return {
+                        'tag_name': release_info['tag_name'],
+                        'browser_download_url': assets[0].get('browser_download_url', '')
+                    }
+                else:
+                    return {
+                        'tag_name': release_info['tag_name'],
+                        'browser_download_url': ''
+                    }
+            else:
+                print(f"Error: {response.status_code} - {response.text}")
+                return None
+        except Exception as e:
+            print(f"获取版本信息失败: {e}")
+            return None
+    
+    def _get_download_url(self, original_url):
+        """根据加速选项获取下载URL"""
+        from misc_func import SettingsManager
+        settings_manager = SettingsManager()
+        github_acceleration = settings_manager.get_github_acceleration() if settings_manager else 0
+        
+        if github_acceleration == 1:
+            return f"https://ghfast.top/{original_url}"
+        elif github_acceleration == 2:
+            return f"https://gh-proxy.org/{original_url}"
+        elif github_acceleration == 3:
+            return f"https://hk.gh-proxy.org/{original_url}"
+        elif github_acceleration == 4:
+            return f"https://edgeone.gh-proxy.org/{original_url}"
+        else:
+            return original_url
+    
+    def compare_versions(self, version1, version2):
+        """
+        比较两个版本号
+        
+        Args:
+            version1 (str): 版本号1
+            version2 (str): 版本号2
+        
+        Returns:
+            int: 1表示version1>version2, -1表示version1<version2, 0表示相等, -2表示无法比较(默认无需更新)
+        """
+        try:
+            v1_parts = version1.replace('v', '').split('.')
+            v2_parts = version2.replace('v', '').split('.')
+            
+            max_len = max(len(v1_parts), len(v2_parts))
+            v1_parts.extend(['0'] * (max_len - len(v1_parts)))
+            v2_parts.extend(['0'] * (max_len - len(v2_parts)))
+            
+            for v1, v2 in zip(v1_parts, v2_parts):
+                try:
+                    v1_num = int(v1)
+                    v2_num = int(v2)
+                    if v1_num > v2_num:
+                        return 1
+                    elif v1_num < v2_num:
+                        return -1
+                except (ValueError, TypeError):
+                    # 如果无法转换为数字，直接比较字符串
+                    if v1 > v2:
+                        return 1
+                    elif v1 < v2:
+                        return -1
+            
+            return 0
+        except Exception:
+            # 任何异常都返回-2，表示无法比较，默认无需更新
+            return -2
+    
+    def on_button_1_clicked(self):
+        if not DIALOGS_AVAILABLE:
+            QMessageBox.warning(self, "错误", "加载对话框模块未找到")
+            return
+        
+        loading_dialog = LoadingDialog(self)
+        loading_dialog.text_label.setText("正在检查更新...")
+        loading_dialog.show()
+        
+        QApplication.processEvents()
+        
+        try:
+            release_info = self.get_latest_github_release()
+            
+            if release_info is None:
+                QMessageBox.warning(self, "检查更新", "无法获取最新版本信息，请检查网络连接。")
+                return
+            
+            latest_version = release_info['tag_name']
+            download_url = release_info['browser_download_url']
+            
+            comparison = self.compare_versions(latest_version, self.version)
+            
+            if comparison == -2:
+                QMessageBox.information(self, "版本检查", 
+                    f"当前版本：{self.version}\n"
+                    f"最新版本：{latest_version}\n\n"
+                    "版本号格式无法识别，暂不检测更新。\n"
+                    "如有需要，请手动检查项目主页。")
+            elif comparison > 0:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("发现新版本")
+                msg_box.setText(f"最新版本：{latest_version}\n当前版本：{self.version}\n\n检测结果：发现新版本可用")
+                msg_box.setInformativeText("是否立即下载更新？")
+                msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+                msg_box.setDefaultButton(QMessageBox.Yes)
+                
+                yes_button = msg_box.button(QMessageBox.Yes)
+                yes_button.setText("立即下载")
+                
+                no_button = msg_box.button(QMessageBox.No)
+                no_button.setText("暂不更新")
+                
+                result = msg_box.exec_()
+                
+                if result == QMessageBox.Yes:
+                    if not download_url:
+                        QMessageBox.warning(self, "下载失败", "未找到可用的下载链接。")
+                        return
+                    
+                    try:
+                        from multi_thread_downloader import download
+                        from misc_func import SettingsManager
+                        
+                        settings_manager = SettingsManager()
+                        thread_num = settings_manager.get_download_thread_num() if settings_manager else 5
+                        
+                        final_download_url = self._get_download_url(download_url)
+                        
+                        downloads_dir = os.path.dirname(os.path.abspath(__file__))
+                        
+                        filename = f"{latest_version}.exe"
+                        save_path = os.path.join(downloads_dir, filename)
+                        
+                        success = download(
+                            url=final_download_url,
+                            save_dir=downloads_dir,
+                            filename=filename,
+                            thread_num=thread_num,
+                            verify_ssl=False
+                        )
+                        
+                        if success:
+                            QMessageBox.information(self, "下载完成", f"文件已保存至：\n{save_path}\n\n即将启动新版本...")
+                            
+                            import subprocess
+                            import sys
+                            
+                            try:
+                                subprocess.Popen([save_path])
+                                sys.exit(0)
+                            except Exception as e:
+                                QMessageBox.warning(self, "启动失败", f"文件下载成功，但启动失败：{str(e)}\n\n请手动运行新版本程序。")
+                        else:
+                            QMessageBox.critical(self, "下载失败", "下载过程中出现错误，请检查网络连接。")
+                            
+                    except ImportError:
+                        QMessageBox.critical(self, "错误", "多线程下载模块未找到")
+                    except Exception as e:
+                        QMessageBox.critical(self, "错误", f"下载失败：{str(e)}")
+            else:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("检查更新")
+                msg_box.setText(f"最新版本：{latest_version}\n当前版本：{self.version}\n\n检测结果：当前已是最新版本")
+                msg_box.setInformativeText("无需更新")
+                msg_box.setStandardButtons(QMessageBox.Ok)
+                msg_box.exec_()
+        finally:
+            loading_dialog.close()
+    
+    def on_button_2_clicked(self):
+        pass
+    
+    def on_button_3_clicked(self):
+        pass
+    
+    def on_button_4_clicked(self):
+        pass
+    
+    def on_button_5_clicked(self):
+        pass
 
 
 class MiscPage(QWidget):
@@ -871,7 +1163,17 @@ class MiscPage(QWidget):
         super().__init__(parent)
         self.parent_window = parent
         
-        # 获取共享内存管理器
+        from misc_func import SettingsManager
+        settings_manager = SettingsManager()
+        self.global_font = settings_manager.get_Custom_value('global_font', '微软雅黑')
+        self.min_font_size = int(settings_manager.get_Custom_value('min_font_size', '22'))
+        self.max_font_size = int(settings_manager.get_Custom_value('max_font_size', '42'))
+        
+        self.setStyleSheet(f"""
+            QWidget {{background-color: #E5E8EF;}}
+            QPushButton {{font-family: "{self.global_font}";}}
+        """)
+        
         self.shared_manager = get_shared_memory_manager()
         
         self._init_ui()
@@ -919,23 +1221,23 @@ class MiscPage(QWidget):
     
     def _get_button_style(self):
         """获取按钮样式"""
-        return """
-            QPushButton {
-                font-family: "微软雅黑"; 
+        return f"""
+            QPushButton {{
+                font-family: "{self.global_font}"; 
                 background-color: white; 
                 color: black;
                 border: 3px solid gray; 
                 border-radius: 15px;
                 font-weight: bold;
                 min-height: 80px;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #f0f0f0;
                 border: 3px solid #444444;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #e0e0e0;
-            }
+            }}
         """
     
     def _update_fonts(self):
@@ -945,6 +1247,11 @@ class MiscPage(QWidget):
             
         current_width = self.parent_window.width()
         current_height = self.parent_window.height()
+        
+        DEFAULT_WIDTH = 1080
+        DEFAULT_HEIGHT = 1080
+        MIN_FONT_SIZE = self.min_font_size
+        MAX_FONT_SIZE = self.max_font_size
         
         width_ratio = current_width / DEFAULT_WIDTH
         height_ratio = current_height / DEFAULT_HEIGHT
@@ -956,7 +1263,7 @@ class MiscPage(QWidget):
         
         base_font_size = int(base_font_size)
         button_font_size = int(base_font_size * 0.6)
-        button_font = QFont("微软雅黑", button_font_size)
+        button_font = QFont(self.global_font, button_font_size)
         
         for button in self.buttons:
             button.setFont(button_font)
@@ -1118,11 +1425,17 @@ class MoreSettingsDialog(QDialog):
         self.setWindowTitle("更多设置")
         self.resize(400, 300)
         
-        # 字体大小相关参数
-        self.min_font_size = 22
-        self.max_font_size = 42
+        if SETTINGS_AVAILABLE:
+            self.global_font = SettingsManager().get_Custom_value('global_font', '微软雅黑')
+            self.min_font_size = int(SettingsManager().get_Custom_value('min_font_size', '22'))
+            self.max_font_size = int(SettingsManager().get_Custom_value('max_font_size', '42'))
+        else:
+            self.global_font = '微软雅黑'
+            self.min_font_size = 22
+            self.max_font_size = 42
+        
         self.default_width = 1080
-        self.default_height = 720
+        self.default_height = 1080
         
         self._init_ui()
         self._update_fonts()
@@ -1205,24 +1518,8 @@ class MoreSettingsDialog(QDialog):
         try:
             base_font_size, other_font_size = self._calculate_font_sizes()
             
-            # 获取字体
-            font_name = "微软雅黑"
-            if self.parent_window and hasattr(self.parent_window, 'settings_manager'):
-                try:
-                    font_name = self.parent_window.settings_manager.get_Custom_value("global_font", "微软雅黑")
-                except:
-                    pass
-            else:
-                # 如果没有父窗口，则尝试直接从设置管理器获取
-                try:
-                    from misc_func import SettingsManager
-                    settings_manager = SettingsManager()
-                    font_name = settings_manager.get_Custom_value("global_font", "微软雅黑")
-                except:
-                    pass
-            
             # 更新控件字体
-            other_font = QFont(font_name, other_font_size)
+            other_font = QFont(self.global_font, other_font_size)
             
             # 更新标签字体
             for widget in [self.filename_edit, self.ua_edit, self.proxy_edit]:
@@ -1361,11 +1658,17 @@ class MultiThreadDownloadDialog(QDialog):
         self.setWindowTitle("多线程下载")
         self.resize(500, 200)
         
-        # 字体大小相关参数
-        self.min_font_size = 22
-        self.max_font_size = 42
+        if SETTINGS_AVAILABLE:
+            self.global_font = SettingsManager().get_Custom_value('global_font', '微软雅黑')
+            self.min_font_size = int(SettingsManager().get_Custom_value('min_font_size', '22'))
+            self.max_font_size = int(SettingsManager().get_Custom_value('max_font_size', '42'))
+        else:
+            self.global_font = '微软雅黑'
+            self.min_font_size = 22
+            self.max_font_size = 42
+        
         self.default_width = 1080
-        self.default_height = 720
+        self.default_height = 1080
         
         # 默认设置
         self.default_threads = 4
@@ -1503,7 +1806,6 @@ class MultiThreadDownloadDialog(QDialog):
     def _apply_styles(self):
         """应用与主界面一致的样式"""
         # 获取全局字体设置
-        global_font = '微软雅黑'
         background_color = '#E5E8EF'
         
         # 优先从父窗口的设置管理器获取背景颜色（与主窗口保持一致）
@@ -1521,22 +1823,13 @@ class MultiThreadDownloadDialog(QDialog):
             except:
                 pass
         
-        # 尝试从共享内存管理器获取字体设置
-        try:
-            from shared_memory_manager import get_shared_memory_manager
-            shared_manager = get_shared_memory_manager()
-            if shared_manager and hasattr(shared_manager, 'current_settings'):
-                global_font = shared_manager.current_settings.get('global_font', '微软雅黑')
-        except ImportError:
-            pass
-        
         # 应用样式表
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {background_color};
             }}
             QPushButton {{
-                font-family: "{global_font}";
+                font-family: "{self.global_font}";
                 background-color: white;
                 color: black;
                 border: 2px solid gray;
@@ -1552,12 +1845,12 @@ class MultiThreadDownloadDialog(QDialog):
                 background-color: #e0e0e0;
             }}
             QLabel {{
-                font-family: "{global_font}";
+                font-family: "{self.global_font}";
                 font-size: 14px;
                 color: black;
             }}
             QLineEdit {{
-                font-family: "{global_font}";
+                font-family: "{self.global_font}";
                 background-color: white;
                 color: black;
                 border: 2px solid gray;
@@ -1645,17 +1938,3 @@ class MultiThreadDownloadDialog(QDialog):
             QMessageBox.critical(self, "错误", "多线程下载模块未找到")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"下载过程中发生错误: {str(e)}")
-
-
-# 测试代码已注释，避免在运行主程序时创建额外的窗口
-# if __name__ == "__main__":
-#     app = QApplication(sys.argv)
-#     window = QWidget()
-#     window.setWindowTitle("杂项功能测试")
-#     window.resize(800, 600)
-#     misc_page = MiscPage(window)
-#     layout = QVBoxLayout()
-#     layout.addWidget(misc_page)
-#     window.setLayout(layout)
-#     window.show()
-#     sys.exit(app.exec_())

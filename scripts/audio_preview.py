@@ -410,16 +410,28 @@ class AudioPreview:
     def _play_audio_file(self, file_path: str, start_position: float = 0.0):
         """播放音频文件并初始化时间基准点"""
         try:
+            print(f"[AudioPreview] 开始播放音频文件: {file_path}, 起始位置: {start_position}")
+            
             if not self.pygame_manager._init_pygame():
+                print(f"[AudioPreview] pygame初始化失败")
                 return
                 
+            print(f"[AudioPreview] pygame初始化成功")
+            
             if not self.pygame_manager.load_audio(file_path):
+                print(f"[AudioPreview] 音频文件加载失败: {file_path}")
                 return
                 
+            print(f"[AudioPreview] 音频文件加载成功: {file_path}")
+            
             self.pygame_manager.set_volume(self.state.volume)
+            print(f"[AudioPreview] 音量设置为: {self.state.volume}")
                 
             if not self.pygame_manager.play_audio(start_position):
+                print(f"[AudioPreview] 音频播放启动失败")
                 return
+            
+            print(f"[AudioPreview] 音频播放启动成功")
             
             self.state.current_audio_length = self.pygame_manager.get_audio_length(file_path)
             self.state.current_audio_position = start_position
@@ -446,7 +458,10 @@ class AudioPreview:
             )
             self.playback_monitor.start()
             
+            print(f"[AudioPreview] 音频播放设置完成，开始监控播放状态")
+            
         except Exception as e:
+            print(f"[AudioPreview] 播放音频异常: {e}")
             self.parent_window.notification_manager.show_message(f"播放音频时发生错误: {str(e)}", "E", 5000)
 
     def _on_playback_finished(self):
@@ -513,7 +528,7 @@ class AudioPreview:
             return True
 
     def _update_progress(self):
-        """更新播放进度 - 基于时间基准点计算"""
+        """更新播放进度 - 显示当前句子的播放进度"""
         current_time = time.time()
         
         # 跳转冷却期：避免频繁更新导致的UI闪烁
@@ -528,10 +543,48 @@ class AudioPreview:
             pos = self.get_current_playback_position()
             
             if self.state.current_audio_length > 0:
-                progress = int((pos / self.state.current_audio_length) * 1000)
-                progress = max(0, min(progress, 1000))
+                # 计算当前句子的播放进度百分比
+                sentence_progress = pos / self.state.current_audio_length
                 
-                self.parent_window.generation_page.preview_control.preview_progress.setValue(progress)
+                # 获取当前句子的索引和总句子数
+                generation_page = self.parent_window.generation_page
+                
+                # 检查是否是 generation_page_neo 的 GenerationPage 实例
+                # 通过检查模块名来区分不同的 GenerationPage 类
+                if (generation_page and 
+                    hasattr(generation_page, 'sentence_manager') and
+                    generation_page.__class__.__module__ == 'generation_page_neo'):
+                    current_sentence_index = generation_page.sentence_manager.current_sentence_index
+                    total_sentences = len(generation_page.sentence_manager.sentences)
+                else:
+                    # 如果不是 generation_page_neo，使用传统方法获取进度信息
+                    current_sentence_index = 0
+                    total_sentences = 1
+                
+                if total_sentences > 0 and current_sentence_index >= 0:
+                    # 计算基础进度（已完成句子的进度）
+                    base_progress = (current_sentence_index / total_sentences) * 100
+                    
+                    # 加上当前句子的播放进度
+                    current_sentence_progress = sentence_progress * (100 / total_sentences)
+                    
+                    # 总进度百分比
+                    total_progress = base_progress + current_sentence_progress
+                    
+                    # 转换为进度条值（0-1000）
+                    progress_value = int(total_progress * 10)
+                    progress_value = max(0, min(progress_value, 1000))
+                    
+                    # 设置进度条值
+                    if hasattr(generation_page, 'preview_control'):
+                        generation_page.preview_control.preview_progress.setValue(progress_value)
+                    elif hasattr(generation_page, 'progress_bar'):
+                        generation_page.progress_bar.setValue(progress_value)
+                    
+                    # 每10%进度打印一次调试信息，避免输出过多
+                    if int(total_progress * 10) % 100 == 0:
+                        print(f"[AudioPreview] 进度更新: 句子{current_sentence_index+1}/{total_sentences}, "
+                              f"当前句子进度{sentence_progress*100:.1f}%, 总进度{total_progress:.1f}%")
 
     def set_seeking(self, seeking: bool):
         self.state.is_seeking = seeking

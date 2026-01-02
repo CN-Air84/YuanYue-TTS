@@ -21,7 +21,9 @@ class VersionInfos:
         self.this_version = '''☺packager-replace-version☺'''
         self.this_update_content = '''☺packager-replace-version-infos☺'''
         self.this_update_date = '''☺packager-replace-update-date☺'''
-    
+        # self.this_version = '''0.0'''
+        # self.this_update_content = '''版本自述文本框每行最多十六个汉字\nABCDEFGHABCDEFGHABCDEFGA\n1234567890123245678901234567\n'''
+        # self.this_update_date = '''版本测试更新日期2038-1-18'''
     def version(self):
         return self.this_version
     
@@ -129,6 +131,10 @@ class FontManager:
             
         # 更新生成页面字体
         if hasattr(self.parent_window, 'generation_page') and self.parent_window.generation_page:
+            self._update_generation_page_fonts(other_font_size)
+        
+        # 更新听写页面字体
+        if hasattr(self.parent_window, 'dictation_page') and self.parent_window.dictation_page:
             self._update_generation_page_fonts(other_font_size)
     
     def _update_generation_page_fonts(self, other_font_size: int):
@@ -274,6 +280,9 @@ class TabManager:
             # 如果是生成页面，执行特殊处理
             if tab_config.name == 'generation' and hasattr(self.parent_window, 'generation_page'):
                 self.parent_window.generation_page._check_inputs_and_update_button()
+            # 如果是听写页面，执行特殊处理
+            elif tab_config.name == 'dictation' and hasattr(self.parent_window, 'dictation_page'):
+                self.parent_window.dictation_page._check_inputs_and_update_button()
     def _get_tab_button_style(self):
         """选项卡按钮样式"""
         return """
@@ -395,6 +404,7 @@ class MainWindow(QWidget):
         # 注册选项卡
         self.tab_manager.register_tab('welcome', '欢迎', self._get_welcome_page_class())
         self.tab_manager.register_tab('generation', '生成', self._get_generation_page_class())
+        self.tab_manager.register_tab('dictation', '听写', self._get_generation_page_neo_class())
         self.tab_manager.register_tab('settings', '设置', self._get_settings_page_class())
         self.tab_manager.register_tab('personalization', '个性化', self._get_personalization_page_class()) 
         self.tab_manager.register_tab('misc', '杂项', self._get_misc_page_class())
@@ -403,6 +413,9 @@ class MainWindow(QWidget):
         self.tab_manager._create_tab_buttons()
     def _get_generation_page_class(self):
         from generation_page import GenerationPage
+        return GenerationPage
+    def _get_generation_page_neo_class(self):
+        from generation_page_neo import GenerationPage
         return GenerationPage
     def _get_settings_page_class(self):
         from settings_page import SettingsPage
