@@ -128,7 +128,7 @@ ___
 
 #### 需要注意的是，程序为单文件架构，您下载到的exe文件并不是安装包，而是程序本体。
 
-然后，您需要 [申请一个智谱清言 API 密钥](https://www.bigmodel.cn/login?redirect=%2Fconsole%2Foverview "智谱清言官网")  才能访问 AI。
+然后，您需要 [申请一个智谱清言 API 密钥](/docs/如何安装FFmpeg.md)  才能访问 AI。
 
 程序调用的GLM-4V-Flash的价格为0元/千Tokens，即免费使用。
 
