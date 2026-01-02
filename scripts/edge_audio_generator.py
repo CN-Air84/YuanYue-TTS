@@ -361,6 +361,16 @@ class AudioGenerator:
         if not self.tts_generator.generate_audio(config, temp_path):
             raise Exception("Edge-TTS生成音频失败")
         
+        # 添加延迟确保文件完全写入
+        import time
+        mp3_size = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
+        print(f"[AudioGenerator] 音频生成完成，文件大小: {mp3_size} 字节")
+        
+        if mp3_size > 0:
+            # 等待一小段时间确保文件完全写入磁盘
+            time.sleep(0.1)
+            print(f"[AudioGenerator] 等待文件写入完成，继续处理...")
+        
         # 转换为WAV格式（如果目标路径是WAV格式）
         if config.save_path.lower().endswith('.wav'):
             wav_path = self._convert_mp3_to_wav(temp_path)
@@ -400,31 +410,81 @@ class AudioGenerator:
         try:
             import subprocess
             import os
+            import time
             
             # 生成WAV文件路径
             base_path = os.path.splitext(mp3_path)[0]
             wav_path = base_path + '.wav'
             
-            # 使用FFmpeg转换格式
-            cmd = [
-                'ffmpeg', '-i', mp3_path, 
-                '-acodec', 'pcm_s16le',  # 16位PCM编码
-                '-ar', '44100',           # 采样率44.1kHz
-                '-ac', '2',               # 立体声
-                '-y',                     # 覆盖已存在文件
-                wav_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0 and os.path.exists(wav_path):
-                return wav_path
-            else:
-                print(f"[AudioGenerator] MP3转WAV失败: {result.stderr}")
+            # 首先检查MP3文件是否存在且大小大于0
+            if not os.path.exists(mp3_path):
+                print(f"[AudioGenerator] MP3文件不存在: {mp3_path}")
                 return None
                 
+            mp3_size = os.path.getsize(mp3_path)
+            if mp3_size == 0:
+                print(f"[AudioGenerator] MP3文件大小为0: {mp3_path}")
+                return None
+            
+            print(f"[AudioGenerator] 开始MP3转WAV，文件大小: {mp3_size} 字节")
+            
+            # 重试机制 - 最多重试3次
+            max_retries = 3
+            for retry in range(max_retries):
+                try:
+                    # 如果是重试，等待一下让文件完全写入
+                    if retry > 0:
+                        wait_time = 0.5 * retry  # 递增等待时间
+                        print(f"[AudioGenerator] 第{retry}次重试，等待{wait_time}秒...")
+                        time.sleep(wait_time)
+                    
+                    # 使用FFmpeg转换格式
+                    cmd = [
+                        'ffmpeg', '-i', mp3_path, 
+                        '-acodec', 'pcm_s16le',  # 16位PCM编码
+                        '-ar', '44100',           # 采样率44.1kHz
+                        '-ac', '2',               # 立体声
+                        '-y',                     # 覆盖已存在文件
+                        wav_path
+                    ]
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    
+                    if result.returncode == 0 and os.path.exists(wav_path):
+                        wav_size = os.path.getsize(wav_path)
+                        if wav_size > 0:
+                            print(f"[AudioGenerator] MP3转WAV成功，WAV文件大小: {wav_size} 字节")
+                            return wav_path
+                        else:
+                            print(f"[AudioGenerator] WAV文件大小为0")
+                            if retry < max_retries - 1:
+                                continue
+                            else:
+                                return None
+                    else:
+                        print(f"[AudioGenerator] MP3转WAV失败 (尝试 {retry + 1}/{max_retries}): {result.stderr}")
+                        if retry < max_retries - 1:
+                            continue
+                        else:
+                            return None
+                            
+                except subprocess.TimeoutExpired:
+                    print(f"[AudioGenerator] MP3转WAV超时 (尝试 {retry + 1}/{max_retries})")
+                    if retry < max_retries - 1:
+                        continue
+                    else:
+                        return None
+                except Exception as inner_e:
+                    print(f"[AudioGenerator] MP3转WAV异常 (尝试 {retry + 1}/{max_retries}): {inner_e}")
+                    if retry < max_retries - 1:
+                        continue
+                    else:
+                        return None
+            
+            return None
+                
         except Exception as e:
-            print(f"[AudioGenerator] MP3转WAV异常: {e}")
+            print(f"[AudioGenerator] MP3转WAV总体异常: {e}")
             return None
 
     def _handle_generation_error(self, error: Exception):

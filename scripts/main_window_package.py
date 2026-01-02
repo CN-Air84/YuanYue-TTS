@@ -18,14 +18,25 @@ class VersionInfos:
     """版本信息"""
     
     def __init__(self) -> None:
-        self.this_version = '''0.8.0'''
-        self.this_update_content = '''·添加“听写”选项卡
-  ·支持选择停顿符号
-·关于窗口高度略调'''
+        self.this_version = '''0.8.0.1'''
+        self.this_update_content = '''听写页面移除下一句和结束按钮\n下一句功能集成到生成音频按钮
+删除音频总时长检测，不再弹出“音频总时长小于20秒”弹窗
+添加文本检测，避免第一个字符为空格或换行符
+句子预览和停顿设置按钮及其窗口内所有文字应用自定义的字体
+添加句子预览功能，显示即将播放的句子，支持跳转。
+等等……'''
         self.this_update_date = '''2026-01-01'''
         # self.this_version = '''0.0'''
-        # self.this_update_content = '''版本自述文本框每行最多十六个汉字\nABCDEFGHABCDEFGHABCDEFGA\n1234567890123245678901234567\n'''
+        # self.this_update_content = '''版本自述文本框每行最多十六个汉字
+        # ABCDEFGHABCDEFGHABCDEFGA
+        # 1234567890123245678901234567\n'''
         # self.this_update_date = '''版本测试更新日期2038-1-18'''
+        # self.this_update_content = '''·听写页面移除下一句和结束按钮\n下一句功能集成到生成音频按钮
+        # ·删除音频总时长检测，不再弹出“音频总时长小于20秒”弹窗
+        # ·添加文本检测，避免第一个字符为空格或换行符
+        # 句子预览和停顿设置按钮及其窗口内所有文字应用自定义的字体
+        # ·添加句子预览功能，显示即将播放的句子，支持跳转。
+        # 1234567890123245678901234567\n'''
     def version(self):
         return self.this_version
     

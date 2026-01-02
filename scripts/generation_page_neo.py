@@ -8,7 +8,7 @@ import random
 from typing import Callable, List, Dict, Optional
 from PyQt5.QtWidgets import (QWidget, QPushButton, QSlider, QTextEdit, QCheckBox, QComboBox, QLabel, 
                              QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QButtonGroup, QMessageBox)
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot, QTimer
 from PyQt5.QtGui import QFont
 
 from misc_func import AudioConfig, VoiceConfig, ContentHasher, AudioFileManager, InputValidator
@@ -33,7 +33,7 @@ class GenerationSignals(QObject):
     update_button_state = pyqtSignal(bool, str)
     sentence_generated = pyqtSignal(int, str, float)  # 句子索引, 音频文件路径, 音频时长
     all_sentences_complete = pyqtSignal()  # 所有句子生成完成
-    playback_ready = pyqtSignal()  # 可以开始播放（20秒条件满足）
+    playback_ready = pyqtSignal()  # 可以开始播放
 
 
 class SentenceSplitter:
@@ -62,9 +62,27 @@ class SentenceSplitter:
         """设置启用的停顿符号"""
         self.enabled_marks = enabled_marks
     
+    def _clean_text(self, text: str) -> str:
+        """清理文本，移除句子开头和结尾的空格、换行符等多余空白字符"""
+        # 移除句子开头和结尾的空白字符（空格、换行符、制表符等）
+        text = text.strip()
+        
+        # 将多个连续的空白字符替换为单个空格
+        text = re.sub(r'\s+', ' ', text)
+        
+        # 移除句子开头的标点符号（保留在句子内部）
+        text = re.sub(r'^[\s\.,;:!?，。；：！？]+', '', text)
+        
+        return text.strip()
+    
     def split_text(self, text: str) -> List[str]:
         """将文本分割为小句 - 避免只含符号的句子"""
         if not text.strip():
+            return []
+        
+        # 首先清理整个文本
+        text = self._clean_text(text)
+        if not text:
             return []
         
         # 构建正则表达式模式
@@ -96,14 +114,14 @@ class SentenceSplitter:
                 # 获取停顿符号前的文本
                 start = match.start()
                 if start > 0:
-                    sentence = current_text[:start].strip()
+                    sentence = self._clean_text(current_text[:start])
                     if sentence and self._has_real_content(sentence):
                         sentences.append(sentence)
                 
                 # 检查停顿符号后的文本是否包含实际内容
                 end = match.end()
-                pause_text = current_text[start:end].strip()
-                remaining_text = current_text[end:].strip()
+                pause_text = self._clean_text(current_text[start:end])
+                remaining_text = self._clean_text(current_text[end:])
                 
                 # 如果停顿符号后有实际内容，将停顿符号附加到前一个句子
                 if remaining_text and self._has_real_content(remaining_text):
@@ -117,16 +135,24 @@ class SentenceSplitter:
                 current_text = current_text[end:]
             else:
                 # 没有更多停顿符号，剩余文本作为最后一个句子
-                remaining = current_text.strip()
+                remaining = self._clean_text(current_text)
                 if remaining and self._has_real_content(remaining):
                     sentences.append(remaining)
                 break
         
-        # 如果没有任何有效句子，返回整个文本
-        if not sentences and text.strip():
-            sentences.append(text.strip())
-            
-        return sentences
+        # 如果没有任何有效句子，返回整个文本（清理后）
+        cleaned_text = self._clean_text(text)
+        if not sentences and cleaned_text:
+            sentences.append(cleaned_text)
+        
+        # 最终过滤：移除空句子或只有空白字符的句子
+        valid_sentences = []
+        for sentence in sentences:
+            cleaned_sentence = self._clean_text(sentence)
+            if cleaned_sentence and self._has_real_content(cleaned_sentence):
+                valid_sentences.append(cleaned_sentence)
+        
+        return valid_sentences
     
     def _has_real_content(self, text: str) -> bool:
         """检查文本是否包含实际内容（非符号）"""
@@ -149,6 +175,7 @@ class SentenceAudioManager:
         self.max_threads = 4  # 最大线程数
         self.generation_queue = []  # 待生成的句子队列
         self.lock = threading.Lock()  # 线程锁
+        self.play_retry_count = {}  # 句子播放重试计数
     
     def set_sentences(self, sentences: List[str]):
         """设置句子列表"""
@@ -157,6 +184,7 @@ class SentenceAudioManager:
         self.audio_durations.clear()
         self.current_sentence_index = 0
         self.total_duration = 0.0
+        self.play_retry_count.clear()  # 清除重试计数
     
     def get_next_sentence_to_generate(self) -> Optional[tuple]:
         """获取下一个要生成的句子（线程安全）"""
@@ -230,6 +258,12 @@ class PauseSettingsDialog(QDialog):
     
     def _init_ui(self):
         """初始化UI"""
+        # 获取用户设置的字体
+        if hasattr(self.parent(), 'settings_manager'):
+            global_font = self.parent().settings_manager.get_Custom_value("global_font", "微软雅黑")
+        else:
+            global_font = "微软雅黑"
+        
         layout = QVBoxLayout()
         
         # 创建分组框
@@ -240,20 +274,24 @@ class PauseSettingsDialog(QDialog):
         self.checkboxes = {}
         for mark_name in SentenceSplitter.DEFAULT_PAUSE_MARKS.keys():
             checkbox = QCheckBox(mark_name)
+            checkbox.setFont(QFont(global_font, 10))
             self.checkboxes[mark_name] = checkbox
             group_layout.addWidget(checkbox)
         
         group_box.setLayout(group_layout)
+        group_box.setFont(QFont(global_font, 11))
         layout.addWidget(group_box)
         
         # 按钮区域
         button_layout = QHBoxLayout()
         
         save_button = QPushButton("保存并应用")
+        save_button.setFont(QFont(global_font, 10))
         save_button.clicked.connect(self._save_settings)
         button_layout.addWidget(save_button)
         
         cancel_button = QPushButton("取消")
+        cancel_button.setFont(QFont(global_font, 10))
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(cancel_button)
         
@@ -282,6 +320,139 @@ class PauseSettingsDialog(QDialog):
     def get_enabled_marks(self):
         """获取启用的停顿符号"""
         return self.current_settings
+
+
+class ParamSettingsDialog(QDialog):
+    """参数设置对话框 - 语速和语调控制"""
+    
+    def __init__(self, parent=None, current_config=None):
+        super().__init__(parent)
+        self.setWindowTitle("语音参数设置")
+        self.setModal(True)
+        self.setFixedSize(500, 400)
+        
+        # 当前配置
+        self.current_config = current_config or type('Config', (), {
+            'speed': 0
+        })()
+        
+        # 保存原始配置用于比较
+        self.original_config = type('Config', (), {
+            'speed': self.current_config.speed
+        })()
+        
+        self._init_ui()
+        self._load_settings()
+    
+    def _init_ui(self):
+        """初始化UI"""
+        # 获取用户设置的字体
+        if hasattr(self.parent(), 'settings_manager'):
+            global_font = self.parent().settings_manager.get_Custom_value("global_font", "微软雅黑")
+        else:
+            global_font = "微软雅黑"
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(20)
+        
+        # 语速滑动条
+        speed_layout = QHBoxLayout()
+        speed_label = QLabel("语速:")
+        speed_label.setFont(QFont(global_font, 11))
+        speed_layout.addWidget(speed_label)
+        
+        self.speed_slider = QSlider(Qt.Horizontal)
+        self.speed_slider.setRange(-50, 50)  # -50% 到 +50%
+        self.speed_slider.setValue(0)
+        self.speed_slider.setTickPosition(QSlider.TicksBelow)
+        self.speed_slider.setTickInterval(10)
+        self.speed_slider.valueChanged.connect(self._on_speed_changed)
+        self.speed_slider.setStyleSheet(self._get_slider_style())  # 使用主页面相同的滑动条样式
+        speed_layout.addWidget(self.speed_slider)
+        
+        self.speed_value_label = QLabel("0%")
+        self.speed_value_label.setFont(QFont(global_font, 10))
+        self.speed_value_label.setMinimumWidth(50)
+        speed_layout.addWidget(self.speed_value_label)
+        
+        layout.addLayout(speed_layout)
+        
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        
+        save_button = QPushButton("保存设置")
+        save_button.setFont(QFont(global_font, 10))
+        save_button.clicked.connect(self._save_settings)
+        button_layout.addWidget(save_button)
+        
+        cancel_button = QPushButton("取消")
+        cancel_button.setFont(QFont(global_font, 10))
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    
+    def _load_settings(self):
+        """加载当前设置"""
+        self.speed_slider.setValue(self.current_config.speed)
+    
+    def _on_speed_changed(self, value):
+        """语速变化事件"""
+        self.speed_value_label.setText(f"{value}%")
+        self.current_config.speed = value
+    
+    def _get_slider_style(self) -> str:
+        """获取滑动条样式"""
+        return """
+        QSlider::groove:horizontal {
+            border: none;
+            height: 12px;
+            background: #FFFFFF;
+            border-radius: 6px;
+        }
+        
+        QSlider::sub-page:horizontal {
+            background: #44AADD;
+            border-radius: 6px;
+        }
+        
+        QSlider::add-page:horizontal {
+            background: #FFFFFF;
+            border-radius: 6px;
+        }
+        
+        QSlider::handle:horizontal {
+            background: #FFFFFF;
+            border: 2px solid #44AADD;
+            width: 16px;
+            margin: -6px 0;
+            border-radius: 8px;
+        }
+        
+        QSlider::handle:horizontal:hover {
+            background: #F5F5F5;
+        }
+        
+        QSlider::handle:horizontal:pressed {
+            background: #E0E0E0;
+        }
+        """
+    
+    def _save_settings(self):
+        """保存设置"""
+        # 检查是否有变化
+        has_changes = self.current_config.speed != self.original_config.speed
+        
+        if not has_changes:
+            QMessageBox.information(self, "提示", "参数没有变化，无需保存")
+            return
+        
+        self.accept()
+    
+    def get_config(self):
+        """获取配置"""
+        return self.current_config
 
 
 class ParameterControl:
@@ -550,8 +721,6 @@ class PreviewControl:
         self.parent = parent
         
         self.preview_button = None
-        self.next_sentence_button = None  # 下一句按钮（原暂停按钮）
-        self.stop_button = None
         self.preview_progress = None
         self.volume_slider = None  # 新增音量控制
         self.volume_label = None   # 新增音量显示
@@ -568,17 +737,7 @@ class PreviewControl:
         self.preview_button.clicked.connect(self._handle_preview_button)
         self.preview_button.setStyleSheet(self._get_button_style("rgb(0, 100, 200)", "rgb(0, 120, 220)"))
         
-        # 下一句按钮（原暂停按钮）
-        self.next_sentence_button = QPushButton('下一句', self.parent)
-        self.next_sentence_button.clicked.connect(self._handle_next_sentence)
-        self.next_sentence_button.setStyleSheet(self._get_button_style("rgb(100, 100, 100)", "rgb(120, 120, 120)"))
-        self.next_sentence_button.setEnabled(False)
-        
-        # 停止音频按钮
-        self.stop_button = QPushButton('停止', self.parent)
-        self.stop_button.clicked.connect(self._stop_audio)
-        self.stop_button.setStyleSheet(self._get_button_style("rgb(200, 0, 0)", "rgb(220, 0, 0)"))
-        self.stop_button.setEnabled(False)
+        # 下一句和停止按钮已移除，功能整合到生成音频按钮中
         
         # 横向进度条
         self.preview_progress = QSlider(Qt.Horizontal, self.parent)
@@ -622,9 +781,23 @@ class PreviewControl:
     
     def _handle_preview_button(self):
         """处理音频按钮点击"""
-        if (hasattr(self.parent, 'parent_window') and 
-            self.parent.parent_window.has_preview and 
-            self.parent._is_content_unchanged()):
+        # 如果按钮被禁用或正在播放，不处理点击事件
+        if not self.preview_button.isEnabled() or self.preview_button.text() == "正在播放这一句":
+            return
+            
+        # 如果按钮显示为"播放这一句"，则执行这一句功能
+        if self.preview_button.text() == "播放这一句":
+            if hasattr(self.parent, 'handle_next_sentence'):
+                self.parent.handle_next_sentence()
+        # 如果按钮显示为"播放下一句"，则执行下一句功能，然后变回"播放这一句"
+        elif self.preview_button.text() == "播放下一句":
+            if hasattr(self.parent, 'handle_next_sentence'):
+                self.parent.handle_next_sentence()
+                # 执行完后变回"播放这一句"
+                self.preview_button.setText("播放这一句")
+        elif (hasattr(self.parent, 'parent_window') and 
+              self.parent.parent_window.has_preview and 
+              self.parent._is_content_unchanged()):
             self.parent.parent_window.audio_preview.play_preview()
         else:
             self.parent._generate_preview_audio()
@@ -671,13 +844,7 @@ class PreviewControl:
     def set_playback_controls_enabled(self, playing: bool):
         """设置播放控制按钮状态"""
         self.preview_button.setEnabled(not playing)
-        # 下一句按钮在播放时启用，停止时禁用
-        self.next_sentence_button.setEnabled(playing)
-        self.stop_button.setEnabled(playing)
-    
-    def update_next_sentence_button_state(self, enabled: bool):
-        """更新下一句按钮状态"""
-        self.next_sentence_button.setEnabled(enabled)
+        # 下一句和停止按钮已移除
     
     def _get_button_style(self, normal_color: str, hover_color: str) -> str:
         """获取按钮样式"""
@@ -693,14 +860,10 @@ class PreviewControl:
     def update_font(self, font):
         """更新控件字体"""
         self.preview_button.setFont(font)
-        self.next_sentence_button.setFont(font)
-        self.stop_button.setFont(font)
         self.volume_label.setFont(font)
         self.volume_value_label.setFont(font)
         # 更新按钮样式以使用新字体
         self.preview_button.setStyleSheet(self._get_button_style("rgb(0, 100, 200)", "rgb(0, 120, 220)"))
-        self.next_sentence_button.setStyleSheet(self._get_button_style("rgb(100, 100, 100)", "rgb(120, 120, 120)"))
-        self.stop_button.setStyleSheet(self._get_button_style("rgb(200, 0, 0)", "rgb(220, 0, 0)"))
     
     def _get_progress_style(self) -> str:
         """获取进度条样式"""
@@ -863,6 +1026,39 @@ class GenerationPage(QWidget):
         """获取调试输出前缀 [GPN hh-mm-dd]"""
         current_time = time.strftime("%H-%M-%d")
         return f"[GPN {current_time}]"
+    
+    def _jump_to_sentence(self, offset):
+        """跳转到指定偏移位置的句子"""
+        if not hasattr(self, 'sentence_manager') or not self.sentence_manager.sentences:
+            return
+        
+        current_idx = self.sentence_manager.current_sentence_index
+        target_idx = current_idx + offset
+        
+        # 检查目标索引是否有效
+        if 0 <= target_idx < len(self.sentence_manager.sentences):
+            print(f"{self._get_debug_prefix()} 跳转到句子 {target_idx} (偏移: {offset})")
+            
+            # 更新当前句子索引
+            self.sentence_manager.current_sentence_index = target_idx
+            
+            # 更新句子预览
+            self.update_sentence_preview()
+            
+            # 更新进度条
+            progress_percentage = ((target_idx + 1) / len(self.sentence_manager.sentences)) * 100
+            self.preview_control.preview_progress.setValue(int(progress_percentage))
+            
+            # 检查目标句子的音频是否已生成
+            audio_file = self.sentence_manager.audio_files.get(target_idx)
+            if audio_file and os.path.exists(audio_file) and os.path.getsize(audio_file) > 0:
+                # 如果音频已存在，直接播放
+                self._play_current_sentence()
+            else:
+                # 如果音频不存在，提示用户
+                QMessageBox.information(self, "提示", f"第 {target_idx + 1} 句音频尚未生成，请先生成音频")
+        else:
+            print(f"{self._get_debug_prefix()} 跳转失败 - 目标索引 {target_idx} 超出范围")
         
     def _init_components(self):
         """初始化所有组件"""
@@ -880,16 +1076,219 @@ class GenerationPage(QWidget):
         # 移除生成控制组件
         # self.generation_control = GenerationControl(self)
         
+        # 创建句子内容预览控件
+        self._create_sentence_preview_controls()
+        
         # 创建停顿设置按钮
         self.pause_settings_button = QPushButton('停顿设置', self)
         self.pause_settings_button.clicked.connect(self._show_pause_settings)
         self.pause_settings_button.setStyleSheet(self._get_pause_settings_button_style())
+        
+        # 创建参数设置按钮
+        self.param_settings_button = QPushButton('参数设置', self)
+        self.param_settings_button.clicked.connect(self._show_param_settings)
+        self.param_settings_button.setStyleSheet(self._get_param_settings_button_style())
         
         # 创建提示控件
         self._create_hint_controls()
         
 
         
+    def _create_sentence_preview_controls(self):
+        """创建句子内容预览控件"""
+        # 创建四个句子标签
+        self.prev_sentence_label = QLabel("", self)
+        self.current_sentence_label = QLabel("", self)
+        self.next_sentence_label = QLabel("", self)
+        self.next_next_sentence_label = QLabel("", self)
+        
+        # 创建四个跳转按钮
+        self.prev_jump_button = QPushButton("播放", self)
+        self.current_jump_button = QPushButton("播放", self)
+        self.next_jump_button = QPushButton("播放", self)
+        self.next_next_jump_button = QPushButton("播放", self)
+        
+        # 设置跳转按钮样式
+        self._setup_jump_button_styles()
+        
+        # 连接跳转按钮信号
+        self.prev_jump_button.clicked.connect(lambda: self._jump_to_sentence(-1))
+        self.current_jump_button.clicked.connect(lambda: self._jump_to_sentence(0))
+        self.next_jump_button.clicked.connect(lambda: self._jump_to_sentence(1))
+        self.next_next_jump_button.clicked.connect(lambda: self._jump_to_sentence(2))
+        
+        # 设置样式
+        self._setup_sentence_preview_styles()
+        
+    def update_sentence_preview(self):
+        """更新句子内容预览"""
+        if not hasattr(self, 'sentence_manager') or not self.sentence_manager.sentences:
+            # 清空预览内容
+            self.prev_sentence_label.setText("")
+            self.current_sentence_label.setText("")
+            self.next_sentence_label.setText("")
+            self.next_next_sentence_label.setText("")
+            return
+        
+        sentences = self.sentence_manager.sentences
+        current_idx = self.sentence_manager.current_sentence_index
+        
+        # 获取上下文句子
+        prev_text = sentences[current_idx - 1] if current_idx > 0 else ""
+        current_text = sentences[current_idx] if current_idx < len(sentences) else ""
+        next_text = sentences[current_idx + 1] if current_idx + 1 < len(sentences) else ""
+        next_next_text = sentences[current_idx + 2] if current_idx + 2 < len(sentences) else ""
+        
+        # 更新标签内容
+        self.prev_sentence_label.setText(prev_text)
+        self.current_sentence_label.setText(current_text)
+        self.next_sentence_label.setText(next_text)
+        self.next_next_sentence_label.setText(next_next_text)
+        
+        # 调试输出
+        print(f"[Preview] 更新句子预览 - 索引:{current_idx}, 当前:'{current_text[:20]}...'")
+    
+    def _update_sentence_preview_fonts(self, font):
+        """更新句子预览控件字体"""
+        # 应用字体到所有句子预览标签
+        self.prev_sentence_label.setFont(font)
+        self.current_sentence_label.setFont(font)
+        self.next_sentence_label.setFont(font)
+        self.next_next_sentence_label.setFont(font)
+        
+        # 应用字体到跳转按钮
+        self.prev_jump_button.setFont(font)
+        self.current_jump_button.setFont(font)
+        self.next_jump_button.setFont(font)
+        self.next_next_jump_button.setFont(font)
+        
+        # 重新应用样式以确保字体设置生效
+        self._setup_sentence_preview_styles()
+        self._setup_jump_button_styles()
+    
+    def _setup_sentence_preview_styles(self):
+        """设置句子预览样式"""
+        # 获取用户设置的字体
+        global_font = self.parent_window.settings_manager.get_Custom_value("global_font", "微软雅黑")
+        
+        # 计算动态字体大小（使用与音量提示文本相同的算法）
+        if self.parent_window:
+            current_width = self.parent_window.width()
+            current_height = self.parent_window.height()
+            
+            min_font_size = 22
+            max_font_size = 42
+            default_width = 1080
+            default_height = 720
+            
+            width_ratio = current_width / default_width
+            height_ratio = current_height / default_height
+            ratio = (width_ratio + height_ratio) / 2
+            
+            base_font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+            preview_font_size = max(min_font_size, min(max_font_size, base_font_size))
+            preview_font_size = int(preview_font_size * 0.8)  # 句子预览字体放大到原先的两倍（从0.4改为0.8）
+        else:
+            preview_font_size = 12  # 默认字体大小
+        
+        # 整体背景样式 - 暗白色圆角背景
+        preview_bg_style = f"""
+            QLabel {{
+                font-family: "{global_font}";
+                background-color: rgba(240, 240, 240, 200);
+                border-radius: 8px;
+                padding: 4px;
+                font-size: {preview_font_size}px;
+                color: #333;
+            }}
+        """
+        
+        # 当前句子样式 - 浅绿色圆角背景
+        current_style = f"""
+            QLabel {{
+                font-family: "{global_font}";
+                background-color: rgba(144, 238, 144, 180);
+                border-radius: 6px;
+                padding: 4px;
+                font-size: {preview_font_size}px;
+                color: #000;
+                font-weight: bold;
+            }}
+        """
+        
+        # 分割线样式
+        separator_style = """
+            QLabel {
+                background-color: rgba(200, 200, 200, 150);
+                min-height: 1px;
+                max-height: 1px;
+            }
+        """
+        
+        # 应用样式
+        self.prev_sentence_label.setStyleSheet(preview_bg_style)
+        self.current_sentence_label.setStyleSheet(current_style)
+        self.next_sentence_label.setStyleSheet(preview_bg_style)
+        self.next_next_sentence_label.setStyleSheet(preview_bg_style)
+        
+        # 设置文本对齐
+        for label in [self.prev_sentence_label, self.current_sentence_label, 
+                     self.next_sentence_label, self.next_next_sentence_label]:
+            label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            label.setWordWrap(True)
+    
+    def _setup_jump_button_styles(self):
+        """设置跳转按钮样式"""
+        # 获取用户设置的字体
+        global_font = self.parent_window.settings_manager.get_Custom_value("global_font", "微软雅黑")
+        
+        # 计算动态字体大小（与句子预览字体大小相同）
+        if self.parent_window:
+            current_width = self.parent_window.width()
+            current_height = self.parent_window.height()
+            
+            min_font_size = 22
+            max_font_size = 42
+            default_width = 1080
+            default_height = 720
+            
+            width_ratio = current_width / default_width
+            height_ratio = current_height / default_height
+            ratio = (width_ratio + height_ratio) / 2
+            
+            base_font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+            button_font_size = max(min_font_size, min(max_font_size, base_font_size))
+            button_font_size = int(button_font_size * 0.8)  # 与句子预览字体大小一致
+        else:
+            button_font_size = 12
+        
+        # 跳转按钮样式
+        jump_button_style = f"""
+            QPushButton {{
+                font-family: "{global_font}";
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: {button_font_size}px;
+                font-weight: bold;
+                min-width: 50px;
+                max-width: 60px;
+            }}
+            QPushButton:hover {{
+                background-color: #1976D2;
+            }}
+            QPushButton:pressed {{
+                background-color: #1565C0;
+            }}
+        """
+        
+        # 应用样式到所有跳转按钮
+        for button in [self.prev_jump_button, self.current_jump_button, 
+                      self.next_jump_button, self.next_next_jump_button]:
+            button.setStyleSheet(jump_button_style)
+    
     def _create_hint_controls(self):
         """创建提示控件"""
         self.checkbox = QCheckBox(self)
@@ -984,19 +1383,70 @@ class GenerationPage(QWidget):
         # 音色选择栏位置 - 放在生成音频按钮上方，间隔0.5n
         # 可以修改这一行的间隔值：0.5n 是间隔，voice_combo_height是选择框高度
         voice_combo_height = int(m)
-        voice_combo_y = buttons_y - voice_combo_height - int(0.4 * n)  # 0.5n间隔
+        voice_combo_y = buttons_y - voice_combo_height - int(0.35 * n)  # 0.5n间隔
         
         # 布局下拉框 - 使用与其他元素相同的布局方式
         voice_combo_x = int((8.1 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset
         voice_combo_width = buttons_right - voice_combo_x  # 宽度与按钮区域一致
         self.voice_selection.combo_box.setGeometry(voice_combo_x, voice_combo_y, voice_combo_width, voice_combo_height)
         
-        # 停顿设置按钮 - 放在音色选择框上方，间隔0.5n
+        # 句子内容预览 - 放在停顿设置按钮上方，整体高度约4行文本
+        preview_height = int(4 * m)  # 四行文本高度
         pause_settings_height = int(m)
-        pause_settings_y = voice_combo_y - pause_settings_height - int(0.5 * n)  # 0.5n间隔
+        pause_settings_y = voice_combo_y - pause_settings_height - int(0.6 * n)  # 停顿设置按钮位置，上方空出0.5n间隔
+        preview_y = pause_settings_y - preview_height - int(0.6 * n)  # 在停顿设置按钮上方0.5n处
+        preview_x = voice_combo_x
         
-        # 布局停顿设置按钮 - 与音色选择框对齐
-        self.pause_settings_button.setGeometry(voice_combo_x, pause_settings_y, voice_combo_width, pause_settings_height)
+        # 计算预览区域宽度：原宽度减去跳转按钮区域（拉宽到约120px）
+        jump_button_width = 90  # 每个跳转按钮宽度拉宽到90px
+        jump_button_spacing = 5  # 按钮间距
+        total_jump_width = jump_button_width + jump_button_spacing  # 总跳转区域宽度
+        preview_width = voice_combo_width - total_jump_width  # 句子预览新宽度
+        
+        # 布局四个句子标签 - 第二行（当前句）高度为1.5倍
+        normal_line_height = preview_height // 4
+        current_line_height = int(normal_line_height * 1.5)  # 当前句高度为1.5倍
+        separator_height = 1
+        
+        # 上一句（正常高度）
+        self.prev_sentence_label.setGeometry(preview_x, preview_y, preview_width, normal_line_height - separator_height)
+        
+        # 这一句（浅绿色背景，1.5倍高度）
+        current_y = preview_y + normal_line_height
+        self.current_sentence_label.setGeometry(preview_x, current_y, preview_width, current_line_height - separator_height)
+        
+        # 下一句（正常高度）
+        next_y = current_y + current_line_height
+        self.next_sentence_label.setGeometry(preview_x, next_y, preview_width, normal_line_height - separator_height)
+        
+        # 下下一句（正常高度，调整位置以补偿当前句的额外高度）
+        next_next_y = next_y + normal_line_height
+        self.next_next_sentence_label.setGeometry(preview_x, next_next_y, preview_width, normal_line_height)
+        
+        # 布局跳转按钮 - 在句子预览右侧
+        jump_button_x = preview_x + preview_width + jump_button_spacing
+        jump_button_height = normal_line_height - separator_height
+        
+        # 上一句跳转按钮
+        self.prev_jump_button.setGeometry(jump_button_x, preview_y, jump_button_width, jump_button_height)
+        
+        # 当前句跳转按钮（1.5倍高度）
+        self.current_jump_button.setGeometry(jump_button_x, current_y, jump_button_width, current_line_height - separator_height)
+        
+        # 下一句跳转按钮
+        self.next_jump_button.setGeometry(jump_button_x, next_y, jump_button_width, jump_button_height)
+        
+        # 下下一句跳转按钮
+        self.next_next_jump_button.setGeometry(jump_button_x, next_next_y, jump_button_width, normal_line_height)
+        
+        # 布局停顿设置按钮 - 宽度减半，保持左边界不变
+        pause_settings_width = voice_combo_width // 2  # 宽度减半
+        self.pause_settings_button.setGeometry(voice_combo_x, pause_settings_y, pause_settings_width, pause_settings_height)
+        
+        # 布局参数设置按钮 - 在停顿设置按钮右侧
+        param_settings_x = voice_combo_x + pause_settings_width + int(0.5 * n)  # 右侧添加间距
+        param_settings_width = voice_combo_width - pause_settings_width - int(0.5 * n)  # 剩余宽度
+        self.param_settings_button.setGeometry(param_settings_x, pause_settings_y, param_settings_width, pause_settings_height)
 
         # 播放进度条和下一句停止键下移至播放进度条下边界距离窗口下边界0.25m
         # 窗口下边界: 16*m - offset_m
@@ -1021,14 +1471,16 @@ class GenerationPage(QWidget):
         control_buttons_start_x = progress_x + (progress_width - total_control_buttons_width) // 2
         control_buttons_y = progress_y - control_button_height
         
-        self.preview_control.next_sentence_button.setGeometry(control_buttons_start_x, control_buttons_y, control_button_width, control_button_height)
-        self.preview_control.stop_button.setGeometry(control_buttons_start_x + control_button_width, control_buttons_y, control_button_width, control_button_height)
+        # 下一句和停止按钮布局已移除
         
-        # 新增：布局音量控制 - 移动到停止键右边
+        # 新增：布局音量控制 - 移动到进度条上方居中位置
         self._layout_volume_controls(width, height, n, m, scale_factor, right_offset, progress_y, control_buttons_y, control_button_height)
 
         # 更新字体
         self._update_fonts()
+        
+        # 更新跳转按钮样式（响应窗口大小变化）
+        self._setup_jump_button_styles()
     
     def _on_font_changed_from_shared_memory(self, font_data):
         """从共享内存接收字体更改"""
@@ -1073,11 +1525,18 @@ class GenerationPage(QWidget):
             # 显示当前进度
             generated_count = self.sentence_manager.get_generated_count()
             total_count = len(self.sentence_manager.sentences)
-            total_duration = self.sentence_manager.get_total_duration()
-            print(f"{self._get_debug_prefix()} 当前进度: {generated_count}/{total_count}, 总时长: {total_duration:.2f}s")
+            print(f"{self._get_debug_prefix()} 当前进度: {generated_count}/{total_count}")
+            
+            # 检查是否是第一个音频生成完成，且还有未播放的分句
+            if (sentence_index == 0 and 
+                self.sentence_manager.has_next_sentence() and 
+                generated_count < total_count):
+                print(f"{self._get_debug_prefix()} 第一个音频生成完成，还有未播放的分句，切换按钮为这一句状态")
+                self.preview_control.preview_button.setText("播放这一句")
+                self.preview_control.preview_button.setEnabled(True)
             
             # 检查是否所有句子都生成完成
-            if self.sentence_manager.is_all_generated():
+            elif self.sentence_manager.is_all_generated():
                 print(f"{self._get_debug_prefix()} 所有句子生成完成")
                 self.signals.all_sentences_complete.emit()
                 
@@ -1087,12 +1546,13 @@ class GenerationPage(QWidget):
     def _on_all_sentences_complete_safe(self):
         """安全处理所有句子生成完成信号"""
         try:
-            # 如果总时长小于20秒，显示消息
-            if self.sentence_manager.get_total_duration() < 20.0:
-                QMessageBox.information(self, "生成完成", "音频生成完成，但总时长小于20秒")
-            
-            # 更新按钮状态
-            self.preview_control.preview_button.setText("开始听写")
+            # 检查是否还有未播放的句子
+            if self.sentence_manager.has_next_sentence():
+                # 如果还有未播放的句子，保持"播放这一句"状态
+                self.preview_control.preview_button.setText("播放这一句")
+            else:
+                # 如果所有句子都已播放，显示"开始听写"
+                self.preview_control.preview_button.setText("开始听写")
             self.preview_control.preview_button.setEnabled(True)
             
         except Exception as e:
@@ -1103,8 +1563,13 @@ class GenerationPage(QWidget):
         try:
             print(f"{self._get_debug_prefix()} 接收到播放就绪信号，切换到开始抄写状态")
             
-            # 更新按钮状态为开始抄写
-            self.preview_control.preview_button.setText("开始听写")
+            # 检查是否还有下一句
+            if self.sentence_manager.has_next_sentence():
+                # 如果还有下一句，按钮显示为"播放这一句"
+                self.preview_control.preview_button.setText("播放这一句")
+            else:
+                # 如果没有下一句了，按钮显示为"开始听写"
+                self.preview_control.preview_button.setText("开始听写")
             self.preview_control.preview_button.setEnabled(True)
             
             # 启用播放控制按钮
@@ -1120,11 +1585,44 @@ class GenerationPage(QWidget):
     def _play_current_sentence(self):
         """播放当前句子"""
         try:
+            # 更新句子预览
+            self.update_sentence_preview()
+            
+            current_index = self.sentence_manager.current_sentence_index
             audio_file = self.sentence_manager.get_current_sentence_audio()
-            print(f"{self._get_debug_prefix()} 尝试播放当前句子 {self.sentence_manager.current_sentence_index}, 音频文件: {audio_file}")
+            print(f"{self._get_debug_prefix()} 尝试播放当前句子 {current_index}, 音频文件: {audio_file}")
+            
+            # 获取当前句子的重试计数
+            retry_count = self.sentence_manager.play_retry_count.get(current_index, 0)
+            max_retries = 5  # 最大重试次数
             
             if audio_file and os.path.exists(audio_file):
+                # 检查文件大小，确保文件已完全写入
+                file_size = os.path.getsize(audio_file)
+                print(f"{self._get_debug_prefix()} 音频文件存在，大小: {file_size} 字节")
+                
+                if file_size > 0:
+                    print(f"{self._get_debug_prefix()} 音频文件有效，开始播放")
+                    # 重置重试计数
+                    self.sentence_manager.play_retry_count[current_index] = 0
+                else:
+                    print(f"{self._get_debug_prefix()} 音频文件大小为0，重试次数: {retry_count + 1}/{max_retries}")
+                    if retry_count < max_retries:
+                        # 增加重试计数
+                        self.sentence_manager.play_retry_count[current_index] = retry_count + 1
+                        # 文件大小为0，可能是正在写入，稍后重试
+                        QTimer.singleShot(200, self._play_current_sentence)
+                        return
+                    else:
+                        print(f"{self._get_debug_prefix()} 达到最大重试次数，放弃播放")
+                        QMessageBox.warning(self, "警告", f"音频文件无效（大小为0），已达到最大重试次数 {max_retries} 次")
+                        self.preview_control.preview_button.setEnabled(True)
+                        return
+                    
                 print(f"{self._get_debug_prefix()} 音频文件存在，开始播放")
+                # 播放开始时禁用按钮，防止重复点击，并更新按钮文本
+                self.preview_control.preview_button.setEnabled(False)
+                self.preview_control.preview_button.setText("正在播放这一句")
                 # 播放音频文件 - 调用父窗口的音频预览功能
                 if hasattr(self, 'parent_window') and hasattr(self.parent_window, 'audio_preview'):
                     print(f"{self._get_debug_prefix()} 找到音频预览组件，调用播放方法")
@@ -1134,14 +1632,47 @@ class GenerationPage(QWidget):
                     print(f"{self._get_debug_prefix()} 播放调用完成")
                 else:
                     print(f"{self._get_debug_prefix()} 未找到音频预览组件")
+                    # 如果未找到音频预览组件，恢复按钮状态
+                    self._restore_button_state_after_error()
             else:
                 # 音频文件不存在，显示提示
                 print(f"{self._get_debug_prefix()} 音频文件不存在或路径无效")
                 QMessageBox.information(self, "提示", "当前句子的音频尚未生成完成，请稍等...")
+                # 恢复按钮状态
+                self._restore_button_state_after_error()
                 
         except Exception as e:
             print(f"{self._get_debug_prefix()} 播放音频异常: {e}")
             QMessageBox.critical(self, "错误", f"播放音频时出错: {str(e)}")
+            # 播放异常时恢复按钮状态
+            self._restore_button_state_after_error()
+    
+    def _restore_button_state_after_error(self):
+        """播放异常时恢复按钮状态"""
+        try:
+            # 根据当前状态恢复按钮文本
+            if hasattr(self, 'sentence_manager') and self.sentence_manager.sentences:
+                current_idx = self.sentence_manager.current_sentence_index
+                if current_idx == 0 and self.sentence_manager.has_next_sentence():
+                    # 如果是第一句且还有下一句，显示"播放这一句"
+                    self.preview_control.preview_button.setText("播放这一句")
+                elif self.sentence_manager.has_next_sentence():
+                    # 如果还有下一句，显示"播放下一句"
+                    self.preview_control.preview_button.setText("播放下一句")
+                else:
+                    # 如果没有下一句了，显示"开始听写"
+                    self.preview_control.preview_button.setText("开始听写")
+            else:
+                # 默认状态
+                self.preview_control.preview_button.setText("开始听写")
+            
+            # 重新启用按钮
+            self.preview_control.preview_button.setEnabled(True)
+            
+        except Exception as e:
+            print(f"{self._get_debug_prefix()} 恢复按钮状态时出错: {e}")
+            # 如果恢复失败，至少启用按钮
+            self.preview_control.preview_button.setEnabled(True)
     
     def _on_sentence_playback_complete(self):
         """句子播放完成回调"""
@@ -1159,6 +1690,16 @@ class GenerationPage(QWidget):
             
             print(f"{self._get_debug_prefix()} 句子 {current_sentence-1} 播放完成，进度更新到 {progress_percentage:.1f}%")
             
+            # 播放完成后，更新按钮状态
+            if self.sentence_manager.has_next_sentence():
+                # 如果还有下一句，按钮显示为"播放下一句"
+                self.preview_control.preview_button.setText("播放下一句")
+                self.preview_control.preview_button.setEnabled(True)
+            else:
+                # 如果没有下一句了，按钮显示为"开始听写"
+                self.preview_control.preview_button.setText("开始听写")
+                self.preview_control.preview_button.setEnabled(True)
+            
             # 播放完成后，等待用户操作（下一句按钮或快捷键）
             # 不需要自动播放下一句，等待用户手动触发
             
@@ -1174,6 +1715,8 @@ class GenerationPage(QWidget):
                 return
             
             if self.sentence_manager.move_to_next_sentence():
+                # 更新句子预览
+                self.update_sentence_preview()
                 self._play_current_sentence()
             else:
                 QMessageBox.information(self, "提示", "已经是最后一句了")
@@ -1266,30 +1809,121 @@ class GenerationPage(QWidget):
                     sentences = self.sentence_splitter.split_text(self.current_text)
                     self.sentence_manager.set_sentences(sentences)
                     
+                    # 更新句子预览
+                    self.update_sentence_preview()
+                    
                     # 显示提示信息
                     QMessageBox.information(self, "设置已更新", f"停顿设置已更新，文本已重新分割为{len(sentences)}个小句")
                     
         except Exception as e:
             QMessageBox.critical(self, "错误", f"设置停顿符号时出错：{str(e)}")
     
+    def _show_param_settings(self):
+        """显示参数设置对话框"""
+        try:
+            # 创建参数设置对话框
+            dialog = ParamSettingsDialog(self, self.config)
+            
+            # 显示对话框并获取结果
+            if dialog.exec_() == QDialog.Accepted:
+                # 获取用户设置的新参数
+                new_config = dialog.get_config()
+                
+                # 更新配置
+                self.config = new_config
+                
+                # 显示提示信息
+                QMessageBox.information(self, "设置已更新", "语音参数设置已更新")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"设置参数时出错：{str(e)}")
+    
     def _get_pause_settings_button_style(self):
         """获取停顿设置按钮的样式"""
-        return """
-            QPushButton {
+        # 获取用户设置的字体
+        global_font = self.parent_window.settings_manager.get_Custom_value("global_font", "微软雅黑")
+        
+        # 计算动态字体大小（使用与音量提示文本相同的算法）
+        if self.parent_window:
+            current_width = self.parent_window.width()
+            current_height = self.parent_window.height()
+            
+            min_font_size = 22
+            max_font_size = 42
+            default_width = 1080
+            default_height = 720
+            
+            width_ratio = current_width / default_width
+            height_ratio = current_height / default_height
+            ratio = (width_ratio + height_ratio) / 2
+            
+            base_font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+            button_font_size = max(min_font_size, min(max_font_size, base_font_size))
+            button_font_size = int(button_font_size * 1.0)  # 按钮字体放大到原先的两倍（从0.5改为1.0）
+        else:
+            button_font_size = 14  # 默认字体大小
+        
+        return f"""
+            QPushButton {{
+                font-family: "{global_font}";
                 background-color: #4CAF50;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 padding: 5px;
-                font-size: 14px;
+                font-size: {button_font_size}px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #45a049;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #3d8b40;
-            }
+            }}
+        """
+    
+    def _get_param_settings_button_style(self):
+        """获取参数设置按钮的样式"""
+        # 获取用户设置的字体
+        global_font = self.parent_window.settings_manager.get_Custom_value("global_font", "微软雅黑")
+        
+        # 计算动态字体大小（使用与音量提示文本相同的算法）
+        if self.parent_window:
+            current_width = self.parent_window.width()
+            current_height = self.parent_window.height()
+            
+            min_font_size = 22
+            max_font_size = 42
+            default_width = 1080
+            default_height = 720
+            
+            width_ratio = current_width / default_width
+            height_ratio = current_height / default_height
+            ratio = (width_ratio + height_ratio) / 2
+            
+            base_font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+            button_font_size = max(min_font_size, min(max_font_size, base_font_size))
+            button_font_size = int(button_font_size * 1.0)  # 按钮字体放大到原先的两倍（从0.5改为1.0）
+        else:
+            button_font_size = 14  # 默认字体大小
+        
+        return f"""
+            QPushButton {{
+                font-family: "{global_font}";
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px;
+                font-size: {button_font_size}px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #1976D2;
+            }}
+            QPushButton:pressed {{
+                background-color: #1565C0;
+            }}
         """
     
     def _reload_page(self, settings_data=None):
@@ -1399,6 +2033,14 @@ class GenerationPage(QWidget):
         # 应用字体到GenerationPage控件
         self.checkbox.setFont(small_font)
         self.hint_label.setFont(small_font)
+        
+        # 应用字体到句子预览控件
+        self._update_sentence_preview_fonts(other_font)
+        
+        # 应用字体到停顿设置按钮
+        self.pause_settings_button.setFont(other_font)
+        # 重新应用按钮样式以使用新字体
+        self.pause_settings_button.setStyleSheet(self._get_pause_settings_button_style())
 
     # 参数更新方法
     # 移除语速、音调、音量更新方法
@@ -1436,10 +2078,12 @@ class GenerationPage(QWidget):
         # 设置句子到管理器
         self.sentence_manager.set_sentences(sentences)
         
+        # 更新句子预览
+        self.update_sentence_preview()
+        
         # 更新UI状态
         self.preview_control.preview_button.setEnabled(False)
         self.preview_control.preview_button.setText("生成中...")
-        self.preview_control.next_sentence_button.setEnabled(False)
         
         # 重置播放状态
         if hasattr(self, '_playback_started'):
@@ -1563,6 +2207,9 @@ class GenerationPage(QWidget):
                         if not first_sentence_generated:
                             first_sentence_generated = True
                             print(f"{self._get_debug_prefix()} [单线程] 第一个句子生成完成，切换到开始抄写状态")
+                            # 添加短暂延迟确保文件完全写入
+                            import time
+                            time.sleep(0.1)
                             # 发送信号切换到开始抄写状态
                             self.signals.playback_ready.emit()
                             
