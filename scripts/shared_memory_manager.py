@@ -40,8 +40,10 @@ class SharedMemoryManager(QObject):
     def _init_shared_memory(self):
         """初始化共享内存"""
         try:
-            # 创建临时文件用于共享内存
-            self.memory_file_path = os.path.join(tempfile.gettempdir(), 'yancha_tts_shared_memory.dat')
+            # 创建临时文件用于共享内存 - 使用绝对路径
+            cache_dir = os.path.abspath('./cache/')
+            os.makedirs(cache_dir, exist_ok=True)
+            self.memory_file_path = os.path.join(cache_dir, 'YuanyueCaller.dat')
             
             # 创建或打开文件
             with open(self.memory_file_path, 'wb') as f:
@@ -72,7 +74,9 @@ class SharedMemoryManager(QObject):
     def _fallback_to_file_based_communication(self):
         """降级到基于文件的通信"""
         print("使用文件-based通信作为降级方案")
-        self.fallback_file = os.path.join(tempfile.gettempdir(), 'yancha_tts_fallback.json')
+        cache_dir = os.path.abspath('./cache/')
+        os.makedirs(cache_dir, exist_ok=True)
+        self.fallback_file = os.path.join(cache_dir, 'YuanyueFallback.json')
         self.update_timer.start(self.update_interval * 2)  # 降低检查频率
     
     def broadcast_settings_change(self, page_name, settings_data):

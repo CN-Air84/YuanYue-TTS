@@ -72,7 +72,10 @@ class FilePathManager:
     @staticmethod
     def create_temp_file(suffix: str = '.mp3') -> str:
         """创建临时文件"""
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
+        # 确保cache/audios目录存在
+        cache_dir = './cache/audios'
+        os.makedirs(cache_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=cache_dir, suffix=suffix, delete=False) as temp_file:
             return temp_file.name
     
     @staticmethod
@@ -80,7 +83,7 @@ class FilePathManager:
         """生成预览文件名"""
         import datetime
         now = datetime.datetime.now()
-        return f"tmp_{now.strftime('%m%d%H%M%S')}.mp3"
+        return f"./cache/audios/tmp_{now.strftime('%m%d%H%M%S')}.mp3"
 
 
 class AudioStretcher:

@@ -363,14 +363,14 @@ class ParamSettingsDialog(QDialog):
         
         self.speed_slider = QSlider(Qt.Horizontal)
         self.speed_slider.setRange(-50, 50)  # -50% 到 +50%
-        self.speed_slider.setValue(0)
+        self.speed_slider.setValue(-50)
         self.speed_slider.setTickPosition(QSlider.TicksBelow)
         self.speed_slider.setTickInterval(10)
         self.speed_slider.valueChanged.connect(self._on_speed_changed)
         self.speed_slider.setStyleSheet(self._get_slider_style())  # 使用主页面相同的滑动条样式
         speed_layout.addWidget(self.speed_slider)
         
-        self.speed_value_label = QLabel("0%")
+        self.speed_value_label = QLabel("-50%")
         self.speed_value_label.setFont(QFont(global_font, 10))
         self.speed_value_label.setMinimumWidth(50)
         speed_layout.addWidget(self.speed_value_label)
@@ -436,6 +436,27 @@ class ParamSettingsDialog(QDialog):
         
         QSlider::handle:horizontal:pressed {
             background: #E0E0E0;
+        }
+        """
+    
+    def _get_end_button_style(self):
+        """获取结束按钮样式 - 红底白字"""
+        return """
+        QPushButton {
+            background-color: #DC143C;
+            color: white;
+            border: 2px solid #B22222;
+            border-radius: 5px;
+            padding: 5px 10px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #FF1744;
+            border-color: #DC143C;
+        }
+        QPushButton:pressed {
+            background-color: #B71C1C;
+            border-color: #8B0000;
         }
         """
     
@@ -753,6 +774,11 @@ class PreviewControl:
     
     def _create_volume_controls(self):
         """创建音量控制控件"""
+        # 结束本次听写按钮
+        self.end_dictation_button = QPushButton("结束本次听写", self.parent)
+        self.end_dictation_button.clicked.connect(self._end_dictation)
+        self.end_dictation_button.setStyleSheet(self._get_end_button_style())
+        
         # 音量标签
         self.volume_label = QLabel("音量", self.parent)
         self.volume_label.setAlignment(Qt.AlignCenter)
@@ -767,6 +793,72 @@ class PreviewControl:
         # 音量数值显示
         self.volume_value_label = QLabel("100%", self.parent)
         self.volume_value_label.setAlignment(Qt.AlignCenter)
+    
+    def _end_dictation(self):
+        """结束本次听写 - 重置所有元素到初始状态"""
+        try:
+            # 停止音频播放并断开信号连接
+            if hasattr(self.parent, 'parent_window') and hasattr(self.parent.parent_window, 'audio_preview'):
+                self.parent.parent_window.audio_preview.stop_audio()
+                # 断开播放完成信号，防止结束后仍然触发回调
+                try:
+                    self.parent.parent_window.audio_preview.audio_signals.playback_finished.disconnect(self._on_sentence_playback_complete)
+                except:
+                    pass  # 如果连接不存在，忽略错误
+            
+            # 重置播放状态
+            self.is_playing = False
+            self.is_paused = False
+            self.is_seeking = False
+            self.current_audio_position = 0
+            self.current_audio_length = 0
+            self.current_audio_path = None
+            
+            # 重置进度条
+            self.preview_progress.setValue(0)
+            self.preview_progress.setEnabled(False)
+            
+            # 重置按钮状态
+            self.preview_button.setText("生成音频")
+            self.preview_button.setEnabled(True)
+            
+            # 重置音量到默认值
+            self.volume_slider.setValue(100)
+            
+            # 重置句子管理器状态
+            if hasattr(self.parent, 'sentence_manager'):
+                self.parent.sentence_manager.current_sentence_index = 0
+                self.parent.sentence_manager.audio_files.clear()
+                self.parent.sentence_manager.audio_durations.clear()
+                self.parent.sentence_manager.total_duration = 0.0
+                self.parent.sentence_manager.is_generating = False
+                self.parent.sentence_manager.generation_queue.clear()
+                self.parent.sentence_manager.play_retry_count.clear()
+            
+            # 重置父窗口状态
+            if hasattr(self.parent, 'parent_window'):
+                self.parent.parent_window.has_preview = False
+                self.parent.parent_window.is_playing = False
+                self.parent.parent_window.is_paused = False
+                self.parent.parent_window.current_audio_length = 0
+                self.parent.parent_window.current_audio_position = 0
+                self.parent.parent_window.current_audio_path = None
+                self.parent.parent_window.audio_cache.clear()
+            
+            # 清空句子预览框
+            if hasattr(self.parent, 'prev_sentence_label'):
+                self.parent.prev_sentence_label.setText("")
+                self.parent.current_sentence_label.setText("")
+                self.parent.next_sentence_label.setText("")
+                self.parent.next_next_sentence_label.setText("")
+            
+            # 重置文本内容（可选 - 保留当前文本但清除生成状态）
+            # self.parent.text_edit.clear()  # 如果需要清空文本内容
+            
+            print("听写已结束，所有元素已重置到初始状态")
+            
+        except Exception as e:
+            print(f"结束听写时发生错误: {e}")
     
     def _on_volume_changed(self, value: int):
         """音量改变事件"""
@@ -857,13 +949,28 @@ class PreviewControl:
             QPushButton:hover {{ background-color: {hover_color}; }}
         """
     
+    def _get_end_button_style(self):
+        """获取结束按钮样式 - 红底白字"""
+        global_font = self.parent.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        return f"""
+        QPushButton {{
+            font-family: "{global_font}"; background-color: #DC143C; color: white;
+            border: 2px solid #B22222; border-radius: 5px; font-weight: bold;
+            padding: 5px 10px;
+        }}
+        QPushButton:hover {{ background-color: #FF1744; border-color: #DC143C; }}
+        QPushButton:pressed {{ background-color: #B71C1C; border-color: #8B0000; }}
+        """
+    
     def update_font(self, font):
         """更新控件字体"""
         self.preview_button.setFont(font)
         self.volume_label.setFont(font)
         self.volume_value_label.setFont(font)
+        self.end_dictation_button.setFont(font)
         # 更新按钮样式以使用新字体
         self.preview_button.setStyleSheet(self._get_button_style("rgb(0, 100, 200)", "rgb(0, 120, 220)"))
+        self.end_dictation_button.setStyleSheet(self._get_end_button_style())
     
     def _get_progress_style(self) -> str:
         """获取进度条样式"""
@@ -1045,9 +1152,10 @@ class GenerationPage(QWidget):
             # 更新句子预览
             self.update_sentence_preview()
             
-            # 更新进度条
+            # 更新进度条 (范围0-1000)
             progress_percentage = ((target_idx + 1) / len(self.sentence_manager.sentences)) * 100
-            self.preview_control.preview_progress.setValue(int(progress_percentage))
+            progress_value = int(progress_percentage * 10)
+            self.preview_control.preview_progress.setValue(progress_value)
             
             # 检查目标句子的音频是否已生成
             audio_file = self.sentence_manager.audio_files.get(target_idx)
@@ -1546,8 +1654,12 @@ class GenerationPage(QWidget):
     def _on_all_sentences_complete_safe(self):
         """安全处理所有句子生成完成信号"""
         try:
-            # 检查是否还有未播放的句子
-            if self.sentence_manager.has_next_sentence():
+            # 检查是否还有未播放且已生成的句子
+            current_idx = self.sentence_manager.current_sentence_index
+            generated_count = self.sentence_manager.get_generated_count()
+            
+            # 如果当前索引小于已生成的数量，说明还有未播放的句子
+            if current_idx < generated_count - 1:
                 # 如果还有未播放的句子，保持"播放这一句"状态
                 self.preview_control.preview_button.setText("播放这一句")
             else:
@@ -1585,10 +1697,19 @@ class GenerationPage(QWidget):
     def _play_current_sentence(self):
         """播放当前句子"""
         try:
+            # 检查是否有有效的句子管理器
+            if not hasattr(self, 'sentence_manager') or not self.sentence_manager.sentences:
+                print(f"{self._get_debug_prefix()} 没有有效的句子，取消播放")
+                return
+                
+            current_index = self.sentence_manager.current_sentence_index
+            if current_index < 0 or current_index >= len(self.sentence_manager.sentences):
+                print(f"{self._get_debug_prefix()} 当前索引 {current_index} 无效，取消播放")
+                return
+            
             # 更新句子预览
             self.update_sentence_preview()
             
-            current_index = self.sentence_manager.current_sentence_index
             audio_file = self.sentence_manager.get_current_sentence_audio()
             print(f"{self._get_debug_prefix()} 尝试播放当前句子 {current_index}, 音频文件: {audio_file}")
             
@@ -1677,10 +1798,27 @@ class GenerationPage(QWidget):
     def _on_sentence_playback_complete(self):
         """句子播放完成回调"""
         try:
+            # 检查是否还有有效的句子管理器
+            if not hasattr(self, 'sentence_manager') or not self.sentence_manager.sentences:
+                print(f"{self._get_debug_prefix()} 播放完成回调：没有有效的句子，忽略")
+                return
+                
+            # 检查当前索引是否有效
+            current_idx = self.sentence_manager.current_sentence_index
+            if current_idx < 0 or current_idx >= len(self.sentence_manager.sentences):
+                print(f"{self._get_debug_prefix()} 播放完成回调：当前索引 {current_idx} 无效，忽略")
+                return
+            
             # 播放完成后，更新进度条到相应位置
             total_sentences = len(self.sentence_manager.sentences)
-            current_sentence = self.sentence_manager.current_sentence_index + 1  # 当前播放完成的句子
+            current_sentence = current_idx + 1  # 当前播放完成的句子
             
+            # 检查是否是空句子或无效播放
+            audio_file = self.sentence_manager.get_current_sentence_audio()
+            if not audio_file or not os.path.exists(audio_file):
+                print(f"{self._get_debug_prefix()} 播放完成回调：当前句子没有有效音频文件，忽略")
+                return
+                
             # 计算进度百分比 (当前句子位置 / 总句子数) * 100%
             progress_percentage = (current_sentence / total_sentences) * 100
             
@@ -1717,6 +1855,14 @@ class GenerationPage(QWidget):
             if self.sentence_manager.move_to_next_sentence():
                 # 更新句子预览
                 self.update_sentence_preview()
+                
+                # 立即更新进度条状态
+                total_sentences = len(self.sentence_manager.sentences)
+                current_sentence = self.sentence_manager.current_sentence_index + 1
+                progress_percentage = (current_sentence / total_sentences) * 100
+                progress_value = int(progress_percentage * 10)
+                self.preview_control.preview_progress.setValue(progress_value)
+                
                 self._play_current_sentence()
             else:
                 QMessageBox.information(self, "提示", "已经是最后一句了")
@@ -1949,23 +2095,33 @@ class GenerationPage(QWidget):
     def _layout_volume_controls(self, width, height, n, m, scale_factor, right_offset, progress_y, control_buttons_y, control_button_height):
         """布局音量控制控件"""
         
-        volume_x = int((10 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset
+        # 首先布局结束按钮（在音量控制左侧）- 再往左移动避免超出边界
+        end_button_width = int(3.5 * n * scale_factor)  # 进一步减小按钮宽度
+        end_button_x = int((6 + GenerationPage.POSITION_OFFSET_N) * n * scale_factor) + right_offset  # 再往左移动
+        end_button_y = control_buttons_y
+        
+        self.preview_control.end_dictation_button.setGeometry(
+            end_button_x, end_button_y, end_button_width, control_button_height
+        )
+        
+        # 音量控制布局（在结束按钮右侧）- 紧凑布局避免超出窗口
+        volume_x = end_button_x + end_button_width + int(1.5 * n * scale_factor)  # 减小间距
         volume_y = control_buttons_y 
         
-        # 音量标签
-        label_width = int(1.5 * n * scale_factor)
+        # 音量标签 - 减小宽度
+        label_width = int(1.2 * n * scale_factor)
         self.preview_control.volume_label.setGeometry(
             volume_x, volume_y, label_width, control_button_height
         )
         
-        # 音量滑动条
-        slider_width = int(2.5 * n * scale_factor)
+        # 音量滑动条 - 减小宽度
+        slider_width = int(2.0 * n * scale_factor)
         self.preview_control.volume_slider.setGeometry(
             volume_x + label_width, volume_y, slider_width, control_button_height
         )
         
-        # 音量数值显示
-        value_width = int(1.8 * n * scale_factor)
+        # 音量数值显示 - 减小宽度
+        value_width = int(1.5 * n * scale_factor)
         self.preview_control.volume_value_label.setGeometry(
             volume_x + label_width + slider_width, volume_y, value_width, control_button_height
         )

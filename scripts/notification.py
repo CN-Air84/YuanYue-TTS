@@ -323,18 +323,35 @@ class Notification(QWidget):
             return
             
         # 计算消息框大小（基于生成预览按钮的尺寸）
-        preview_button = self.parent_window.generation_page.preview_control.preview_button
-        if preview_button:
+        preview_button = None
+        try:
+            preview_button = self.parent_window.generation_page.preview_control.preview_button
+        except AttributeError:
+            # 如果找不到preview_button，尝试其他路径
+            try:
+                # 尝试直接通过当前页面获取
+                current_page = self.parent_window.stacked_widget.currentWidget()
+                if hasattr(current_page, 'preview_control'):
+                    preview_button = current_page.preview_control.preview_button
+            except AttributeError:
+                pass
+        
+        if preview_button and preview_button.isVisible():
             button_width = preview_button.width()
             button_height = preview_button.height()
             
             # 计算消息框尺寸
             msg_width = int(button_width * NOTIFICATION_WIDTH_RATIO)
             msg_height = int(button_height * NOTIFICATION_HEIGHT_RATIO)
-            
-            # 设置消息框大小
-            self.message_label.setFixedSize(msg_width, msg_height)
-            self.setFixedSize(msg_width, msg_height)
+        else:
+            # 使用默认大小
+            parent_rect = self.parent_window.geometry()
+            msg_width = int(parent_rect.width() * 0.3)  # 父窗口宽度的30%
+            msg_height = 60  # 默认高度60像素
+        
+        # 设置消息框大小
+        self.message_label.setFixedSize(msg_width, msg_height)
+        self.setFixedSize(msg_width, msg_height)
         
         # 计算目标位置
         self._update_position()

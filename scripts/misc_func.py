@@ -220,7 +220,7 @@ class AudioConfig:
         now = datetime.datetime.now()
         
         # 基础参数
-        self.speed = 0  # 语速
+        self.speed = -50  # 语速 - 默认设置为-50%
         self.pitch = 0  # 音调
         self.volume = 0  # 音量
         

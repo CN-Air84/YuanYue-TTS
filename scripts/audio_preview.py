@@ -202,8 +202,9 @@ class AudioFileCleaner:
     @staticmethod
     def cleanup_preview_audio(program_dir: str) -> int:
         try:
-            preview_files = glob.glob(os.path.join(program_dir, "tmp_*.mp3"))
-            stretched_files = glob.glob(os.path.join(program_dir, "*_stretched.mp3"))
+            cache_dir = './cache/audios'
+            preview_files = glob.glob(os.path.join(cache_dir, "tmp_*.mp3"))
+            stretched_files = glob.glob(os.path.join(cache_dir, "*_stretched.mp3"))
             preview_files.extend(stretched_files)
             
             deleted_count = 0

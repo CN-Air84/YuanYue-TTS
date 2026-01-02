@@ -555,7 +555,7 @@ class OnlineImportDialog(QDialog):
             doc.close()
             
             #保存图像到临时文件
-            with tempfile.NamedTemporaryFile(suffix=f"_page{page_number+1}.png", delete=False) as temp_img:
+            with tempfile.NamedTemporaryFile(dir='./cache/', suffix=f"_page{page_number+1}.png", delete=False) as temp_img:
                 image.save(temp_img, "PNG", quality=95)
                 return temp_img.name
             
