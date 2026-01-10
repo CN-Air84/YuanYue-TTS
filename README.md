@@ -139,7 +139,7 @@
  
 </div>
 
-<div align="right">
+<div align="left">
  
 ## Q&A
 
