@@ -10,22 +10,9 @@
 如果你觉得这个工具好用, 可以点一个Star或者分享给你的朋友!
 
 [基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
-</div>
-<div align="center">
-	<div>
-    	<img alt="downloads" src="https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total">
-	</div>
-	<div>
-    	<img alt="stars" src="https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?style=social">
-    	<img alt="forks" src="https://img.shields.io/github/forks/CN-Air84/YuanYue-TTS?style=social">
-    	<img alt="watching" src="https://img.shields.io/github/watchers/CN-Air84/YuanYue-TTS?style=social">
-	</div>
-	<div>
-    	<img alt="version" src="https://img.shields.io/github/v/release/CN-Air84/YuanYue-TTS?color=%239c080b&style=flat-square">
-    	<img alt="platform" src="https://img.shields.io/badge/platform-Windows-cyan">
-    	<img alt="license" src="https://img.shields.io/badge/license-Apache2.0-blue">
-	</div>
 
+[![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
+[![下载量](https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total?style=social&label=下载量&logo=github)](https://github.com/CN-Air84/YuanYue-TTS/releases/latest)
 
 <div align="center">
 
@@ -44,17 +31,54 @@
 
 | 操作系统 | 技术支持 |
 |---|---|
-| Windows 10 或更高|✅    经测试可运行 |
+| Windows 10 或更高|✅ 经测试可运行 |
 | Windows 8.1 |  ✅ 理论可运行 |
 | Windows 7 SP1 7601 - Windows 8 | ❌ 暂不支持 |
-| WinVista 或更低 / 一切32位系统 / 一切Arm系统 / …… | ❌ 理论跑不动，未经测试 |
-| macOS / Linux  | ⚠️ 估计跑不动，未经测试 |
+| WinVista 或更低 / 一切32位系统 / 一切Arm系统 / …… | ❌ 无法原生运行 |
+| macOS / Linux  | ⚠️ 理论无法原生运行 |
+
+</div>
+
+<div align="center">
+
+
+
+## 为什么选择源悦TTS
+
+（点击此处播放音频）
+<audio controls style="width: 120px; height: 30px;">
+  <source src="https://github.com/CN-Air84/YuanYue-TTS/raw/main/assets/Why_YuanyueTTS.mp3" type="audio/mpeg">
+</audio>
+
+市面上常见的传统TTS软件**大多是针对音视频内容创作者、视障与阅读障碍群体和有声内容消费者**所开发的，
+
+**几乎不会考虑学生群体的使用体验。**
+
+而我们发掘出“语音转文字”的新使用场景——
+
+**“抄写”**。
+
+**传统的抄写方式**，就是把课本立起来，下面放一张纸，手里拿一支笔。举头看课本，低头抄内容。
+
+**效率低下，耗时长，而且几乎是抄完就忘**，还需要再花时间背诵。
+
+与此同时，源悦TTS通过研判学生群体使用TTS工具时的各种场景，
+
+推出了诸多[客制化功能](#核心亮点)，
+
+并尝试通过**削减不必要的各类视觉元素**和**适当牺牲界面美观度**，
+
+**让程序适应用户，而不是让用户适应程序**，
+
+极大限度地缩短“磨合期”，提升人机交互效率，
+
+并以此 **助力学生快速完成抄写作业**，同时**辅助用户记忆知识点**，缩短背诵所需时间。
 
 </div>
 
 <div align="left">
 	
-## 🌟 核心亮点
+## 核心亮点
 
 ### [一键 **从图片导入**](#从图片导入)
 
