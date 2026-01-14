@@ -218,20 +218,15 @@ class AudioConfig:
     def _init_default_config(self):
         """初始化默认配置"""
         now = datetime.datetime.now()
-        
-        # 基础参数
-        self.speed = -50  # 语速 - 默认设置为-50%
-        self.pitch = 0  # 音调
-        self.volume = 0  # 音量
-        
-        # 默认内容
+
+        settings_manager = SettingsManager()
+        self.speed = settings_manager.get_default_speed()
+        self.pitch = 0
+        self.volume = 0
+
         self.content = self._generate_default_content(now)
-        
-        # 路径和音色
         self.save_path = ""
         self.voice = "（以下为英语音色）"
-        
-        # 音频拉伸参数
         self.stretch_factor = 1.0
         self.stretch_enabled = False
         
@@ -438,7 +433,8 @@ class SettingsManager:
             'offset_n': CustomConfig.DEFAULT_NOTIFICATIONS['offset_n'],
             'spacing_n': CustomConfig.DEFAULT_NOTIFICATIONS['spacing_n'],
             'auto_close_time': CustomConfig.DEFAULT_NOTIFICATIONS['auto_close_time'],
-            'github_acceleration': '0'  # 新增GitHub下载加速选项，默认0（直接从GitHub获取）
+            'github_acceleration': '0',  # 新增GitHub下载加速选项，默认0（直接从GitHub获取）
+            'online_import_mode': 'False'  # 新增在线导入模式，默认False（GitHub导入模式）
         }
         
         self._save_config()
@@ -575,6 +571,31 @@ class SettingsManager:
             return self.Custom.set_value('download_thread_num', str(thread_num))
         except (ValueError, TypeError):
             return False
+    
+    # 在线导入模式相关方法（新增）
+    def get_online_import_mode(self) -> bool:
+        """获取在线导入模式
+        
+        Returns:
+            True: 智慧教育平台导入模式（新）
+            False: GitHub导入模式（旧）
+        """
+        try:
+            mode_str = self.Custom.get_value('online_import_mode', 'False')
+            return mode_str.lower() == 'true'
+        except Exception:
+            return False
+    
+    def set_online_import_mode(self, value: bool) -> bool:
+        """设置在线导入模式
+        
+        Args:
+            value: True为智慧教育平台导入模式，False为GitHub导入模式
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        return self.Custom.set_value('online_import_mode', str(value))
     
     # 工具方法
     def get_all_settings(self) -> Dict[str, Dict[str, str]]:

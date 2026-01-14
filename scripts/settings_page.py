@@ -628,6 +628,71 @@ class DownloadSettingsGroup(QGroupBox):
         self.download_threads_spin.setValue(int(download_threads))
 
 
+class OnlineImportSettingsGroup(QGroupBox):
+    """在线导入设置组 - 卡片式设计"""
+    
+    def __init__(self, parent=None):
+        super().__init__("在线导入设置", parent)
+        self.settings_manager = SettingsManager()
+        self.wheel_filter = WheelEventFilter()
+        self._init_ui()
+        self._load_settings()
+        self._apply_card_style()
+    
+    def _apply_card_style(self):
+        """应用卡片样式"""
+        title_font_size = 14
+        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+            current_width = self.parent().parent_window.width()
+            current_height = self.parent().parent_window.height()
+            base_width = 1024
+            base_height = 768
+            width_ratio = current_width / base_width
+            height_ratio = current_height / base_height
+            ratio = (width_ratio + height_ratio) / 2
+            title_font_size = max(12, min(18, int(14 * ratio)))
+        
+        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+        self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name))
+        self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                              SettingsCustomConfig.SPACING_SYSTEM['lg'],
+                              SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                              SettingsCustomConfig.SPACING_SYSTEM['lg'])
+    
+    def _init_ui(self):
+        """初始化UI"""
+        layout = QFormLayout()
+        layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+        
+        # 在线导入模式下拉框
+        self.import_mode_combo = QComboBox()
+        self.import_mode_combo.addItem("GitHub导入模式", "github")
+        self.import_mode_combo.addItem("智慧教育平台导入模式", "sei")
+        self.import_mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self.import_mode_combo.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['combo'])
+        layout.addRow("在线导入模式:", self.import_mode_combo)
+        
+        self.setLayout(layout)
+    
+    def _on_mode_changed(self, index):
+        """模式改变时的回调"""
+        mode_data = self.import_mode_combo.itemData(index)
+        is_sei_mode = (mode_data == "sei")
+        print(f"[DEBUG] OnlineImportSettingsGroup: Mode changed to {mode_data}, is_sei_mode={is_sei_mode}")
+        result = self.settings_manager.set_online_import_mode(is_sei_mode)
+        print(f"[DEBUG] OnlineImportSettingsGroup: Save result = {result}")
+    
+    def _load_settings(self):
+        """加载设置"""
+        is_sei_mode = self.settings_manager.get_online_import_mode()
+        if is_sei_mode:
+            index = self.import_mode_combo.findData("sei")
+        else:
+            index = self.import_mode_combo.findData("github")
+        if index >= 0:
+            self.import_mode_combo.setCurrentIndex(index)
+
+
 class SettingsPage(QWidget):
     """设置页面"""
     
@@ -702,6 +767,10 @@ class SettingsPage(QWidget):
         # 下载设置
         self.download_group = DownloadSettingsGroup(self)
         self.content_layout.addWidget(self.download_group)
+        
+        # 在线导入设置
+        self.online_import_group = OnlineImportSettingsGroup(self)
+        self.content_layout.addWidget(self.online_import_group)
         
         # 添加拉伸，使内容顶部对齐
         self.content_layout.addStretch(1)
@@ -781,6 +850,7 @@ class SettingsPage(QWidget):
         self.api_key_group.setStyleSheet(dynamic_style)
         self.generation_group.setStyleSheet(dynamic_style)
         self.download_group.setStyleSheet(dynamic_style)
+        self.online_import_group.setStyleSheet(dynamic_style)
     
     def _apply_fonts_to_widgets(self, font, small_font):
         """应用字体到所有控件"""
@@ -810,6 +880,11 @@ class SettingsPage(QWidget):
         self.download_group.github_mirror_combo.setFont(font)
         self.download_group.download_threads_spin.setFont(font)
         self._set_form_layout_labels_font(self.download_group.layout(), font)
+        
+        # 应用字体到在线导入设置组
+        self.online_import_group.setFont(font)
+        self.online_import_group.import_mode_combo.setFont(font)
+        self._set_form_layout_labels_font(self.online_import_group.layout(), font)
     
     def _set_form_layout_labels_font(self, layout, font):
         """设置QFormLayout中所有标签的字体"""

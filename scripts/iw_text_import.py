@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QVBoxLayout, QHBoxLayout, QDialog
 )
 from PyQt5.QtCore import  QRect
+from PyQt5.QtGui import QFont
 
 from docxfix import Document
 from iw_dialogs import DialogFactory
@@ -237,6 +238,7 @@ class TextImportDialog(QDialog):
         
         self._init_ui()
         self._setup_connections()
+        self._update_fonts()
         
     def _init_ui(self) -> None:
         """初始化UI"""
@@ -312,6 +314,44 @@ class TextImportDialog(QDialog):
         self.image_button.clicked.connect(self.button_handler.handle_image_import)
         self.clear_button.clicked.connect(self.button_handler.handle_clear_text)
         self.confirm_button.clicked.connect(self._confirm_import)
+    
+    def _update_fonts(self) -> None:
+        """更新字体大小"""
+        current_width = self.width()
+        current_height = self.height()
+        
+        min_font_size = 10
+        max_font_size = 20
+        default_width = 800
+        default_height = 600
+        
+        width_ratio = current_width / default_width
+        height_ratio = current_height / default_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+        font_size = max(min_font_size, min(max_font_size, font_size))
+        
+        try:
+            global_font = self.settings_manager.Custom.get_value("global_font", "微软雅黑") if self.settings_manager else "微软雅黑"
+        except:
+            global_font = "微软雅黑"
+        
+        font = QFont(global_font, int(font_size))
+        
+        # 更新按钮字体
+        for button in [self.txt_button, self.doc_button, self.online_button, 
+                      self.image_button, self.clear_button, self.confirm_button]:
+            button.setFont(font)
+        
+        # 更新文本编辑器字体
+        text_edit_font = QFont(global_font, int(font_size * 0.8))
+        self.text_edit.setFont(text_edit_font)
+    
+    def resizeEvent(self, event) -> None:
+        """处理窗口大小变化事件"""
+        super().resizeEvent(event)
+        self._update_fonts()
     
     def _confirm_import(self) -> None:
         """确认导入"""

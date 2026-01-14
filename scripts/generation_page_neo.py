@@ -255,6 +255,7 @@ class PauseSettingsDialog(QDialog):
         
         self._init_ui()
         self._load_settings()
+        self._update_fonts()
     
     def _init_ui(self):
         """初始化UI"""
@@ -285,18 +286,54 @@ class PauseSettingsDialog(QDialog):
         # 按钮区域
         button_layout = QHBoxLayout()
         
-        save_button = QPushButton("保存并应用")
-        save_button.setFont(QFont(global_font, 10))
-        save_button.clicked.connect(self._save_settings)
-        button_layout.addWidget(save_button)
+        self.save_button = QPushButton("保存并应用")
+        self.save_button.setFont(QFont(global_font, 10))
+        self.save_button.clicked.connect(self._save_settings)
+        button_layout.addWidget(self.save_button)
         
-        cancel_button = QPushButton("取消")
-        cancel_button.setFont(QFont(global_font, 10))
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_button)
+        self.cancel_button = QPushButton("取消")
+        self.cancel_button.setFont(QFont(global_font, 10))
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
         
         layout.addLayout(button_layout)
         self.setLayout(layout)
+    
+    def _update_fonts(self):
+        """更新字体大小"""
+        current_width = self.width()
+        current_height = self.height()
+        
+        min_font_size = 8
+        max_font_size = 16
+        default_width = 400
+        default_height = 500
+        
+        width_ratio = current_width / default_width
+        height_ratio = current_height / default_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+        font_size = max(min_font_size, min(max_font_size, font_size))
+        
+        # 获取用户设置的字体
+        if hasattr(self.parent(), 'settings_manager'):
+            global_font = self.parent().settings_manager.get_Custom_value("global_font", "微软雅黑")
+        else:
+            global_font = "微软雅黑"
+        
+        # 更新复选框字体
+        for checkbox in self.checkboxes.values():
+            checkbox.setFont(QFont(global_font, int(font_size)))
+        
+        # 更新按钮字体
+        self.save_button.setFont(QFont(global_font, int(font_size)))
+        self.cancel_button.setFont(QFont(global_font, int(font_size)))
+    
+    def resizeEvent(self, event):
+        """处理窗口大小变化事件"""
+        super().resizeEvent(event)
+        self._update_fonts()
     
     def _load_settings(self):
         """加载当前设置"""
@@ -343,6 +380,7 @@ class ParamSettingsDialog(QDialog):
         
         self._init_ui()
         self._load_settings()
+        self._update_fonts()
     
     def _init_ui(self):
         """初始化UI"""
@@ -357,9 +395,9 @@ class ParamSettingsDialog(QDialog):
         
         # 语速滑动条
         speed_layout = QHBoxLayout()
-        speed_label = QLabel("语速:")
-        speed_label.setFont(QFont(global_font, 11))
-        speed_layout.addWidget(speed_label)
+        self.speed_label = QLabel("语速:")
+        self.speed_label.setFont(QFont(global_font, 11))
+        speed_layout.addWidget(self.speed_label)
         
         self.speed_slider = QSlider(Qt.Horizontal)
         self.speed_slider.setRange(-50, 50)  # -50% 到 +50%
@@ -380,18 +418,54 @@ class ParamSettingsDialog(QDialog):
         # 按钮区域
         button_layout = QHBoxLayout()
         
-        save_button = QPushButton("保存设置")
-        save_button.setFont(QFont(global_font, 10))
-        save_button.clicked.connect(self._save_settings)
-        button_layout.addWidget(save_button)
+        self.save_button = QPushButton("保存设置")
+        self.save_button.setFont(QFont(global_font, 10))
+        self.save_button.clicked.connect(self._save_settings)
+        button_layout.addWidget(self.save_button)
         
-        cancel_button = QPushButton("取消")
-        cancel_button.setFont(QFont(global_font, 10))
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_button)
+        self.cancel_button = QPushButton("取消")
+        self.cancel_button.setFont(QFont(global_font, 10))
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
         
         layout.addLayout(button_layout)
         self.setLayout(layout)
+    
+    def _update_fonts(self):
+        """更新字体大小"""
+        current_width = self.width()
+        current_height = self.height()
+        
+        min_font_size = 8
+        max_font_size = 16
+        default_width = 500
+        default_height = 400
+        
+        width_ratio = current_width / default_width
+        height_ratio = current_height / default_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+        font_size = max(min_font_size, min(max_font_size, font_size))
+        
+        # 获取用户设置的字体
+        if hasattr(self.parent(), 'settings_manager'):
+            global_font = self.parent().settings_manager.get_Custom_value("global_font", "微软雅黑")
+        else:
+            global_font = "微软雅黑"
+        
+        # 更新标签字体
+        self.speed_label.setFont(QFont(global_font, int(font_size * 1.1)))
+        self.speed_value_label.setFont(QFont(global_font, int(font_size)))
+        
+        # 更新按钮字体
+        self.save_button.setFont(QFont(global_font, int(font_size)))
+        self.cancel_button.setFont(QFont(global_font, int(font_size)))
+    
+    def resizeEvent(self, event):
+        """处理窗口大小变化事件"""
+        super().resizeEvent(event)
+        self._update_fonts()
     
     def _load_settings(self):
         """加载当前设置"""

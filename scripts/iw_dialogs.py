@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
      QLineEdit, QFormLayout
 )
 from PyQt5.QtCore import Qt, QTimer, QRect
-from PyQt5.QtGui import QPainter, QColor, QPen
+from PyQt5.QtGui import QPainter, QColor, QPen, QFont
 
 from misc_func import SettingsManager
 
@@ -143,6 +143,7 @@ class LoadingDialog(QDialog):
         super().__init__(parent)
         self.angle = 0
         self._init_ui()
+        self._update_fonts()
         
     def _init_ui(self) -> None:
         """初始化UI"""
@@ -162,6 +163,37 @@ class LoadingDialog(QDialog):
         self.setLayout(layout)
         
         self._setup_animation_timer()
+    
+    def _update_fonts(self) -> None:
+        """更新字体大小"""
+        current_width = self.width()
+        current_height = self.height()
+        
+        min_font_size = 12
+        max_font_size = 24
+        default_width = 300
+        default_height = 200
+        
+        width_ratio = current_width / default_width
+        height_ratio = current_height / default_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+        font_size = max(min_font_size, min(max_font_size, font_size))
+        
+        try:
+            settings_manager = SettingsManager()
+            global_font = settings_manager.Custom.get_value("global_font", "微软雅黑")
+        except:
+            global_font = "微软雅黑"
+        
+        font = QFont(global_font, int(font_size))
+        self.text_label.setFont(font)
+    
+    def resizeEvent(self, event) -> None:
+        """处理窗口大小变化事件"""
+        super().resizeEvent(event)
+        self._update_fonts()
     
     def _setup_animation_timer(self) -> None:
         """设置动画定时器"""
@@ -197,6 +229,7 @@ class PageOffsetDialog(QDialog):
         self.actual_page = ""
         self.pdf_opened = False
         self._init_ui()
+        self._update_fonts()
         
     def _init_ui(self) -> None:
         """初始化UI"""
@@ -207,13 +240,13 @@ class PageOffsetDialog(QDialog):
         layout = QVBoxLayout()
         
         # 信息显示
-        info_label = QLabel(
+        self.info_label = QLabel(
             f"PDF文件: {self.pdf_name}\n\n"
             f"您输入的页码: {self.user_page}\n\n"
             "请查看PDF文件，确定该页在PDF中的实际页码:"
         )
-        info_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(info_label)
+        self.info_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.info_label)
         
         # 页码输入
         form_layout = QFormLayout()
@@ -238,6 +271,41 @@ class PageOffsetDialog(QDialog):
         self.setLayout(layout)
         
         self._setup_auto_open_timer()
+    
+    def _update_fonts(self) -> None:
+        """更新字体大小"""
+        current_width = self.width()
+        current_height = self.height()
+        
+        min_font_size = 10
+        max_font_size = 20
+        default_width = 450
+        default_height = 250
+        
+        width_ratio = current_width / default_width
+        height_ratio = current_height / default_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+        font_size = max(min_font_size, min(max_font_size, font_size))
+        
+        try:
+            settings_manager = SettingsManager()
+            global_font = settings_manager.Custom.get_value("global_font", "微软雅黑")
+        except:
+            global_font = "微软雅黑"
+        
+        font = QFont(global_font, int(font_size))
+        
+        self.info_label.setFont(font)
+        self.page_input.setFont(font)
+        self.open_pdf_button.setFont(font)
+        self.confirm_button.setFont(font)
+    
+    def resizeEvent(self, event) -> None:
+        """处理窗口大小变化事件"""
+        super().resizeEvent(event)
+        self._update_fonts()
     
     def _setup_auto_open_timer(self) -> None:
         """设置自动打开PDF定时器"""
@@ -296,6 +364,7 @@ class ClearConfirmationDialog(QDialog):
         self.result = False
         self.buttons = []
         self._init_ui()
+        self._update_fonts()
         
     def _init_ui(self) -> None:
         """初始化UI"""
@@ -304,14 +373,14 @@ class ClearConfirmationDialog(QDialog):
         self.setStyleSheet(DialogStyleManager.get_confirmation_dialog_style())
         
         layout = QVBoxLayout()
-        label = QLabel(
+        self.label = QLabel(
             "确认清空吗？\n"
             "（若点击文本输入与导入界面\n"
             "右上角的关闭按钮\n"
             "则会先清除后退出）"
         )
-        label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
+        self.label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.label)
         
         #随机按钮布局
         button_layout = QHBoxLayout()
@@ -319,6 +388,42 @@ class ClearConfirmationDialog(QDialog):
         layout.addLayout(button_layout)
         
         self.setLayout(layout)
+    
+    def _update_fonts(self) -> None:
+        """更新字体大小"""
+        current_width = self.width()
+        current_height = self.height()
+        
+        min_font_size = 16
+        max_font_size = 32
+        default_width = 400
+        default_height = 200
+        
+        width_ratio = current_width / default_width
+        height_ratio = current_height / default_height
+        ratio = (width_ratio + height_ratio) / 2
+        
+        font_size = min_font_size + (max_font_size - min_font_size) * (ratio - 1)
+        font_size = max(min_font_size, min(max_font_size, font_size))
+        
+        try:
+            settings_manager = SettingsManager()
+            global_font = settings_manager.Custom.get_value("global_font", "微软雅黑")
+        except:
+            global_font = "微软雅黑"
+        
+        font = QFont(global_font, int(font_size))
+        self.label.setFont(font)
+        
+        button_font_size = int(font_size * 0.5)
+        button_font = QFont(global_font, button_font_size)
+        for button in self.buttons:
+            button.setFont(button_font)
+    
+    def resizeEvent(self, event) -> None:
+        """处理窗口大小变化事件"""
+        super().resizeEvent(event)
+        self._update_fonts()
     
     def _create_random_buttons(self, layout: QHBoxLayout) -> None:
         """创建随机排列的确认按钮"""

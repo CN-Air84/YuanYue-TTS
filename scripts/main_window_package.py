@@ -18,15 +18,14 @@ class VersionInfos:
     """版本信息"""
     
     def __init__(self) -> None:
-        self.this_version = '''0.8.1'''
-        self.this_update_content = '''听写页面移除下一句和结束按钮\n下一句功能集成到生成音频按钮
-删除音频总时长检测，不再弹出“音频总时长小于20秒”弹窗
-添加文本检测，避免第一个字符为空格或换行符
-句子预览和停顿设置按钮及其窗口内所有文字应用自定义的字体
-添加句子预览功能，显示即将播放的句子，支持跳转。
-添加结束听写功能。
-以及更多……'''
-        self.this_update_date = '''2026-01-02'''
+        self.this_version = '''0.9.0'''
+        self.this_update_content = '''·添加许可证页面
+·在线导入功能 添加 从国家
+智慧教育平台获取教科书PDF
+文件并导入模式
+·修复一些bug
+'''
+        self.this_update_date = '''2026-01-14'''
         # self.this_version = '''0.0'''
         # self.this_update_content = '''版本自述文本框每行最多十六个汉字
         # ABCDEFGHABCDEFGHABCDEFGA

@@ -5,6 +5,7 @@ import re
 import base64
 import io
 import tempfile
+import subprocess
 import requests
 from multiprocessing import Event
 from PyQt5.QtWidgets import (QApplication, QPushButton, QLineEdit, QTreeWidget, 
@@ -12,10 +13,11 @@ from PyQt5.QtWidgets import (QApplication, QPushButton, QLineEdit, QTreeWidget,
                             QTreeWidgetItem)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
-
+from multi_thread_downloader import download
 from PIL import Image
 import certifi
 import fitz  # PyMuPDF
+import tchMP
 
 try:
     from misc_func import SettingsManager
@@ -24,6 +26,24 @@ except ImportError:
     SETTINGS_AVAILABLE = False
 
 from iw_dialogs import LoadingDialog, PageOffsetDialog
+
+class SEIRunnerThread(QThread):
+    """运行SmartEduInteract.exe的线程"""
+    finished_signal = pyqtSignal()
+    error_signal = pyqtSignal(str)
+    
+    def __init__(self, exe_path):
+        super().__init__()
+        self.exe_path = exe_path
+    
+    def run(self):
+        """运行SEI.exe"""
+        try:
+            process = subprocess.Popen([self.exe_path], cwd=os.path.dirname(self.exe_path))
+            process.wait()
+            self.finished_signal.emit()
+        except Exception as e:
+            self.error_signal.emit(str(e))
 
 class AIOCRWorker(QThread):
     """AI OCR识别线程"""
@@ -87,8 +107,20 @@ class OnlineImportDialog(QDialog):
         self.debug_prompt = ""  #存储调试信息
         self.debug_response = ""  #也存储调试信息
         self.parent_window = parent
+        
+        # 检查在线导入模式
+        self.is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
+        print(f"[DEBUG] OnlineImportDialog: is_sei_mode = {self.is_sei_mode}")
+        
         self.init_ui()
-        self.load_root_directory()
+        
+        # 根据模式初始化
+        if not self.is_sei_mode:
+            print("[DEBUG] Loading GitHub mode UI")
+            self.load_root_directory()
+        else:
+            print("[DEBUG] Loading SEI mode UI")
+            self._init_sei_mode_ui()
 
     def init_ui(self):
         """初始化UI界面"""
@@ -193,6 +225,75 @@ class OnlineImportDialog(QDialog):
         # 更新字体大小
         self._update_fonts()
 
+    def _init_sei_mode_ui(self):
+        """初始化SEI模式的UI"""
+        # 隐藏GitHub模式相关的UI元素
+        self.back_button.setVisible(False)
+        self.refresh_button.setVisible(False)
+        self.path_label.setVisible(False)
+        self.tree_widget.setVisible(False)
+        
+        # 设置合适的窗口大小
+        self.resize(500, 300)
+        
+        # 隐藏页码和提取内容输入框，先启动SEI.exe
+        self.page_label.setVisible(False)
+        self.page_input.setVisible(False)
+        self.extract_label.setVisible(False)
+        self.extract_input.setVisible(False)
+        self.confirm_button.setEnabled(False)
+        
+        # 更新状态标签
+        self.status_label.setText("智慧教育平台导入模式\n正在呼出智慧教育平台交互窗口……\n请选择需要的书籍，选择后程序会自动解析。")
+        
+        # 更新窗口标题
+        self.setWindowTitle("从教科书中导入 - 智慧教育平台模式")
+        
+        # 启动SEI.exe
+        self._launch_sei_and_show_inputs()
+
+    def _launch_sei_and_show_inputs(self):
+        """启动SEI.exe并在结束后显示输入框"""
+        print("[DEBUG] _launch_sei_and_show_inputs: Starting SEI.exe")
+        
+        try:
+            # 启动SmartEduInteract.exe并等待结束
+            sei_exe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SEI", "SmartEduInteract.exe")
+            if not os.path.exists(sei_exe_path):
+                QMessageBox.critical(self, "错误", f"找不到SmartEduInteract.exe\n路径: {sei_exe_path}")
+                return
+            
+            # 使用新线程运行SEI，避免阻塞主线程
+            print(f"[DEBUG] _launch_sei_and_show_inputs: Launching {sei_exe_path}")
+            self.status_label.setText("正在呼出智慧教育平台交互窗口...")
+            
+            self.sei_thread = SEIRunnerThread(sei_exe_path)
+            self.sei_thread.finished_signal.connect(self._on_sei_finished)
+            self.sei_thread.error_signal.connect(self._on_sei_error)
+            self.sei_thread.start()
+            print("[DEBUG] _launch_sei_and_show_inputs: SEI thread started")
+            
+        except Exception as e:
+            print(f"[DEBUG] _launch_sei_and_show_inputs: Exception - {e}")
+            QMessageBox.critical(self, "错误", f"启动SmartEduInteract失败: {str(e)}")
+    
+    def _on_sei_finished(self):
+        """SEI运行完成后的回调"""
+        print("[DEBUG] _on_sei_finished: SEI.exe finished")
+        
+        # 显示输入框
+        self.page_label.setVisible(True)
+        self.page_input.setVisible(True)
+        self.extract_label.setVisible(True)
+        self.extract_input.setVisible(True)
+        self.confirm_button.setEnabled(True)
+        self.status_label.setText("智慧教育平台导入模式\n请输入页码和需要提取的内容后点击确认导入")
+    
+    def _on_sei_error(self, error_msg):
+        """SEI运行失败的回调"""
+        print(f"[DEBUG] _on_sei_error: {error_msg}")
+        QMessageBox.critical(self, "错误", f"运行SmartEduInteract失败: {error_msg}")
+
     def _update_fonts(self):
         """更新字体大小"""
         if not self.parent_window:
@@ -219,15 +320,19 @@ class OnlineImportDialog(QDialog):
         
         #设置所有标签和输入框的字体
         for widget in [self.path_label, self.status_label, self.page_label, self.extract_label]:
-            widget.setFont(other_font)
+            if widget.isVisible():
+                widget.setFont(other_font)
             
         for widget in [self.back_button, self.refresh_button, self.cancel_button, self.confirm_button]:
-            widget.setFont(other_font)
+            if widget.isVisible():
+                widget.setFont(other_font)
             
         for widget in [self.page_input, self.extract_input]:
-            widget.setFont(other_font)
+            if widget.isVisible():
+                widget.setFont(other_font)
             
-        self.tree_widget.setFont(other_font)
+        if self.tree_widget.isVisible():
+            self.tree_widget.setFont(other_font)
 
     def resizeEvent(self, event):
         """处理窗口大小变化事件"""
@@ -346,26 +451,167 @@ class OnlineImportDialog(QDialog):
         """刷新当前目录"""
         self.load_directory_contents(self.current_path)
 
-    def process_selection(self):
-        """处理选择的文件"""
-        if not hasattr(self, 'selected_file_info'):
-            QMessageBox.warning(self, "提示", "请先选择PDF文件")
-            return
-        
+    def process_sei_import(self):
+        """处理通过SmartEduInteract.exe的在线导入（第二种解决方案）"""
+        # 首先检查页码输入
         page_str = self.page_input.text().strip()
         if not page_str or not page_str.isdigit():
             QMessageBox.warning(self, "提示", "请输入有效页码")
             return
         
-        page_number = int(page_str)  # 用户输入的页码
+        page_number = int(page_str)
+        extract_type = self.extract_input.text().strip() or "所有文字"
         
-        # 获取提取内容
-        extract_type = self.extract_input.text().strip()
-        if not extract_type:
-            extract_type = "所有文字"
+        loading_dialog = LoadingDialog(self)
+        loading_dialog.text_label.setText("正在读取链接信息...")
+        loading_dialog.show()
+        QApplication.processEvents()
         
-        # 使用AI OCR处理
-        self.process_with_ai_ocr(page_number, extract_type)
+        try:
+            # 1. 读取links.txt文件
+            links_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SEI", "links.txt")
+            if not os.path.exists(links_txt_path):
+                loading_dialog.close()
+                QMessageBox.critical(self, "错误", f"找不到links.txt\n路径: {links_txt_path}")
+                return
+            
+            # 2. 提取最后一串链接
+            last_link = self._extract_last_link_from_file(links_txt_path)
+            if not last_link:
+                loading_dialog.close()
+                QMessageBox.critical(self, "错误", "未能从links.txt中提取到有效链接")
+                return
+            
+            # 3. 调用tchMP.parse解析下载链接和标题
+            loading_dialog.text_label.setText("正在解析下载链接...")
+            QApplication.processEvents()
+            
+            download_url, pdf_title, _ = tchMP.parse(last_link, bookmarks=False)
+            if not download_url:
+                loading_dialog.close()
+                QMessageBox.critical(self, "错误", "无法解析下载链接")
+                return
+            
+            print(f"[DEBUG] process_sei_import: PDF title = {pdf_title}")
+            
+            # 4. 确定保存路径和文件名
+            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
+            if not os.path.exists(downloads_dir):
+                os.makedirs(downloads_dir)
+            
+            # 使用服务器提供的标题作为文件名
+            if pdf_title:
+                filename = re.sub(r'[^\w\-_.]', '_', pdf_title) + '.pdf'
+            else:
+                # 如果没有标题，尝试从链接中提取文件名，如果没有则使用时间戳
+                filename = self._extract_filename_from_url(last_link)
+                if not filename:
+                    # 使用hh-mm-ss.pdf格式
+                    from datetime import datetime
+                    filename = datetime.now().strftime("%H-%M-%S.pdf")
+            
+            saved_pdf_path = os.path.join(downloads_dir, filename)
+            
+            # 5. 使用multi_thread_downloader.download下载文件（使用用户设置的线程数）
+            loading_dialog.text_label.setText(f"正在下载: {filename}")
+            QApplication.processEvents()
+            
+            # 获取用户设置的下载线程数
+            thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 1
+            print(f"[DEBUG] process_sei_import: Using thread_num = {thread_num}")
+            
+            download(
+                url=download_url,
+                save_dir=downloads_dir,
+                filename=filename,
+                thread_num=thread_num,
+                verify_ssl=False
+            )
+            
+            loading_dialog.close()
+            
+            # 6. 检查下载是否成功
+            if os.path.exists(saved_pdf_path):
+                self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
+                
+                # 直接使用偏移量处理PDF
+                self.process_pdf_with_offset(saved_pdf_path, page_number, extract_type)
+            else:
+                QMessageBox.critical(self, "错误", "PDF文件下载失败")
+                
+        except Exception as e:
+            loading_dialog.close()
+            QMessageBox.critical(self, "错误", f"处理失败: {str(e)}")
+
+    def _extract_last_link_from_file(self, file_path):
+        """从links.txt中提取最后一串链接"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 匹配 [YY-MM-DD hh-mm-ss]网址 或 [YY_MM_DD hh-mm-ss]网址 格式的链接
+            # 支持 - 和 _ 两种日期分隔符
+            pattern = r'\[\d{2}[-_]\d{2}[-_]\d{2}\s+\d{2}-\d{2}-\d{2}\](https?://[^\s]+)'
+            matches = re.findall(pattern, content)
+            
+            print(f"[DEBUG] _extract_last_link_from_file: Found {len(matches)} links")
+            if matches:
+                print(f"[DEBUG] _extract_last_link_from_file: Last link = {matches[-1]}")
+                return matches[-1]
+            
+            print("[DEBUG] _extract_last_link_from_file: No links found")
+            return None
+        except Exception as e:
+            print(f"[DEBUG] _extract_last_link_from_file: Exception - {e}")
+            return None
+
+    def _extract_filename_from_url(self, url):
+        """尝试从URL中提取文件名"""
+        try:
+            # 尝试从URL路径中提取文件名
+            parsed = re.search(r'/([^/]+?)(?:\.pdf)?(?:\?|$)', url)
+            if parsed:
+                filename = parsed.group(1)
+                # 确保文件名以.pdf结尾
+                if not filename.lower().endswith('.pdf'):
+                    filename += '.pdf'
+                # 清理文件名中的非法字符
+                filename = re.sub(r'[^\w\-_.]', '_', filename)
+                return filename
+        except:
+            pass
+        return None
+
+    def process_selection(self):
+        """处理选择的文件"""
+        # 检查在线导入模式
+        is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
+        print(f"[DEBUG] process_selection: is_sei_mode = {is_sei_mode}")
+        
+        if is_sei_mode:
+            # 智慧教育平台导入模式
+            print("[DEBUG] Calling process_sei_import()")
+            self.process_sei_import()
+        else:
+            # GitHub导入模式（原有逻辑）
+            if not hasattr(self, 'selected_file_info'):
+                QMessageBox.warning(self, "提示", "请先选择PDF文件")
+                return
+            
+            page_str = self.page_input.text().strip()
+            if not page_str or not page_str.isdigit():
+                QMessageBox.warning(self, "提示", "请输入有效页码")
+                return
+            
+            page_number = int(page_str)  # 用户输入的页码
+            
+            # 获取提取内容
+            extract_type = self.extract_input.text().strip()
+            if not extract_type:
+                extract_type = "所有文字"
+            
+            # 使用AI OCR处理
+            self.process_with_ai_ocr(page_number, extract_type)
 
     def process_with_ai_ocr(self, user_page, extract_type):
         """AI处理PDF"""
@@ -412,7 +658,7 @@ class OnlineImportDialog(QDialog):
         """下载PDF并处理"""
         try:
             #导入多线程下载模块
-            from multi_thread_downloader import download
+            
             
             #获取下载URL
             pdf_url = self._get_pdf_download_url(self.selected_file_info)
@@ -495,8 +741,8 @@ class OnlineImportDialog(QDialog):
             actual_page = user_page + offset
             self.process_single_page(pdf_path, actual_page - 1, extract_type)#0-based索引
         else:
-            #没有偏移量
-            self._open_pdf_file(pdf_path)
+            #没有偏移量，显示对话框让用户确认页码
+            #对话框会在5秒后自动打开PDF，或者用户手动点击"打开PDF"按钮
             self.ask_for_page_offset(pdf_path, user_page, extract_type)
 
     def _open_pdf_file(self, pdf_path):
