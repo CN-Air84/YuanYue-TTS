@@ -1,0 +1,33 @@
+{
+  "name": "YuanYueTTSPlugin-SmartEduInteract",
+  "version": "1.0.0",
+  "description": "源悦TTS 国家中小学智教平台 用户交互界面",
+  "main": "main.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:portable": "electron-packager . smartedu-monitor --platform=win32 --arch=x64 --out=dist --overwrite --asar"
+  },
+  "build": {
+    "appId": "com.example.smartedu-monitor",
+    "productName": "SmartEduMonitor",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "electron-packager": "^17.1.2"
+  },
+  "author": "",
+  "license": "ISC"
+}
