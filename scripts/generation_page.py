@@ -18,6 +18,13 @@ i don't even know how DeepSeek “Condensed” 600 lines into 980 lines,
 it looks neat, though.
 '''
 
+'''
+本段代码负责“生成”选项卡。
+若想修改“听写”选项卡请移步generation_page_neo。
+'''
+'''
+生成选项卡已在SimeonTest 0.9被隐藏。
+'''
 class GenerationSignals(QObject):
     """生成页面信号类"""
     

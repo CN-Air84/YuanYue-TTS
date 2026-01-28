@@ -19,6 +19,8 @@ import certifi
 import fitz  # PyMuPDF
 import tchMP
 
+from misc_func import get_app_base_path
+
 try:
     from misc_func import SettingsManager
     SETTINGS_AVAILABLE = True
@@ -114,6 +116,10 @@ class OnlineImportDialog(QDialog):
         
         self.init_ui()
         
+        # 设置窗口默认位置为主窗口中心
+        if parent:
+            self.center_on_parent()
+        
         # 根据模式初始化
         if not self.is_sei_mode:
             print("[DEBUG] Loading GitHub mode UI")
@@ -121,6 +127,14 @@ class OnlineImportDialog(QDialog):
         else:
             print("[DEBUG] Loading SEI mode UI")
             self._init_sei_mode_ui()
+    
+    def center_on_parent(self):
+        """将窗口居中显示在主窗口上"""
+        if self.parent_window:
+            parent_geometry = self.parent_window.geometry()
+            x = parent_geometry.x() + (parent_geometry.width() - self.width()) // 2
+            y = parent_geometry.y() + (parent_geometry.height() - self.height()) // 2
+            self.move(x, y)
 
     def init_ui(self):
         """初始化UI界面"""
@@ -179,14 +193,15 @@ class OnlineImportDialog(QDialog):
         # 底部控件
         bottom_layout = QHBoxLayout()
         
-        # 页码输入框（缩短为原来的1/2）
+        # 页码输入框（放大到原来的2倍）
         self.page_input = QLineEdit()
         self.page_input.setPlaceholderText("页码")
-        self.page_input.setMaximumWidth(80)
+        self.page_input.setMaximumWidth(160)
         
-        # 提取内容输入框
+        # 提取内容输入框（放大到原来的2倍）
         self.extract_input = QLineEdit()
         self.extract_input.setPlaceholderText("提取内容（例如：注释）")
+        self.extract_input.setMaximumWidth(320)
         
         self.status_label = QLabel("请选择PDF文件")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -258,7 +273,7 @@ class OnlineImportDialog(QDialog):
         
         try:
             # 启动SmartEduInteract.exe并等待结束
-            sei_exe_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SEI", "SmartEduInteract.exe")
+            sei_exe_path = os.path.join(get_app_base_path(), "SEI", "SmartEduInteract.exe")
             if not os.path.exists(sei_exe_path):
                 QMessageBox.critical(self, "错误", f"找不到SmartEduInteract.exe\n路径: {sei_exe_path}")
                 return
@@ -287,7 +302,7 @@ class OnlineImportDialog(QDialog):
         self.extract_label.setVisible(True)
         self.extract_input.setVisible(True)
         self.confirm_button.setEnabled(True)
-        self.status_label.setText("智慧教育平台导入模式\n请输入页码和需要提取的内容后点击确认导入")
+        self.status_label.setVisible(False)
     
     def _on_sei_error(self, error_msg):
         """SEI运行失败的回调"""
@@ -469,7 +484,7 @@ class OnlineImportDialog(QDialog):
         
         try:
             # 1. 读取links.txt文件
-            links_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SEI", "links.txt")
+            links_txt_path = os.path.join(get_app_base_path(), "SEI", "links.txt")
             if not os.path.exists(links_txt_path):
                 loading_dialog.close()
                 QMessageBox.critical(self, "错误", f"找不到links.txt\n路径: {links_txt_path}")
@@ -495,7 +510,7 @@ class OnlineImportDialog(QDialog):
             print(f"[DEBUG] process_sei_import: PDF title = {pdf_title}")
             
             # 4. 确定保存路径和文件名
-            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
+            downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
             if not os.path.exists(downloads_dir):
                 os.makedirs(downloads_dir)
             
@@ -511,6 +526,13 @@ class OnlineImportDialog(QDialog):
                     filename = datetime.now().strftime("%H-%M-%S.pdf")
             
             saved_pdf_path = os.path.join(downloads_dir, filename)
+            
+            # 5. 检查本地是否已存在该PDF文件
+            if os.path.exists(saved_pdf_path):
+                loading_dialog.close()
+                self.status_label.setText(f"使用本地PDF文件: {saved_pdf_path}")
+                self.process_pdf_with_offset(saved_pdf_path, page_number, extract_type)
+                return
             
             # 5. 使用multi_thread_downloader.download下载文件（使用用户设置的线程数）
             loading_dialog.text_label.setText(f"正在下载: {filename}")
@@ -638,25 +660,67 @@ class OnlineImportDialog(QDialog):
     def _check_local_pdf(self, pdf_name):
         """检查本地是否有同名PDF"""
         try:
-            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
+            downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
             if not os.path.exists(downloads_dir):
                 return None
-            safe_name = re.sub(r'[^\w\-_.]', '_', pdf_name)
             
-            #查找PDF文件
+            # 首先尝试直接匹配
+            direct_path = os.path.join(downloads_dir, pdf_name)
+            if os.path.exists(direct_path):
+                return direct_path
+            
+            # 如果是SEI模式，尝试转换文件名格式
+            if self.is_sei_mode:
+                converted_filename = self._convert_sei_filename(pdf_name)
+                converted_path = os.path.join(downloads_dir, converted_filename)
+                if os.path.exists(converted_path):
+                    return converted_path
+            
+            # 最后尝试安全名称匹配
+            safe_name = re.sub(r'[^\w\-_.]', '_', pdf_name)
             for filename in os.listdir(downloads_dir):
-                local_safe_name = re.sub(r'[^\w\-_.]', '_', filename)
-                if filename.endswith('.pdf') and safe_name == local_safe_name:
-                    return os.path.join(downloads_dir, filename)
+                if filename.endswith('.pdf'):
+                    local_safe_name = re.sub(r'[^\w\-_.]', '_', filename)
+                    if safe_name == local_safe_name:
+                        return os.path.join(downloads_dir, filename)
             
             return None
         except Exception as e:
             # 检查本地PDF失败，静默处理
             return None
 
+    def _convert_sei_filename(self, sei_filename):
+        """将SEI显示的文件名转换为本地存储的文件名格式"""
+        # 替换特殊字符为下划线
+        converted = sei_filename.replace("（", "_")
+        converted = converted.replace("）", "_")
+        converted = converted.replace("·", "_")
+        converted = converted.replace(" ", "_")
+        converted = converted.replace("/", "_")
+        converted = converted.replace("\\", "_")
+        # 去除多余的下划线
+        converted = re.sub(r'__+', '_', converted)
+        # 添加.pdf后缀
+        if not converted.endswith('.pdf'):
+            converted += '.pdf'
+        return converted
+    
     def _download_pdf_and_process(self, user_page, extract_type, loading_dialog):
         """下载PDF并处理"""
         try:
+            # 检查本地是否已存在PDF文件
+            pdf_name = self.selected_file_info.get('name', 'unknown.pdf')
+            downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
+            saved_pdf_path = os.path.join(downloads_dir, pdf_name)
+            
+            # 检查本地PDF文件
+            local_pdf_path = self._check_local_pdf(pdf_name)
+            if local_pdf_path:
+                loading_dialog.close()
+                self.status_label.setText(f"使用本地PDF文件: {local_pdf_path}")
+                self.ask_for_page_offset(local_pdf_path, user_page, extract_type)
+                return
+            
             #导入多线程下载模块
             
             
@@ -665,11 +729,6 @@ class OnlineImportDialog(QDialog):
             
             # 根据GitHub下载加速设置构建最终下载URL
             final_download_url = self._get_download_url(pdf_url)
-            
-            #保存PDF文件
-            pdf_name = self.selected_file_info.get('name', 'unknown.pdf')
-            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
-            saved_pdf_path = os.path.join(downloads_dir, pdf_name)
             
             #获取用户设置的下载线程数
             thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 5
@@ -828,7 +887,7 @@ class OnlineImportDialog(QDialog):
     def _save_pdf_to_directory(pdf_data, pdf_name):
         """保存PDF文件到程序目录"""
         try:
-            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
+            downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
             if not os.path.exists(downloads_dir):
                 os.makedirs(downloads_dir)
             safe_name = re.sub(r'[^\w\-_.]', '_', pdf_name)

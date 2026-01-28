@@ -19,25 +19,28 @@ class VersionInfos:
     
     def __init__(self) -> None:
         self.this_version = '''0.9.0'''
-        self.this_update_content = '''·添加许可证页面
-·在线导入功能 添加 从国家
-智慧教育平台获取教科书PDF
-文件并导入模式
-·修复一些bug
-'''
-        self.this_update_date = '''2026-01-14'''
+        self.this_update_content = '''·暂时隐藏“生成”选项卡 和 设置选项卡
+内“音频拉伸”相关选项
+·添加许可证页面
+·杂项-关于-更新功能支持广泛内测版本
+·在线导入功能添加 从国家智慧教育
+平台获取教科书PDF文件并导入 模式
+·添加杂项-资源下载功能 支持自定义部署可选组件
+·“从图片导入”功能现支持单次导入至多五张图片
+·修复一些bug'''
+        self.this_update_date = '''2026-01-28'''
         # self.this_version = '''0.0'''
         # self.this_update_content = '''版本自述文本框每行最多十六个汉字
         # ABCDEFGHABCDEFGHABCDEFGA
         # 1234567890123245678901234567\n'''
-        # self.this_update_date = '''版本测试更新日期2038-1-18'''
-        # self.this_update_content = '''·听写页面移除下一句和结束按钮\n下一句功能集成到生成音频按钮
-        # ·删除音频总时长检测，不再弹出“音频总时长小于20秒”弹窗
-        # ·添加文本检测，避免第一个字符为空格或换行符
-        # 句子预览和停顿设置按钮及其窗口内所有文字应用自定义的字体
-        # ·添加句子预览功能，显示即将播放的句子，支持跳转。
-        # ·添加结束听写功能。
-        # 1234567890123245678901234567\n'''
+        #暂时隐藏“生成”选项卡 和 设置选项卡内“音频拉伸”相关选项
+        #添加许可证页面
+        #杂项-关于-更新功能支持广泛内测版本
+        #在线导入功能添加 从国家智慧教育平台获取教科书PDF文件并导入 模式
+        #添加杂项-资源下载功能 支持自定义部署可选组件
+        #”从图片导入“功能现支持单次导入至多五张图片
+        #修复一些bug
+
     def version(self):
         return self.this_version
     
@@ -417,7 +420,7 @@ class MainWindow(QWidget):
         """设置选项卡系统"""
         # 注册选项卡
         self.tab_manager.register_tab('welcome', '欢迎', self._get_welcome_page_class())
-        self.tab_manager.register_tab('generation', '生成', self._get_generation_page_class())
+        # self.tab_manager.register_tab('generation', '生成', self._get_generation_page_class())
         self.tab_manager.register_tab('dictation', '听写', self._get_generation_page_neo_class())
         self.tab_manager.register_tab('settings', '设置', self._get_settings_page_class())
         self.tab_manager.register_tab('personalization', '个性化', self._get_personalization_page_class()) 

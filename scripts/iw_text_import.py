@@ -1,5 +1,6 @@
 # coding=utf-8
 import sys
+import os
 from typing import Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QTextEdit, QFileDialog, 
@@ -9,7 +10,7 @@ from PyQt5.QtCore import  QRect
 from PyQt5.QtGui import QFont
 
 from docxfix import Document
-from iw_dialogs import DialogFactory
+from iw_dialogs import MultiImageImportDialog, LoadingDialog, ClearConfirmationDialog
 from iw_online_import import OnlineImportDialog, AIOCRWorker
 try:
     from misc_func import SettingsManager
@@ -91,7 +92,7 @@ class TextImportManager:
             QMessageBox.critical(parent_dialog, "错误", f"读取失败: {str(e)}")
             return None
     
-    def import_from_image(self, parent_dialog: QDialog) -> Optional[str]:
+    def import_from_image(self, parent_dialog: QDialog) -> Optional[tuple[list[str], str]]:
         """从图片导入文本"""
         if not self.settings_manager:
             QMessageBox.warning(parent_dialog, "提示", "设置管理器不可用")
@@ -102,14 +103,18 @@ class TextImportManager:
             QMessageBox.warning(parent_dialog, "提示", "请配置ChatGLM API Key")
             return None
         
-        file_path, _ = QFileDialog.getOpenFileName(
+        file_paths, _ = QFileDialog.getOpenFileNames(
             parent_dialog, "选择图片", "", TextImportConfig.SUPPORTED_IMAGE_FORMATS
         )
         
-        if not file_path:
+        if not file_paths:
+            return None
+        
+        if len(file_paths) > 5:
+            QMessageBox.warning(parent_dialog, "提示", "最多只能选择5张图片")
             return None
             
-        return file_path, api_key
+        return file_paths, api_key
 
 
 class TextEditController:
@@ -150,6 +155,9 @@ class ImportButtonHandler:
         self.import_manager = import_manager
         self.ai_worker = None
         self.loading_dialog = None
+        self.processed_count = 0 # 新增：已处理图片计数
+        self.failed_count = 0 # 新增：失败图片计数
+        self.total_images_to_process = 0 # 新增：总共需要处理的图片数量
     
     def handle_txt_import(self) -> None:
         """处理TXT导入"""
@@ -175,10 +183,47 @@ class ImportButtonHandler:
         if not result:
             return
             
-        file_path, api_key = result
+        initial_file_paths, api_key = result
         
-        self.loading_dialog = DialogFactory.create_loading_dialog(self.parent_dialog)
-        self.loading_dialog.show()
+        # 显示多图片导入对话框
+        multi_image_dialog = MultiImageImportDialog(self.parent_dialog, initial_file_paths)
+        if multi_image_dialog.exec_() == QDialog.Accepted:
+            sorted_image_paths = multi_image_dialog.result_image_paths
+            if not sorted_image_paths:
+                QMessageBox.warning(self.parent_dialog, "提示", "没有选择图片进行导入。")
+                return
+            
+            self.current_ocr_queue = list(sorted_image_paths)
+            self.api_key = api_key # 存储api_key供后续OCR使用
+            self.processed_count = 0 # 初始化计数器
+            self.failed_count = 0 # 初始化计数器
+            self.total_images_to_process = len(sorted_image_paths) # 设置总数
+            self.loading_dialog = LoadingDialog(self.parent_dialog)
+            self.loading_dialog.show()
+            self._process_next_ocr_image()
+        else:
+            # 用户取消了多图片导入对话框
+            pass
+    
+    def _process_next_ocr_image(self) -> None:
+        """处理OCR队列中的下一张图片"""
+        if not self.current_ocr_queue:
+            # 队列为空，所有图片处理完毕
+            if self.loading_dialog:
+                self.loading_dialog.close()
+            
+            success_count = self.total_images_to_process - self.failed_count
+            QMessageBox.information(
+                self.parent_dialog, 
+                "完成", 
+                f"所有图片已处理完毕。\n成功: {success_count} 张, 失败: {self.failed_count} 张。"
+            )
+            return
+            
+        file_path = self.current_ocr_queue.pop(0) # 取出队列中的第一张图片
+        
+        if self.loading_dialog:
+            self.loading_dialog.set_message(f"正在处理图片: {os.path.basename(file_path)}...")
         
         prompt = (
             "请提取这张图片中的所有文字内容，"
@@ -186,19 +231,56 @@ class ImportButtonHandler:
             "忽略所有注释角标，输出纯文字格式。"
         )
         
-        self.ai_worker = AIOCRWorker(api_key, file_path, prompt)
-        self.ai_worker.finished_signal.connect(self._on_ai_ocr_finished)
-        self.ai_worker.error_signal.connect(self._on_ai_ocr_error)
+        self.ai_worker = AIOCRWorker(self.api_key, file_path, prompt)
+        self.ai_worker.finished_signal.connect(self._on_ai_ocr_finished_multi)
+        self.ai_worker.error_signal.connect(self._on_ai_ocr_error_multi)
         self.ai_worker.start()
     
     def handle_clear_text(self) -> None:
         """处理清空文本"""
-        dialog = DialogFactory.create_clear_confirmation_dialog(self.parent_dialog)
+        dialog = ClearConfirmationDialog(self.parent_dialog)
         if dialog.exec_() == QDialog.Accepted and dialog.result:
             self.text_controller.clear_text()
     
-    def _on_ai_ocr_finished(self, text: str) -> None:
-        """AI OCR完成处理"""
+    def _on_ai_ocr_finished_multi(self, text: str) -> None:
+        """多图片AI OCR完成处理"""
+        self.processed_count += 1
+        current_image_name = os.path.basename(self.ai_worker.image_path)
+        
+        if text:
+            self.text_controller.append_text(text)
+            if self.loading_dialog:
+                self.loading_dialog.set_message(
+                    f"已处理 {self.processed_count}/{self.total_images_to_process} 张图片: {current_image_name} 成功"
+                )
+        else:
+            self.failed_count += 1
+            if self.loading_dialog:
+                self.loading_dialog.set_message(
+                    f"已处理 {self.processed_count}/{self.total_images_to_process} 张图片: {current_image_name} 未识别到文字"
+                )
+            QMessageBox.warning(self.parent_dialog, "提示", f"图片 {current_image_name} 未识别到文字")
+        
+        # 继续处理下一张图片
+        self._process_next_ocr_image()
+    
+    def _on_ai_ocr_error_multi(self, error: str) -> None:
+        """多图片AI OCR错误处理"""
+        self.processed_count += 1
+        current_image_name = os.path.basename(self.ai_worker.image_path)
+        self.failed_count += 1
+        
+        if self.loading_dialog:
+            self.loading_dialog.set_message(
+                f"已处理 {self.processed_count}/{self.total_images_to_process} 张图片: {current_image_name} 失败"
+            )
+        QMessageBox.critical(self.parent_dialog, "错误", f"图片 {current_image_name} 处理失败: {error}")
+        
+        # 即使出错也尝试处理下一张图片
+        self._process_next_ocr_image()
+    
+    def _on_ai_ocr_finished_single(self, text: str) -> None:
+        """单图片AI OCR完成处理 (兼容旧版)"""
         if self.loading_dialog:
             self.loading_dialog.close()
         
@@ -207,8 +289,8 @@ class ImportButtonHandler:
         else:
             QMessageBox.warning(self.parent_dialog, "提示", "未识别到文字")
     
-    def _on_ai_ocr_error(self, error: str) -> None:
-        """AI OCR错误处理"""
+    def _on_ai_ocr_error_single(self, error: str) -> None:
+        """单图片AI OCR错误处理 (兼容旧版)"""
         if self.loading_dialog:
             self.loading_dialog.close()
         QMessageBox.critical(self.parent_dialog, "错误", error)

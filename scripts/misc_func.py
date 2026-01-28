@@ -4,10 +4,26 @@ import hashlib
 import datetime
 from typing import Optional, Dict, Any, List, Tuple  # 新增Tuple导入
 import configparser
+import sys # 导入sys模块
+
 '''
 本段代码在SimeonTest Re1时使用 DeepSeek 重构
 This code uses DeepSeek refactoring at Simeontest RE1
 '''
+
+def get_app_base_path():
+    """
+    获取应用程序的根目录。
+    在PyInstaller打包后，此函数将返回exe文件所在的目录。
+    在开发环境中，此函数将返回脚本文件所在的目录。
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstaller打包后的路径
+        return os.path.dirname(sys.executable)
+    else:
+        # 开发环境中的路径
+        return os.path.dirname(os.path.abspath(__file__))
+
 class VoiceConfig:
     """音色配置类 - 管理所有音色相关配置"""
     

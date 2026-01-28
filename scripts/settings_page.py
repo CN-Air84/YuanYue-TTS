@@ -409,42 +409,42 @@ class GenerationSettingsGroup(QGroupBox):
         speed_layout.addWidget(self.speed_plus_btn)
         layout.addRow("默认语速:", speed_layout)
         
-        # 音频拉伸
-        self.stretch_enable_checkbox = QCheckBox("启用音频拉伸")
-        self.stretch_enable_checkbox.stateChanged.connect(self._on_stretch_enable_changed)
-        self.stretch_enable_checkbox.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['checkbox'])
-        layout.addRow(self.stretch_enable_checkbox)
-        
-        stretch_layout = QHBoxLayout()
-        self.stretch_slider = QSlider(Qt.Horizontal)
-        self.stretch_slider.setRange(5, 200)
-        self.stretch_slider.setValue(100)
-        self.stretch_slider.valueChanged.connect(self._on_stretch_factor_changed)
-        self.stretch_slider.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['slider_orange'])
-        
-        self.stretch_minus_btn = QPushButton('-')
-        self.stretch_minus_btn.setFixedSize(32, 32)
-        self.stretch_minus_btn.clicked.connect(lambda: self._adjust_stretch(-1))
-        self.stretch_minus_btn.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['slider_button'])
-        
-        self.stretch_plus_btn = QPushButton('+')
-        self.stretch_plus_btn.setFixedSize(32, 32)
-        self.stretch_plus_btn.clicked.connect(lambda: self._adjust_stretch(1))
-        self.stretch_plus_btn.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['slider_button'])
-        
-        self.stretch_display = QLabel("1.00")
-        self.stretch_display.setAlignment(Qt.AlignCenter)
-        self.stretch_display.setMinimumWidth(40)
-        
-        self.stretch_info = QLabel("(变速不变调，范围: 0.05倍 - 2.00倍)")
-        self.stretch_info.setStyleSheet("color: #666666; font-size: 12px;")
-        
-        stretch_layout.addWidget(self.stretch_display)
-        stretch_layout.addWidget(self.stretch_minus_btn)
-        stretch_layout.addWidget(self.stretch_slider)
-        stretch_layout.addWidget(self.stretch_plus_btn)
-        layout.addRow("音频拉伸系数:", stretch_layout)
-        layout.addRow("", self.stretch_info)
+        # 音频拉伸（已注释）
+        # self.stretch_enable_checkbox = QCheckBox("启用音频拉伸")
+        # self.stretch_enable_checkbox.stateChanged.connect(self._on_stretch_enable_changed)
+        # self.stretch_enable_checkbox.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['checkbox'])
+        # layout.addRow(self.stretch_enable_checkbox)
+        # 
+        # stretch_layout = QHBoxLayout()
+        # self.stretch_slider = QSlider(Qt.Horizontal)
+        # self.stretch_slider.setRange(5, 200)
+        # self.stretch_slider.setValue(100)
+        # self.stretch_slider.valueChanged.connect(self._on_stretch_factor_changed)
+        # self.stretch_slider.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['slider_orange'])
+        # 
+        # self.stretch_minus_btn = QPushButton('-')
+        # self.stretch_minus_btn.setFixedSize(32, 32)
+        # self.stretch_minus_btn.clicked.connect(lambda: self._adjust_stretch(-1))
+        # self.stretch_minus_btn.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['slider_button'])
+        # 
+        # self.stretch_plus_btn = QPushButton('+')
+        # self.stretch_plus_btn.setFixedSize(32, 32)
+        # self.stretch_plus_btn.clicked.connect(lambda: self._adjust_stretch(1))
+        # self.stretch_plus_btn.setStyleSheet(SettingsCustomConfig.UNIFIED_STYLES['slider_button'])
+        # 
+        # self.stretch_display = QLabel("1.00")
+        # self.stretch_display.setAlignment(Qt.AlignCenter)
+        # self.stretch_display.setMinimumWidth(40)
+        # 
+        # self.stretch_info = QLabel("(变速不变调，范围: 0.05倍 - 2.00倍)")
+        # self.stretch_info.setStyleSheet("color: #666666; font-size: 12px;")
+        # 
+        # stretch_layout.addWidget(self.stretch_display)
+        # stretch_layout.addWidget(self.stretch_minus_btn)
+        # stretch_layout.addWidget(self.stretch_slider)
+        # stretch_layout.addWidget(self.stretch_plus_btn)
+        # layout.addRow("音频拉伸系数:", stretch_layout)
+        # layout.addRow("", self.stretch_info)
         
         # 保存路径
         path_layout = QHBoxLayout()
@@ -462,7 +462,7 @@ class GenerationSettingsGroup(QGroupBox):
         
         self.setLayout(layout)
         
-        self._set_stretch_controls_enabled(False)
+        # self._set_stretch_controls_enabled(False)
     
     def _load_settings(self):
         """加载设置"""
@@ -481,13 +481,14 @@ class GenerationSettingsGroup(QGroupBox):
         self.speed_slider.setValue(speed)
         self.speed_display.setText(str(speed))
         
-        stretch_factor = self.settings_manager.get_stretch_factor()
-        self.stretch_slider.setValue(int(stretch_factor * 100))
-        self.stretch_display.setText(f"{stretch_factor:.2f}")
-        
-        stretch_enabled = self.settings_manager.get_stretch_enabled()
-        self.stretch_enable_checkbox.setChecked(stretch_enabled)
-        self._set_stretch_controls_enabled(stretch_enabled)
+        # 音频拉伸控件已注释
+        # stretch_factor = self.settings_manager.get_stretch_factor()
+        # self.stretch_slider.setValue(int(stretch_factor * 100))
+        # self.stretch_display.setText(f"{stretch_factor:.2f}")
+        # 
+        # stretch_enabled = self.settings_manager.get_stretch_enabled()
+        # self.stretch_enable_checkbox.setChecked(stretch_enabled)
+        # self._set_stretch_controls_enabled(stretch_enabled)
         
         save_path = self.settings_manager.get_default_save_path()
         self.save_path_display.setText(save_path)
@@ -504,31 +505,30 @@ class GenerationSettingsGroup(QGroupBox):
         if self.speed_slider.minimum() <= new_value <= self.speed_slider.maximum():
             self.speed_slider.setValue(new_value)
     
-    def _on_stretch_enable_changed(self, state):
-        """音频拉伸开关改变时的处理"""
-        enabled = state == Qt.Checked
-        self.settings_manager.set_stretch_enabled(enabled)
-        self._set_stretch_controls_enabled(enabled)
-    
-    def _on_stretch_factor_changed(self, value):
-        """音频拉伸系数改变时的处理"""
-        factor = value / 100.0
-        self.stretch_display.setText(f"{factor:.2f}")
-        self.settings_manager.set_stretch_factor(factor)
-    
-    def _adjust_stretch(self, delta):
-        """调整音频拉伸系数"""
-        current_value = self.stretch_slider.value()
-        new_value = current_value + delta
-        if self.stretch_slider.minimum() <= new_value <= self.stretch_slider.maximum():
-            self.stretch_slider.setValue(new_value)
+    # 音频拉伸相关方法已注释
+    # def _on_stretch_enable_changed(self, state):
+    #     """音频拉伸开关改变时的处理"""
+    #     enabled = state == Qt.Checked
+    #     self.settings_manager.set_stretch_enabled(enabled)
+    #     self._set_stretch_controls_enabled(enabled)
+    # 
+    # def _on_stretch_factor_changed(self, value):
+    #     """音频拉伸系数改变时的处理"""
+    #     factor = value / 100.0
+    #     self.stretch_display.setText(f"{factor:.2f}")
+    #     self.settings_manager.set_stretch_factor(factor)
+    # 
+    # def _adjust_stretch(self, delta):
+    #     """调整音频拉伸系数"""
+    #     current_value = self.stretch_slider.value()
+    #     new_value = current_value + delta
+    #     if self.stretch_slider.minimum() <= new_value <= self.stretch_slider.maximum():
+    #         self.stretch_slider.setValue(new_value)
     
     def _set_stretch_controls_enabled(self, enabled):
         """设置音频拉伸控件是否启用"""
-        self.stretch_slider.setEnabled(enabled)
-        self.stretch_minus_btn.setEnabled(enabled)
-        self.stretch_plus_btn.setEnabled(enabled)
-        self.stretch_display.setEnabled(enabled)
+        # 音频拉伸控件已注释
+        pass
     
     def _select_save_path(self):
         """选择保存路径"""
@@ -544,11 +544,12 @@ class GenerationSettingsGroup(QGroupBox):
         self.speed_minus_btn.setFont(font)
         self.speed_plus_btn.setFont(font)
         self.speed_display.setFont(font)
-        self.stretch_enable_checkbox.setFont(font)
-        self.stretch_minus_btn.setFont(font)
-        self.stretch_plus_btn.setFont(font)
-        self.stretch_display.setFont(font)
-        self.stretch_info.setFont(font)
+        # 音频拉伸控件已注释
+        # self.stretch_enable_checkbox.setFont(font)
+        # self.stretch_minus_btn.setFont(font)
+        # self.stretch_plus_btn.setFont(font)
+        # self.stretch_display.setFont(font)
+        # self.stretch_info.setFont(font)
         self.save_path_display.setFont(font)
         self.save_path_button.setFont(font)
 
@@ -866,11 +867,11 @@ class SettingsPage(QWidget):
         self.generation_group.speed_minus_btn.setFont(font)
         self.generation_group.speed_plus_btn.setFont(font)
         self.generation_group.speed_display.setFont(font)
-        self.generation_group.stretch_enable_checkbox.setFont(font)
-        self.generation_group.stretch_minus_btn.setFont(font)
-        self.generation_group.stretch_plus_btn.setFont(font)
-        self.generation_group.stretch_display.setFont(font)
-        self.generation_group.stretch_info.setFont(small_font)
+        # self.generation_group.stretch_enable_checkbox.setFont(font)
+        # self.generation_group.stretch_minus_btn.setFont(font)
+        # self.generation_group.stretch_plus_btn.setFont(font)
+        # self.generation_group.stretch_display.setFont(font)
+        # self.generation_group.stretch_info.setFont(small_font)
         self.generation_group.save_path_display.setFont(font)
         self.generation_group.save_path_button.setFont(font)
         self._set_form_layout_labels_font(self.generation_group.layout(), font)

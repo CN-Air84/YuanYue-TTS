@@ -15,13 +15,10 @@ from misc_func import AudioConfig, VoiceConfig, ContentHasher, AudioFileManager,
 from iw_text_import import show_text_import_dialog
 from shared_memory_manager import get_shared_memory_manager
 
+
 '''
-本段代码在SimeonTest Re1时使用 DeepSeek 重构，
-我自己都不知道小鲸鱼怎么把600多行“精简”成980多行的，
-不过看着还挺工整的。
-This code uses DeepSeek refactoring at Simeontest RE1,
-i don't even know how DeepSeek “Condensed” 600 lines into 980 lines,
-it looks neat, though.
+本段代码负责“听写”选项卡。
+若想修改“生成”选项卡请移步generation_page_。
 '''
 
 class GenerationSignals(QObject):
