@@ -2,6 +2,8 @@
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
 <div align="center">
 
+给孩子点个Star吧球球你们了( ´•̥̥̥ω•̥̥̥` )
+
 [中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
 
 
@@ -146,13 +148,19 @@
 
 ### 为什么线上导入用不了/加载缓慢
 
-[电子书PDF文件来自Github知名项目Chinatextbook。](https://github.com/TapXWorld/ChinaTextbook/ "点击跳转") 因此“线上导入”功能会访问Github服务器。
+您可以在设置-在线导入设置中将“在线导入模式”修改为“智慧教育平台导入模式”以此获得更高质量的pdf文件并获得更高的下载速度。
 
-您可以在“设置”页面中修改“Github下载加速”项。
+或者如果您因为各种原因无法使用此模式，您也可以尝试在“设置”页面中修改“Github下载加速”项和“下载线程数”。
 
-### 为什么启用音频拉伸后音频播放速度不变？
+“Github导入模式”下电子书PDF文件来自[Github知名项目Chinatextbook。](https://github.com/TapXWorld/ChinaTextbook/ "点击跳转")。
 
-bug，在修了在修了。
+### 如何启用“智慧教育平台导入模式”？
+
+首先您需要进入杂项-资源下载，选择YuanyueSEI并进行部署。
+
+程序会自动下载并解压组件。
+
+部署完成后，进入设置-在线导入设置，将“在线导入模式”修改为“智慧教育平台导入模式”。
 
 ### 为什么我在个性化页面修改了xx，但没有生效？
 
