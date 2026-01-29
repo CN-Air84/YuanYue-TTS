@@ -87,11 +87,13 @@
 
 ### [**从教科书中指定页码和内容并导入** ](#在线获取教科书内容并导入)
 
-- ✅资源来自知名开源项目 [ChinaTextbook](https://github.com/TapXWorld/ChinaTextbook/tree/master)
+- ✅支持一键 __从国家中小学智慧教育平台获取PDF电子书__ 并导入
 - ✅清晰的教科书分类，便于寻找需要的书籍
 - ✅支持指定页码和页面中的内容，避免二次处理
 - ✅自动记忆页码偏移量，解决书内页码与PDF页码不符的问题
 - ✅自动保存PDF文件，避免重复下载
+注：“智慧教育平台导入”人机交互窗口使用Electron构造，您可以在杂项-资源下载中部署其。
+注：“智慧教育平台导入”资源下载部分修改自[Github知名项目tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser)。
 
 ### 为抄写/听写场景特别设计的听写界面
 - ✅依据标点符号自动分句，节省手动处理所需时间
