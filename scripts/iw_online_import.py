@@ -18,6 +18,7 @@ from PIL import Image
 import certifi
 import fitz  # PyMuPDF
 import tchMP
+from debug_logger import debug_logger, LogLevel
 
 from misc_func import get_app_base_path
 
@@ -112,7 +113,7 @@ class OnlineImportDialog(QDialog):
         
         # 检查在线导入模式
         self.is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
-        print(f"[DEBUG] OnlineImportDialog: is_sei_mode = {self.is_sei_mode}")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"OnlineImportDialog: is_sei_mode = {self.is_sei_mode}")
         
         self.init_ui()
         
@@ -122,10 +123,10 @@ class OnlineImportDialog(QDialog):
         
         # 根据模式初始化
         if not self.is_sei_mode:
-            print("[DEBUG] Loading GitHub mode UI")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "Loading GitHub mode UI")
             self.load_root_directory()
         else:
-            print("[DEBUG] Loading SEI mode UI")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "Loading SEI mode UI")
             self._init_sei_mode_ui()
     
     def center_on_parent(self):
@@ -152,7 +153,7 @@ class OnlineImportDialog(QDialog):
             QPushButton {{font-family: "{global_font}"; background-color: white; color: black;
                     border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;}}
             QPushButton:hover {{background-color: #f0f0f0;}}
-            QLabel {{font-family: "{global_font}"; font-size: 14px;}}
+            QLabel {{font-family: "{global_font}"; font-size: 14px; background-color: transparent;}}
             QLineEdit {{font-family: "{global_font}"; background-color: white; color: black;
                border: 2px solid gray; border-radius: 5px; padding: 5px;}}
             QTreeWidget {{font-family: "{global_font}"; background-color: white; color: black;
@@ -269,7 +270,7 @@ class OnlineImportDialog(QDialog):
 
     def _launch_sei_and_show_inputs(self):
         """启动SEI.exe并在结束后显示输入框"""
-        print("[DEBUG] _launch_sei_and_show_inputs: Starting SEI.exe")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "_launch_sei_and_show_inputs: Starting SEI.exe")
         
         try:
             # 启动SmartEduInteract.exe并等待结束
@@ -279,22 +280,22 @@ class OnlineImportDialog(QDialog):
                 return
             
             # 使用新线程运行SEI，避免阻塞主线程
-            print(f"[DEBUG] _launch_sei_and_show_inputs: Launching {sei_exe_path}")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"_launch_sei_and_show_inputs: Launching {sei_exe_path}")
             self.status_label.setText("正在呼出智慧教育平台交互窗口...")
             
             self.sei_thread = SEIRunnerThread(sei_exe_path)
             self.sei_thread.finished_signal.connect(self._on_sei_finished)
             self.sei_thread.error_signal.connect(self._on_sei_error)
             self.sei_thread.start()
-            print("[DEBUG] _launch_sei_and_show_inputs: SEI thread started")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "_launch_sei_and_show_inputs: SEI thread started")
             
         except Exception as e:
-            print(f"[DEBUG] _launch_sei_and_show_inputs: Exception - {e}")
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"_launch_sei_and_show_inputs: Exception - {e}")
             QMessageBox.critical(self, "错误", f"启动SmartEduInteract失败: {str(e)}")
     
     def _on_sei_finished(self):
         """SEI运行完成后的回调"""
-        print("[DEBUG] _on_sei_finished: SEI.exe finished")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "_on_sei_finished: SEI.exe finished")
         
         # 显示输入框
         self.page_label.setVisible(True)
@@ -305,8 +306,8 @@ class OnlineImportDialog(QDialog):
         self.status_label.setVisible(False)
     
     def _on_sei_error(self, error_msg):
-        """SEI运行失败的回调"""
-        print(f"[DEBUG] _on_sei_error: {error_msg}")
+        """SEI.exe出错时的回调"""
+        debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"_on_sei_error: {error_msg}")
         QMessageBox.critical(self, "错误", f"运行SmartEduInteract失败: {error_msg}")
 
     def _update_fonts(self):
@@ -507,7 +508,7 @@ class OnlineImportDialog(QDialog):
                 QMessageBox.critical(self, "错误", "无法解析下载链接")
                 return
             
-            print(f"[DEBUG] process_sei_import: PDF title = {pdf_title}")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"process_sei_import: PDF title = {pdf_title}")
             
             # 4. 确定保存路径和文件名
             downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
@@ -540,7 +541,7 @@ class OnlineImportDialog(QDialog):
             
             # 获取用户设置的下载线程数
             thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 1
-            print(f"[DEBUG] process_sei_import: Using thread_num = {thread_num}")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"process_sei_import: Using thread_num = {thread_num}")
             
             download(
                 url=download_url,
@@ -576,15 +577,15 @@ class OnlineImportDialog(QDialog):
             pattern = r'\[\d{2}[-_]\d{2}[-_]\d{2}\s+\d{2}-\d{2}-\d{2}\](https?://[^\s]+)'
             matches = re.findall(pattern, content)
             
-            print(f"[DEBUG] _extract_last_link_from_file: Found {len(matches)} links")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"_extract_last_link_from_file: Found {len(matches)} links")
             if matches:
-                print(f"[DEBUG] _extract_last_link_from_file: Last link = {matches[-1]}")
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"_extract_last_link_from_file: Last link = {matches[-1]}")
                 return matches[-1]
             
-            print("[DEBUG] _extract_last_link_from_file: No links found")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "_extract_last_link_from_file: No links found")
             return None
         except Exception as e:
-            print(f"[DEBUG] _extract_last_link_from_file: Exception - {e}")
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"_extract_last_link_from_file: Exception - {e}")
             return None
 
     def _extract_filename_from_url(self, url):
@@ -608,11 +609,11 @@ class OnlineImportDialog(QDialog):
         """处理选择的文件"""
         # 检查在线导入模式
         is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
-        print(f"[DEBUG] process_selection: is_sei_mode = {is_sei_mode}")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"process_selection: is_sei_mode = {is_sei_mode}")
         
         if is_sei_mode:
             # 智慧教育平台导入模式
-            print("[DEBUG] Calling process_sei_import()")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "Calling process_sei_import()")
             self.process_sei_import()
         else:
             # GitHub导入模式（原有逻辑）

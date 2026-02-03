@@ -6,7 +6,7 @@ from typing import Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, 
     QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
-     QLineEdit, QFormLayout, QSpinBox, QCheckBox, QScrollArea
+     QLineEdit, QFormLayout, QSpinBox, QCheckBox, QScrollArea, QTextEdit
 )
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QPixmap, QImage
@@ -72,10 +72,10 @@ class DialogStyleManager:
         
         try:
             settings_manager = SettingsManager()
-            return settings_manager.get_Custom_value("background_color", "#D2D4D3")
+            return settings_manager.get_Custom_value("background_color", "#E5E8EF")
         except:
             pass
-        return "#D2D4D3"
+        return "#E5E8EF"
     
     @staticmethod
     def get_loading_dialog_style() -> str:
@@ -83,7 +83,7 @@ class DialogStyleManager:
         background_color = DialogStyleManager._get_background_color()
         return f"""
             QDialog {{background-color: {background_color};}}
-            QLabel {{font-family: "微软雅黑"; font-size: 16px; color: #333333;}}
+            QLabel {{font-family: "微软雅黑"; font-size: 16px; color: #333333; background-color: transparent;}}
         """
     
     @staticmethod
@@ -97,7 +97,7 @@ class DialogStyleManager:
                 border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
             }}
             QPushButton:hover {{background-color: #f0f0f0;}}
-            QLabel {{font-family: "微软雅黑"; font-size: 14px;}}
+            QLabel {{font-family: "微软雅黑"; font-size: 14px; background-color: transparent;}}
             QLineEdit {{
                 font-family: "微软雅黑"; background-color: white; color: black;
                 border: 2px solid gray; border-radius: 5px; padding: 5px;
@@ -115,7 +115,7 @@ class DialogStyleManager:
                 font-size: 10px; padding: 1px;
             }}
             QPushButton:hover {{background-color: #f0f0f0;}}
-            QLabel {{color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold;}}
+            QLabel {{color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold; background-color: transparent;}}
         """
     
     @staticmethod
@@ -129,7 +129,7 @@ class DialogStyleManager:
                 font-size: 24px; padding: 1px;
             }}
             QPushButton:hover {{background-color: #f0f0f0;}}
-            QLabel {{color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold;}}
+            QLabel {{color: red; font-family: "微软雅黑"; font-size: 24px; font-weight: bold; background-color: transparent;}}
         """
 
 
@@ -559,7 +559,10 @@ class MultiImageImportDialog(QDialog):
         super().__init__(parent)
         self.image_paths = image_paths if image_paths is not None else []
         self.result_image_paths = []  # 存储最终要导入的图片路径
+        self.result_image_remarks = [] # 存储排序后的备注
+        self.image_remarks = [""] * 5  # 存储每个图片的备注
         self.current_preview_index = 0
+        self.current_remark_index = 0  # 当前正在编辑备注的图片索引
         self.image_widgets = [] # 存储每个图片的checkbox, label, spinbox
         self._init_ui()
         self._update_ui_visibility()
@@ -595,10 +598,17 @@ class MultiImageImportDialog(QDialog):
         main_layout.addWidget(QLabel("图片预览"))
         main_layout.addWidget(preview_group_box)
 
-        # 图片排序部分
+        # 中间部分：图片排序（左）和图片备注（右）
+        middle_layout = QHBoxLayout()
+
+        # 左侧：图片排序部分
+        sort_section_widget = QWidget()
+        sort_section_layout = QVBoxLayout(sort_section_widget)
+        sort_section_layout.addWidget(QLabel("图片排序"))
+        
         sort_content_widget = QWidget()
         self.sort_layout = QVBoxLayout(sort_content_widget)
-        self.image_sort_entries = [] # 存储 (checkbox, filename_label, spinbox)
+        self.image_sort_entries = [] # 存储 (checkbox, filename_label, spinbox, widget_container, remark_button)
         
         for i in range(5):
             h_layout = QHBoxLayout()
@@ -610,21 +620,43 @@ class MultiImageImportDialog(QDialog):
             spinbox.setMaximum(5)
             spinbox.setValue(i + 1)
             
+            remark_btn = QPushButton("备注")
+            remark_btn.setFixedWidth(60)
+            remark_btn.clicked.connect(lambda checked, idx=i: self._switch_remark_image(idx))
+            
             checkbox.stateChanged.connect(lambda state, idx=i: self._on_checkbox_state_changed(state, idx))
             spinbox.valueChanged.connect(lambda value, idx=i: self._on_spinbox_value_changed(value, idx))
 
             h_layout.addWidget(checkbox)
             h_layout.addWidget(filename_label)
             h_layout.addWidget(spinbox)
+            h_layout.addWidget(remark_btn)
             h_layout.addStretch()
             
             widget_container = QWidget()
             widget_container.setLayout(h_layout)
-            self.image_sort_entries.append((checkbox, filename_label, spinbox, widget_container))
+            self.image_sort_entries.append((checkbox, filename_label, spinbox, widget_container, remark_btn))
             self.sort_layout.addWidget(widget_container)
         
-        main_layout.addWidget(QLabel("图片排序"))
-        main_layout.addWidget(sort_content_widget)
+        sort_section_layout.addWidget(sort_content_widget)
+        sort_section_layout.addStretch()
+        middle_layout.addWidget(sort_section_widget, 1)
+
+        # 右侧：图片识别备注部分
+        remark_section_widget = QWidget()
+        remark_section_layout = QVBoxLayout(remark_section_widget)
+        
+        self.remark_title_label = QLabel("图片识别备注")
+        remark_section_layout.addWidget(self.remark_title_label)
+        
+        self.remark_text_edit = QTextEdit()
+        self.remark_text_edit.setPlaceholderText("在这里输入对应图片的备注信息...")
+        self.remark_text_edit.textChanged.connect(self._on_remark_text_changed)
+        remark_section_layout.addWidget(self.remark_text_edit)
+        
+        middle_layout.addWidget(remark_section_widget, 1)
+        
+        main_layout.addLayout(middle_layout)
 
         # 底部按钮
         bottom_button_layout = QHBoxLayout()
@@ -648,182 +680,85 @@ class MultiImageImportDialog(QDialog):
             if not pixmap.isNull():
                 # 保持图片比例，缩放以适应 QLabel
                 scaled_pixmap = pixmap.scaled(
-                    self.image_preview_label.size(), 
-                    Qt.KeepAspectRatio, 
+                    self.image_preview_label.size(),
+                    Qt.KeepAspectRatio,
                     Qt.SmoothTransformation
                 )
                 self.image_preview_label.setPixmap(scaled_pixmap)
-                self.image_preview_label.setText("") # 清除占位文本
-            else:
-                self.image_preview_label.setText("无法加载图片")
-        else:
-            self.image_preview_label.setText("没有图片可供预览")
-
-    def _update_ui_visibility(self) -> None:
-        """根据图片数量更新UI元素的可见性"""
-        num_images = len(self.image_paths)
-
-        # 更新图片选择按钮和排序条目
-        for i in range(5):
-            # 图片选择按钮
-            if i < num_images:
-                self.image_select_buttons[i].setVisible(True)
-                filename = os.path.basename(self.image_paths[i])
-                self.image_select_buttons[i].setText(f"图片 {i+1}: {filename}")
-            else:
-                self.image_select_buttons[i].setVisible(False)
-
-            # 图片排序条目
-            checkbox, filename_label, spinbox, container = self.image_sort_entries[i]
-            if i < num_images:
-                container.setVisible(True)
-                filename = os.path.basename(self.image_paths[i])
-                filename_label.setText(filename)
-                spinbox.setMaximum(num_images) # 根据实际图片数量设置最大值
-            else:
-                container.setVisible(False)
-
-    def _on_checkbox_state_changed(self, state: int, index: int) -> None:
-        """处理复选框状态变化"""
-        checkbox, filename_label, spinbox, container = self.image_sort_entries[index]
-        is_checked = (state == Qt.Checked)
-        filename_label.setEnabled(is_checked)
-        spinbox.setEnabled(is_checked)
-        self._rearrange_spinbox_values()
-
-    def _on_spinbox_value_changed(self, value: int, index: int) -> None:
-        """处理SpinBox值变化"""
-        # 避免在重新排列时触发多次
-        if not hasattr(self, '_rearranging') or not self._rearranging:
-            self._rearrange_spinbox_values()
-
-    def _rearrange_spinbox_values(self) -> None:
-        """重新排列所有启用SpinBox的值，确保顺序和唯一性"""
-        self._rearranging = True # 设置标志，防止递归触发
-
-        enabled_entries = []
-        for i, (checkbox, label, spinbox, container) in enumerate(self.image_sort_entries):
-            if checkbox.isChecked():
-                enabled_entries.append((spinbox.value(), i, checkbox, label, spinbox, container))
-        
-        # 按照当前spinbox值排序，然后是原始索引
-        enabled_entries.sort(key=lambda x: (x[0], x[1]))
-
-        # 重新分配1到N的顺序值
-        for new_order, entry_tuple in enumerate(enabled_entries):
-            original_index = entry_tuple[1]
-            spinbox = entry_tuple[4]
-            spinbox.setValue(new_order + 1)
-            spinbox.setMaximum(len(enabled_entries)) # 更新最大值
-
-        # 重新排序UI中的widget
-        for i in reversed(range(self.sort_layout.count())):
-            widget = self.sort_layout.itemAt(i).widget()
-            if widget:
-                self.sort_layout.removeWidget(widget)
-        
-        # 按照新的顺序添加widget
-        # enabled_entries 已经按照新的顺序值排序
-        for entry_tuple in enabled_entries:
-            container = entry_tuple[5]
-            self.sort_layout.addWidget(container)
-        
-        # 将未启用的widget添加到末尾
-        for i, (checkbox, label, spinbox, container) in enumerate(self.image_sort_entries):
-            if not checkbox.isChecked():
-                self.sort_layout.addWidget(container)
-
-        self._rearranging = False # 重置标志
-
-    def _start_import(self) -> None:
-        """开始导入按钮点击处理"""
-        # 收集排序后的图片路径
-        self.result_image_paths = []
-        
-        # 获取所有启用的图片及其对应的排序值
-        import_candidates = []
-        for i, (checkbox, label, spinbox, container) in enumerate(self.image_sort_entries):
-            if checkbox.isChecked():
-                import_candidates.append((spinbox.value(), self.image_paths[i]))
-        
-        # 按照排序值进行排序
-        import_candidates.sort(key=lambda x: x[0])
-        
-        # 提取排序后的图片路径
-        self.result_image_paths = [path for order, path in import_candidates]
-        
-        if not self.result_image_paths:
-            QMessageBox.warning(self, "提示", "请至少选择一张图片进行导入。")
-            return
             
-        self.accept()
+            # 同时切换备注到当前预览的图片（可选，为了更好的用户体验）
+            self._switch_remark_image(index)
 
+    def _switch_remark_image(self, index: int) -> None:
+        """切换右侧备注框显示的图片内容"""
+        if 0 <= index < len(self.image_paths):
+            self.current_remark_index = index
+            filename = os.path.basename(self.image_paths[index])
+            self.remark_title_label.setText(f"图片识别备注 - {filename}")
+            
+            # 暂时屏蔽信号，防止循环触发
+            self.remark_text_edit.blockSignals(True)
+            self.remark_text_edit.setPlainText(self.image_remarks[index])
+            self.remark_text_edit.blockSignals(False)
 
+    def _on_remark_text_changed(self) -> None:
+        """当备注文本框内容变化时保存到对应的存储中"""
+        if 0 <= self.current_remark_index < len(self.image_remarks):
+            self.image_remarks[self.current_remark_index] = self.remark_text_edit.toPlainText()
 
     def _update_ui_visibility(self) -> None:
-        """根据图片数量更新UI可见性"""
+        """根据图片数量更新组件可见性"""
         num_images = len(self.image_paths)
         for i in range(5):
-            is_visible = i < num_images
-            self.image_select_buttons[i].setVisible(is_visible)
-            self.image_sort_entries[i][0].setVisible(is_visible) # checkbox
-            self.image_sort_entries[i][1].setVisible(is_visible) # filename_label
-            self.image_sort_entries[i][2].setVisible(is_visible) # spinbox
-
-            if is_visible:
+            visible = i < num_images
+            self.image_select_buttons[i].setVisible(visible)
+            # image_sort_entries 存储的是 (checkbox, filename_label, spinbox, widget_container, remark_button)
+            self.image_sort_entries[i][3].setVisible(visible)
+            
+            if visible:
                 filename = os.path.basename(self.image_paths[i])
                 self.image_select_buttons[i].setText(filename)
                 self.image_sort_entries[i][1].setText(filename)
-                self.image_sort_entries[i][2].setMaximum(num_images) # 设置spinbox的最大值
-
-    def _display_image(self, index: int) -> None:
-        """显示指定索引的图片"""
-        if 0 <= index < len(self.image_paths):
-            self.current_preview_index = index
-            image_path = self.image_paths[index]
-            pixmap = QPixmap(image_path)
-            if not pixmap.isNull():
-                # 缩放图片以适应 QLabel
-                scaled_pixmap = pixmap.scaled(self.image_preview_label.size(), 
-                                              Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                self.image_preview_label.setPixmap(scaled_pixmap)
-            else:
-                self.image_preview_label.setText("无法加载图片")
+                
+        # 初始显示第一张图片的备注
+        if num_images > 0:
+            self._switch_remark_image(0)
         else:
-            self.image_preview_label.setText("未选择图片")
-            self.image_preview_label.clear() # 清除之前的图片
+            self.remark_text_edit.setEnabled(False)
 
     def _on_checkbox_state_changed(self, state: int, index: int) -> None:
         """处理复选框状态变化"""
         # 启用/禁用对应的spinbox
         self.image_sort_entries[index][2].setEnabled(state == Qt.Checked)
-
+        # 启用/禁用对应的备注按钮
+        self.image_sort_entries[index][4].setEnabled(state == Qt.Checked)
 
     def _on_spinbox_value_changed(self, value: int, index: int) -> None:
         """处理SpinBox值变化"""
-        # 重新调整排序，确保顺序连续且有效
-
-
-
-
-
+        # 现在取消联动，不在此处进行处理
+        pass
 
     def _start_import(self) -> None:
         """开始导入按钮点击处理"""
         self.result_image_paths = []
+        self.result_image_remarks = []
         
-        # 收集所有已启用并带有顺序的图片路径
-        enabled_images_with_order = []
-        for i, (checkbox, _, spinbox, _) in enumerate(self.image_sort_entries):
+        # 收集所有已启用并带有顺序的图片路径和备注
+        enabled_data = []
+        for i, (checkbox, _, spinbox, _, _) in enumerate(self.image_sort_entries):
             if checkbox.isChecked() and i < len(self.image_paths):
-                enabled_images_with_order.append((self.image_paths[i], spinbox.value()))
+                enabled_data.append({
+                    'path': self.image_paths[i],
+                    'order': spinbox.value(),
+                    'remark': self.image_remarks[i]
+                })
         
-        if not enabled_images_with_order:
+        if not enabled_data:
             QMessageBox.warning(self, "警告", "请至少选择一张图片进行导入。")
             return
 
         # 校验顺序是否连续且唯一
-        orders = [order for _, order in enabled_images_with_order]
+        orders = [item['order'] for item in enabled_data]
         if len(orders) != len(set(orders)):
             QMessageBox.warning(self, "警告", "图片顺序不能重复，请检查。")
             return
@@ -834,16 +769,21 @@ class MultiImageImportDialog(QDialog):
             return
 
         # 按照校验后的顺序进行排序
-        enabled_images_with_order.sort(key=lambda x: x[1])
+        enabled_data.sort(key=lambda x: x['order'])
         
-        # 提取排序后的文件路径
-        self.result_image_paths = [path for path, _ in enabled_images_with_order]
+        # 提取排序后的文件路径和备注
+        self.result_image_paths = [item['path'] for item in enabled_data]
+        self.result_image_remarks = [item['remark'] for item in enabled_data]
         
         self.accept() # 关闭对话框并返回Accepted
 
     def get_selected_image_paths(self) -> list[str]:
         """获取用户选择并排序后的图片路径"""
         return self.result_image_paths
+
+    def get_image_remarks(self) -> list[str]:
+        """获取用户为每张图片设置的备注"""
+        return self.result_image_remarks
     """对话框工厂"""
     
     @staticmethod

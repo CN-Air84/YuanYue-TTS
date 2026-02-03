@@ -14,6 +14,7 @@ from PyQt5.QtGui import QFont
 from misc_func import AudioConfig, VoiceConfig, ContentHasher, AudioFileManager, InputValidator
 from iw_text_import import show_text_import_dialog
 from shared_memory_manager import get_shared_memory_manager
+from debug_logger import debug_logger, LogLevel
 
 
 '''
@@ -926,10 +927,10 @@ class PreviewControl:
             # 重置文本内容（可选 - 保留当前文本但清除生成状态）
             # self.parent.text_edit.clear()  # 如果需要清空文本内容
             
-            print("听写已结束，所有元素已重置到初始状态")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "听写已结束，所有元素已重置到初始状态")
             
         except Exception as e:
-            print(f"结束听写时发生错误: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"结束听写时发生错误: {e}")
     
     def _on_volume_changed(self, value: int):
         """音量改变事件"""
@@ -1195,6 +1196,10 @@ class GenerationPage(QWidget):
         # 获取共享内存管理器
         self.shared_manager = get_shared_memory_manager()
         
+        # 初始化文字颜色和背景颜色
+        self.text_color = self.parent_window.settings_manager.get_Custom_value('text_color', '#333333')
+        self.background_color = self.parent_window.settings_manager.get_Custom_value('background_color', '#E5E8EF')
+        
         # 初始化组件
         self._init_components()
         self._connect_signals()
@@ -1215,7 +1220,7 @@ class GenerationPage(QWidget):
         
         # 检查目标索引是否有效
         if 0 <= target_idx < len(self.sentence_manager.sentences):
-            print(f"{self._get_debug_prefix()} 跳转到句子 {target_idx} (偏移: {offset})")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"跳转到句子 {target_idx} (偏移: {offset})")
             
             # 更新当前句子索引
             self.sentence_manager.current_sentence_index = target_idx
@@ -1237,7 +1242,7 @@ class GenerationPage(QWidget):
                 # 如果音频不存在，提示用户
                 QMessageBox.information(self, "提示", f"第 {target_idx + 1} 句音频尚未生成，请先生成音频")
         else:
-            print(f"{self._get_debug_prefix()} 跳转失败 - 目标索引 {target_idx} 超出范围")
+            debug_logger.output("generation_page_neo.py", LogLevel.WARNING, f"跳转失败 - 目标索引 {target_idx} 超出范围")
         
     def _init_components(self):
         """初始化所有组件"""
@@ -1325,7 +1330,7 @@ class GenerationPage(QWidget):
         self.next_next_sentence_label.setText(next_next_text)
         
         # 调试输出
-        print(f"[Preview] 更新句子预览 - 索引:{current_idx}, 当前:'{current_text[:20]}...'")
+        debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"更新句子预览 - 索引:{current_idx}, 当前:'{current_text[:20]}...'")
     
     def _update_sentence_preview_fonts(self, font):
         """更新句子预览控件字体"""
@@ -1378,7 +1383,7 @@ class GenerationPage(QWidget):
                 border-radius: 8px;
                 padding: 4px;
                 font-size: {preview_font_size}px;
-                color: #333;
+                color: {self.text_color};
             }}
         """
         
@@ -1390,7 +1395,7 @@ class GenerationPage(QWidget):
                 border-radius: 6px;
                 padding: 4px;
                 font-size: {preview_font_size}px;
-                color: #000;
+                color: {self.text_color};
                 font-weight: bold;
             }}
         """
@@ -1676,8 +1681,11 @@ class GenerationPage(QWidget):
         """从共享内存接收主题更改"""
         try:
             # 应用背景颜色
-            bg_color = theme_data.get('background_color', '#69E0A5')
-            self.setStyleSheet(f"background-color: {bg_color};")
+            bg_color = theme_data.get('background_color', '#E5E8EF')
+            self.setStyleSheet(f"""
+                QWidget {{ background-color: {bg_color}; }}
+                QLabel {{ background-color: transparent; }}
+            """)
             # 主题更新成功
         except Exception as e:
             # 主题更新失败处理
@@ -1698,29 +1706,29 @@ class GenerationPage(QWidget):
     def _on_sentence_generated_safe(self, sentence_index: int, audio_file: str, duration: float):
         """安全处理句子生成完成信号"""
         try:
-            print(f"{self._get_debug_prefix()} 接收到句子 {sentence_index} 生成完成信号，文件: {audio_file}, 时长: {duration:.2f}s")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"接收到句子 {sentence_index} 生成完成信号，文件: {audio_file}, 时长: {duration:.2f}s")
             self.sentence_manager.add_generated_audio(sentence_index, audio_file, duration)
             
             # 显示当前进度
             generated_count = self.sentence_manager.get_generated_count()
             total_count = len(self.sentence_manager.sentences)
-            print(f"{self._get_debug_prefix()} 当前进度: {generated_count}/{total_count}")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"当前进度: {generated_count}/{total_count}")
             
             # 检查是否是第一个音频生成完成，且还有未播放的分句
             if (sentence_index == 0 and 
                 self.sentence_manager.has_next_sentence() and 
                 generated_count < total_count):
-                print(f"{self._get_debug_prefix()} 第一个音频生成完成，还有未播放的分句，切换按钮为这一句状态")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, "第一个音频生成完成，还有未播放的分句，切换按钮为这一句状态")
                 self.preview_control.preview_button.setText("播放这一句")
                 self.preview_control.preview_button.setEnabled(True)
             
             # 检查是否所有句子都生成完成
             elif self.sentence_manager.is_all_generated():
-                print(f"{self._get_debug_prefix()} 所有句子生成完成")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, "所有句子生成完成")
                 self.signals.all_sentences_complete.emit()
                 
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 处理句子生成完成时出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"处理句子生成完成时出错: {e}")
     
     def _on_all_sentences_complete_safe(self):
         """安全处理所有句子生成完成信号"""
@@ -1739,12 +1747,12 @@ class GenerationPage(QWidget):
             self.preview_control.preview_button.setEnabled(True)
             
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 处理所有句子生成完成时出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"处理所有句子生成完成时出错: {e}")
     
     def _on_playback_ready_safe(self):
         """安全处理可以开始播放信号"""
         try:
-            print(f"{self._get_debug_prefix()} 接收到播放就绪信号，切换到开始抄写状态")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "接收到播放就绪信号，切换到开始抄写状态")
             
             # 检查是否还有下一句
             if self.sentence_manager.has_next_sentence():
@@ -1758,31 +1766,31 @@ class GenerationPage(QWidget):
             # 启用播放控制按钮
             self.preview_control.set_playback_controls_enabled(True)
             
-            print(f"{self._get_debug_prefix()} 准备自动播放第一句")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "准备自动播放第一句")
             # 自动开始播放第一句
             self._play_current_sentence()
             
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 处理播放就绪信号时出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"处理播放就绪信号时出错: {e}")
     
     def _play_current_sentence(self):
         """播放当前句子"""
         try:
             # 检查是否有有效的句子管理器
             if not hasattr(self, 'sentence_manager') or not self.sentence_manager.sentences:
-                print(f"{self._get_debug_prefix()} 没有有效的句子，取消播放")
+                debug_logger.output("generation_page_neo.py", LogLevel.WARNING, "没有有效的句子，取消播放")
                 return
                 
             current_index = self.sentence_manager.current_sentence_index
             if current_index < 0 or current_index >= len(self.sentence_manager.sentences):
-                print(f"{self._get_debug_prefix()} 当前索引 {current_index} 无效，取消播放")
+                debug_logger.output("generation_page_neo.py", LogLevel.WARNING, f"当前索引 {current_index} 无效，取消播放")
                 return
             
             # 更新句子预览
             self.update_sentence_preview()
             
             audio_file = self.sentence_manager.get_current_sentence_audio()
-            print(f"{self._get_debug_prefix()} 尝试播放当前句子 {current_index}, 音频文件: {audio_file}")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"尝试播放当前句子 {current_index}, 音频文件: {audio_file}")
             
             # 获取当前句子的重试计数
             retry_count = self.sentence_manager.play_retry_count.get(current_index, 0)
@@ -1791,14 +1799,14 @@ class GenerationPage(QWidget):
             if audio_file and os.path.exists(audio_file):
                 # 检查文件大小，确保文件已完全写入
                 file_size = os.path.getsize(audio_file)
-                print(f"{self._get_debug_prefix()} 音频文件存在，大小: {file_size} 字节")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"音频文件存在，大小: {file_size} 字节")
                 
                 if file_size > 0:
-                    print(f"{self._get_debug_prefix()} 音频文件有效，开始播放")
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, "音频文件有效，开始播放")
                     # 重置重试计数
                     self.sentence_manager.play_retry_count[current_index] = 0
                 else:
-                    print(f"{self._get_debug_prefix()} 音频文件大小为0，重试次数: {retry_count + 1}/{max_retries}")
+                    debug_logger.output("generation_page_neo.py", LogLevel.WARNING, f"音频文件大小为0，重试次数: {retry_count + 1}/{max_retries}")
                     if retry_count < max_retries:
                         # 增加重试计数
                         self.sentence_manager.play_retry_count[current_index] = retry_count + 1
@@ -1806,35 +1814,35 @@ class GenerationPage(QWidget):
                         QTimer.singleShot(200, self._play_current_sentence)
                         return
                     else:
-                        print(f"{self._get_debug_prefix()} 达到最大重试次数，放弃播放")
+                        debug_logger.output("generation_page_neo.py", LogLevel.WARNING, "达到最大重试次数，放弃播放")
                         QMessageBox.warning(self, "警告", f"音频文件无效（大小为0），已达到最大重试次数 {max_retries} 次")
                         self.preview_control.preview_button.setEnabled(True)
                         return
                     
-                print(f"{self._get_debug_prefix()} 音频文件存在，开始播放")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, "音频文件存在，开始播放")
                 # 播放开始时禁用按钮，防止重复点击，并更新按钮文本
                 self.preview_control.preview_button.setEnabled(False)
                 self.preview_control.preview_button.setText("正在播放这一句")
                 # 播放音频文件 - 调用父窗口的音频预览功能
                 if hasattr(self, 'parent_window') and hasattr(self.parent_window, 'audio_preview'):
-                    print(f"{self._get_debug_prefix()} 找到音频预览组件，调用播放方法")
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, "找到音频预览组件，调用播放方法")
                     # 连接到播放完成信号
                     self.parent_window.audio_preview.audio_signals.playback_finished.connect(self._on_sentence_playback_complete)
                     self.parent_window.audio_preview._play_audio_file(audio_file)
-                    print(f"{self._get_debug_prefix()} 播放调用完成")
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, "播放调用完成")
                 else:
-                    print(f"{self._get_debug_prefix()} 未找到音频预览组件")
+                    debug_logger.output("generation_page_neo.py", LogLevel.WARNING, "未找到音频预览组件")
                     # 如果未找到音频预览组件，恢复按钮状态
                     self._restore_button_state_after_error()
             else:
                 # 音频文件不存在，显示提示
-                print(f"{self._get_debug_prefix()} 音频文件不存在或路径无效")
+                debug_logger.output("generation_page_neo.py", LogLevel.WARNING, "音频文件不存在或路径无效")
                 QMessageBox.information(self, "提示", "当前句子的音频尚未生成完成，请稍等...")
                 # 恢复按钮状态
                 self._restore_button_state_after_error()
                 
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 播放音频异常: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"播放音频异常: {e}")
             QMessageBox.critical(self, "错误", f"播放音频时出错: {str(e)}")
             # 播放异常时恢复按钮状态
             self._restore_button_state_after_error()
@@ -1862,7 +1870,7 @@ class GenerationPage(QWidget):
             self.preview_control.preview_button.setEnabled(True)
             
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 恢复按钮状态时出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"{self._get_debug_prefix()} 恢复按钮状态时出错: {e}")
             # 如果恢复失败，至少启用按钮
             self.preview_control.preview_button.setEnabled(True)
     
@@ -1871,13 +1879,13 @@ class GenerationPage(QWidget):
         try:
             # 检查是否还有有效的句子管理器
             if not hasattr(self, 'sentence_manager') or not self.sentence_manager.sentences:
-                print(f"{self._get_debug_prefix()} 播放完成回调：没有有效的句子，忽略")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"{self._get_debug_prefix()} 播放完成回调：没有有效的句子，忽略")
                 return
                 
             # 检查当前索引是否有效
             current_idx = self.sentence_manager.current_sentence_index
             if current_idx < 0 or current_idx >= len(self.sentence_manager.sentences):
-                print(f"{self._get_debug_prefix()} 播放完成回调：当前索引 {current_idx} 无效，忽略")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"{self._get_debug_prefix()} 播放完成回调：当前索引 {current_idx} 无效，忽略")
                 return
             
             # 播放完成后，更新进度条到相应位置
@@ -1887,7 +1895,7 @@ class GenerationPage(QWidget):
             # 检查是否是空句子或无效播放
             audio_file = self.sentence_manager.get_current_sentence_audio()
             if not audio_file or not os.path.exists(audio_file):
-                print(f"{self._get_debug_prefix()} 播放完成回调：当前句子没有有效音频文件，忽略")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"{self._get_debug_prefix()} 播放完成回调：当前句子没有有效音频文件，忽略")
                 return
                 
             # 计算进度百分比 (当前句子位置 / 总句子数) * 100%
@@ -1897,7 +1905,7 @@ class GenerationPage(QWidget):
             progress_value = int(progress_percentage * 10)
             self.preview_control.preview_progress.setValue(progress_value)
             
-            print(f"{self._get_debug_prefix()} 句子 {current_sentence-1} 播放完成，进度更新到 {progress_percentage:.1f}%")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"{self._get_debug_prefix()} 句子 {current_sentence-1} 播放完成，进度更新到 {progress_percentage:.1f}%")
             
             # 播放完成后，更新按钮状态
             if self.sentence_manager.has_next_sentence():
@@ -1913,7 +1921,7 @@ class GenerationPage(QWidget):
             # 不需要自动播放下一句，等待用户手动触发
             
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 播放完成回调出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"播放完成回调出错: {e}")
     
     def _play_next_sentence(self):
         """播放下一句"""
@@ -1950,7 +1958,7 @@ class GenerationPage(QWidget):
                 return audio_file is not None and os.path.exists(audio_file)
             return False
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 检查下一句状态时出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"检查下一句状态时出错: {e}")
             return False
     
     def handle_next_sentence(self):
@@ -1987,7 +1995,7 @@ class GenerationPage(QWidget):
                     return  # 消耗这个按键事件
                     
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 处理键盘事件时出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"处理键盘事件时出错: {e}")
         
         # 如果不是我们处理的按键，交给父类处理
         super().keyPressEvent(event)
@@ -1995,9 +2003,8 @@ class GenerationPage(QWidget):
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置更改"""
         try:
-            if page_name == 'custom_page':
+            if page_name in ['custom', 'custom_page']:
                 # 如果是来自个性化页面的设置更改，更新相关设置
-                # 接收个性化页面设置更新
                 # 重新加载页面以应用新设置
                 self._reload_page(settings_data)
         except Exception as e:
@@ -2149,10 +2156,26 @@ class GenerationPage(QWidget):
             # 更新字体
             self._update_fonts()
             
-            # 更新主题样式
+            # 更新颜色设置
             if settings_data:
-                bg_color = settings_data.get('background_color', '#69E0A5')
-                self.setStyleSheet(f"background-color: {bg_color};")
+                bg_color = settings_data.get('background_color')
+                text_color = settings_data.get('text_color')
+                
+                if bg_color:
+                    self.background_color = bg_color
+                if text_color:
+                    self.text_color = text_color
+                
+                # 应用样式表到主页面
+                self.setStyleSheet(f"QWidget {{ background-color: {self.background_color}; color: {self.text_color}; }}")
+                
+                # 更新句子预览样式（包含文字颜色）
+                self._setup_sentence_preview_styles()
+                
+                # 如果有特定的按钮样式需要更新，也可以在这里添加
+                # 例如停顿设置和参数设置按钮
+                self.pause_settings_button.setStyleSheet(self._get_pause_settings_button_style())
+                self.param_settings_button.setStyleSheet(self._get_param_settings_button_style())
             
             # 重新布局控件（触发resize事件）
             if hasattr(self, 'resizeEvent'):
@@ -2161,6 +2184,7 @@ class GenerationPage(QWidget):
             # 页面重新加载成功
         except Exception as e:
             # 页面重新加载失败处理
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"页面重新加载失败: {e}")
             pass
 
     def _layout_volume_controls(self, width, height, n, m, scale_factor, right_offset, progress_y, control_buttons_y, control_button_height):
@@ -2382,58 +2406,58 @@ class GenerationPage(QWidget):
     def _start_multi_threaded_generation(self, sentences: List[str]):
         """启动单线程句子生成 - 第一段音频完成后切换到开始抄写状态"""
         try:
-            print(f"{self._get_debug_prefix()} 启动单线程生成，句子数量: {len(sentences)}")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"启动单线程生成，句子数量: {len(sentences)}")
             
             # 设置生成状态
             self.sentence_manager.is_generating = True
             self.sentence_manager.generation_queue = list(enumerate(sentences))
             
-            print(f"{self._get_debug_prefix()} 生成队列创建完成，包含 {len(self.sentence_manager.generation_queue)} 个句子")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"生成队列创建完成，包含 {len(self.sentence_manager.generation_queue)} 个句子")
             
             # 创建单一生成线程
             self.sentence_manager.generation_threads = []
-            print(f"{self._get_debug_prefix()} 创建单线程生成器")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "创建单线程生成器")
             thread = threading.Thread(
                 target=self._single_thread_generation_worker,
                 daemon=True
             )
             self.sentence_manager.generation_threads.append(thread)
             thread.start()
-            print(f"{self._get_debug_prefix()} 单线程生成器已启动")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "单线程生成器已启动")
                 
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 启动单线程生成失败: {str(e)}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"启动单线程生成失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"启动单线程生成失败: {str(e)}")
             self._on_generation_complete(False, str(e))
     
     def _single_thread_generation_worker(self):
         """单线程句子生成工作器 - 第一段音频完成后切换到开始抄写状态"""
         try:
-            print(f"{self._get_debug_prefix()} [单线程] 开始生成句子")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "[单线程] 开始生成句子")
             first_sentence_generated = False
             
             while self.sentence_manager.is_generating:
                 # 获取下一个要生成的句子
                 sentence_info = self.sentence_manager.get_next_sentence_to_generate()
                 if sentence_info is None:
-                    print(f"{self._get_debug_prefix()} [单线程] 没有更多句子要生成，结束")
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, "[单线程] 没有更多句子要生成，结束")
                     break
                 
                 sentence_index, sentence_text = sentence_info
-                print(f"{self._get_debug_prefix()} [单线程] 开始处理句子 {sentence_index}: {sentence_text[:30]}...")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[单线程] 开始处理句子 {sentence_index}: {sentence_text[:30]}...")
                 
                 # 生成单个句子的音频
                 try:
                     audio_file, duration = self._generate_single_sentence_audio(sentence_text, sentence_index)
                     
                     if audio_file:
-                        print(f"{self._get_debug_prefix()} [单线程] 句子 {sentence_index} 生成成功，时长: {duration:.2f}s")
+                        debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[单线程] 句子 {sentence_index} 生成成功，时长: {duration:.2f}s")
                         self.signals.sentence_generated.emit(sentence_index, audio_file, duration)
                         
                         # 如果是第一个句子生成完成，切换到开始抄写状态
                         if not first_sentence_generated:
                             first_sentence_generated = True
-                            print(f"{self._get_debug_prefix()} [单线程] 第一个句子生成完成，切换到开始抄写状态")
+                            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "[单线程] 第一个句子生成完成，切换到开始抄写状态")
                             # 添加短暂延迟确保文件完全写入
                             import time
                             time.sleep(0.1)
@@ -2441,23 +2465,23 @@ class GenerationPage(QWidget):
                             self.signals.playback_ready.emit()
                             
                     else:
-                        print(f"{self._get_debug_prefix()} [单线程] 句子 {sentence_index} 生成失败")
+                        debug_logger.output("generation_page_neo.py", LogLevel.WARNING, f"[单线程] 句子 {sentence_index} 生成失败")
                         
                 except Exception as e:
-                    print(f"{self._get_debug_prefix()} [单线程] 句子 {sentence_index} 处理异常: {e}")
+                    debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"[单线程] 句子 {sentence_index} 处理异常: {e}")
                     continue
                     
         except Exception as e:
-            print(f"{self._get_debug_prefix()} [单线程] 工作器出错: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, "[单线程] 工作器出错: {e}")
         finally:
-            print(f"{self._get_debug_prefix()} [单线程] 工作器结束")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, "[单线程] 工作器结束")
     
     def _generate_single_sentence_audio(self, sentence_text: str, sentence_index: int) -> tuple:
         """生成单个句子的音频"""
         try:
             # 获取当前线程ID
             current_thread_id = threading.get_ident()
-            print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 开始生成句子 {sentence_index} 音频")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 开始生成句子 {sentence_index} 音频")
             
             # 创建临时配置
             temp_config = AudioConfig()
@@ -2472,7 +2496,7 @@ class GenerationPage(QWidget):
             file_manager = FilePathManager()
             audio_file = file_manager.create_temp_file('.wav')
             
-            print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 临时文件: {audio_file}")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 句子 {sentence_index} 临时文件: {audio_file}")
             
             # 使用实际的音频生成器
             from edge_audio_generator import GenerationConfig
@@ -2489,13 +2513,13 @@ class GenerationPage(QWidget):
                 stretch_enabled=getattr(self.config, 'stretch_enabled', False)
             )
             
-            print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 生成配置 - 文本: {sentence_text[:30]}..., 语音: {self.config.voice}, 速度: {self.config.speed}, 音调: {self.config.pitch}, 音量: {self.config.volume}")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 句子 {sentence_index} 生成配置 - 文本: {sentence_text[:30]}..., 语音: {self.config.voice}, 速度: {self.config.speed}, 音调: {self.config.pitch}, 音量: {self.config.volume}")
             
             # 检查语音配置
-            print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 语音配置检查 - voice: '{self.config.voice}', save_path: '{audio_file}'")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 句子 {sentence_index} 语音配置检查 - voice: '{self.config.voice}', save_path: '{audio_file}'")
             
             # 生成音频 - 添加超时保护
-            print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 开始调用音频生成器...")
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 句子 {sentence_index} 开始调用音频生成器...")
             
             # 创建带有超时的生成任务
             import concurrent.futures
@@ -2503,25 +2527,25 @@ class GenerationPage(QWidget):
                 future = executor.submit(self.parent_window.audio_generator.generate_audio, gen_config)
                 try:
                     success = future.result(timeout=30)  # 30秒超时
-                    print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 音频生成结果: {success}")
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 句子 {sentence_index} 音频生成结果: {success}")
                 except concurrent.futures.TimeoutError:
-                    print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 音频生成超时（30秒）")
+                    debug_logger.output("generation_page_neo.py", LogLevel.WARNING, f"[线程{current_thread_id}] 句子 {sentence_index} 音频生成超时（30秒）")
                     return None, 0.0
                 except Exception as e:
-                    print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 音频生成异常: {e}")
+                    debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"[线程{current_thread_id}] 句子 {sentence_index} 音频生成异常: {e}")
                     return None, 0.0
 
             if success:
                 # 获取音频时长
                 duration = self._get_audio_duration(audio_file)
-                print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 音频时长: {duration:.2f}s")
+                debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"[线程{current_thread_id}] 句子 {sentence_index} 音频时长: {duration:.2f}s")
                 return audio_file, duration
             else:
-                print(f"{self._get_debug_prefix()} [线程{current_thread_id}] 句子 {sentence_index} 音频生成失败: 音频生成器返回失败")
+                debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"[线程{current_thread_id}] 句子 {sentence_index} 音频生成失败: 音频生成器返回失败")
                 return None, 0.0
             
         except Exception as e:
-            print(f"{self._get_debug_prefix()} [线程{threading.get_ident()}] 句子 {sentence_index} 音频生成失败: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"[线程{threading.get_ident()}] 句子 {sentence_index} 音频生成失败: {e}")
             return None, 0.0
 
     def _on_generation_complete_thread(self, success: bool, message: str):
@@ -2539,7 +2563,7 @@ class GenerationPage(QWidget):
                 duration = frames / float(rate)
                 return duration
         except Exception as e:
-            print(f"{self._get_debug_prefix()} 获取音频时长失败: {e}")
+            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"获取音频时长失败: {e}")
             return 0.0
     
     def _on_generation_complete_safe(self, success: bool, message: str):

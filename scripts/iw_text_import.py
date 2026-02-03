@@ -23,7 +23,7 @@ class TextImportConfig:
     """文本导入配置类"""
     
     DEFAULT_STYLE = """
-        QDialog {background-color: #E5E8EF;}
+        QDialog {background-color: transparent;}
         QPushButton {
             font-family: "微软雅黑"; background-color: white; color: black;
             border: 2px solid gray; border-radius: 5px; font-weight: bold; padding: 5px;
@@ -158,6 +158,8 @@ class ImportButtonHandler:
         self.processed_count = 0 # 新增：已处理图片计数
         self.failed_count = 0 # 新增：失败图片计数
         self.total_images_to_process = 0 # 新增：总共需要处理的图片数量
+        self.current_ocr_queue = [] # 新增：OCR图片队列
+        self.current_ocr_remarks = [] # 新增：OCR备注队列
     
     def handle_txt_import(self) -> None:
         """处理TXT导入"""
@@ -189,11 +191,13 @@ class ImportButtonHandler:
         multi_image_dialog = MultiImageImportDialog(self.parent_dialog, initial_file_paths)
         if multi_image_dialog.exec_() == QDialog.Accepted:
             sorted_image_paths = multi_image_dialog.result_image_paths
+            sorted_image_remarks = multi_image_dialog.get_image_remarks()
             if not sorted_image_paths:
                 QMessageBox.warning(self.parent_dialog, "提示", "没有选择图片进行导入。")
                 return
             
             self.current_ocr_queue = list(sorted_image_paths)
+            self.current_ocr_remarks = list(sorted_image_remarks)
             self.api_key = api_key # 存储api_key供后续OCR使用
             self.processed_count = 0 # 初始化计数器
             self.failed_count = 0 # 初始化计数器
@@ -221,15 +225,19 @@ class ImportButtonHandler:
             return
             
         file_path = self.current_ocr_queue.pop(0) # 取出队列中的第一张图片
+        remark = self.current_ocr_remarks.pop(0) # 取出对应的备注
         
         if self.loading_dialog:
             self.loading_dialog.set_message(f"正在处理图片: {os.path.basename(file_path)}...")
         
         prompt = (
-            "请提取这张图片中的所有文字内容，"
+            "请提取这张图片中的文字内容，"
             "将₁②⑶⒋Ⅴ❻㈦之类特殊数字符号转为普通数字，"
             "忽略所有注释角标，输出纯文字格式。"
+            "严禁输出任何与图片无关的提示语（如：“这张图片中包含以下文字：”等）。"
         )
+        if remark:
+            prompt += f"\n\n用户想要提取图片中的：{remark}。忽略所有其他文字。"
         
         self.ai_worker = AIOCRWorker(self.api_key, file_path, prompt)
         self.ai_worker.finished_signal.connect(self._on_ai_ocr_finished_multi)

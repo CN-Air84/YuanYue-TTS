@@ -45,6 +45,9 @@ class PackagerGUI(QWidget):
         self.process.readyReadStandardOutput.connect(self.handle_stdout)
         self.process.readyReadStandardError.connect(self.handle_stderr)
         self.process.finished.connect(self.process_finished)
+        self.package_queue = []
+        self.current_package_version = ""
+        self.temp_package_filename = ""
     
     def get_latest_version_from_backup(self):
         """从backup文件夹中查找最新版本号"""
@@ -191,6 +194,11 @@ class PackagerGUI(QWidget):
         self.single_file_checkbox.setChecked(True)
         options_layout.addWidget(self.single_file_checkbox)
 
+        # 标准程序选项
+        self.standard_dir_checkbox = QCheckBox('打包为标准程序')
+        self.standard_dir_checkbox.setChecked(False)
+        options_layout.addWidget(self.standard_dir_checkbox)
+
         # 控制台选项
         self.no_console_checkbox = QCheckBox('隐藏控制台窗口')
         self.no_console_checkbox.setChecked(True)
@@ -247,6 +255,11 @@ class PackagerGUI(QWidget):
             self.icon_input.setText(filename)
 
     def start_packaging(self):
+        # 检查是否至少选择了一个打包选项
+        if not self.single_file_checkbox.isChecked() and not self.standard_dir_checkbox.isChecked():
+            QMessageBox.warning(self, "警告", "请至少选择一种打包方式（单文件或标准程序）！")
+            return
+
         # 获取输入值
         version_parts = [
             self.version_part1.text(),
@@ -274,6 +287,9 @@ class PackagerGUI(QWidget):
         self.current_package_version = version # Store the final version for process_finished
 
         filename = self.filename_input.text()
+        if not filename:
+            QMessageBox.warning(self, "警告", "请先选择入口文件！")
+            return
         
         # 保存原始文件路径信息
         original_path = Path(filename)
@@ -297,6 +313,7 @@ class PackagerGUI(QWidget):
             package_filename = original_dir / f"{original_name}_package{original_ext}"
             shutil.copy2(source_filename, package_filename)
             self.log_output.append(f"已创建打包文件: {package_filename.name}")
+            self.temp_package_filename = str(package_filename)
             
             # 内容替换：读取_package文件，替换指定标记
             try:
@@ -340,9 +357,6 @@ class PackagerGUI(QWidget):
                 except Exception as e:
                     self.log_output.append(f"写入更新内容文件时出错: {str(e)}")
             
-            # 更新filename为_package文件
-            filename = str(package_filename)
-            
         except Exception as e:
             self.log_output.append(f"文件操作出错: {str(e)}")
             QMessageBox.critical(self, "错误", f"文件操作失败: {str(e)}")
@@ -350,6 +364,27 @@ class PackagerGUI(QWidget):
             self.pack_btn.setText('开始打包')
             return
         
+        # 准备任务队列
+        self.package_queue = []
+        if self.single_file_checkbox.isChecked():
+            self.package_queue.append('--onefile')
+        if self.standard_dir_checkbox.isChecked():
+            self.package_queue.append('--onedir')
+        
+        # 禁用打包按钮
+        self.pack_btn.setEnabled(False)
+        self.pack_btn.setText('打包中...')
+        
+        # 执行第一个任务
+        self.run_next_package()
+
+    def run_next_package(self):
+        if not self.package_queue:
+            return
+
+        mode = self.package_queue.pop(0)
+        version = self.current_package_version
+        filename = self.temp_package_filename
         icon_path = self.icon_input.text()
         
         # 构建命令参数
@@ -357,10 +392,7 @@ class PackagerGUI(QWidget):
         args.append(f'--name={version}')
         
         # 添加文件选项
-        if self.add_settings_checkbox.isChecked():
-            # 如果勾选了添加settings.ini，则不需要额外操作
-            pass
-        else:
+        if not self.add_settings_checkbox.isChecked():
             other_files = self.other_files_input.text().strip()
             if other_files:
                 # 在Windows系统中使用分号作为分隔符
@@ -380,26 +412,23 @@ class PackagerGUI(QWidget):
             # 使用默认图标
             args.append('--icon=G:\\YanchaTTS\\1.ico')
         
-        # 单文件选项
-        if self.single_file_checkbox.isChecked():
-            args.append('--onefile')
+        # 模式选项
+        args.append(mode)
         
         # 控制台选项
         if self.no_console_checkbox.isChecked():
             args.append('--windowed')
         
-        # 添加入口文件（使用_package文件）
+        # 添加入口文件
         args.append(filename)
         
         # 显示构建的命令
-        cmd = 'pyinstaller ' + ' '.join(args[1:])  # 移除args中的第一个元素'pyinstaller'
+        cmd = 'pyinstaller ' + ' '.join(args[1:])
+        mode_str = "单文件" if mode == '--onefile' else "标准程序"
+        self.log_output.append(f'\n开始进行 [{mode_str}] 打包...')
         self.log_output.append(f'执行命令: {cmd}')
         
-        # 禁用打包按钮
-        self.pack_btn.setEnabled(False)
-        self.pack_btn.setText('打包中...')
-        
-        # 启动进程 - 使用-m参数运行pyinstaller模块
+        # 启动进程
         self.process.start('pyinstaller', args[1:])
 
     def handle_stdout(self):
@@ -419,6 +448,13 @@ class PackagerGUI(QWidget):
         self.log_output.append(stderr)
 
     def process_finished(self):
+        # 检查是否还有待执行的打包任务
+        if self.package_queue:
+            self.log_output.append("\n当前打包任务已完成，开始下一个任务...")
+            self.run_next_package()
+            return
+
+        # 所有打包任务已完成，执行后续清理和备份
         self.pack_btn.setEnabled(True)
         self.pack_btn.setText('开始打包')
         
@@ -434,7 +470,7 @@ class PackagerGUI(QWidget):
         
         try:
             # 删除对应的.spec文件
-            spec_filename = f"{original_name}_package.spec"
+            spec_filename = f"{version}.spec"
             spec_path = original_dir / spec_filename
             
             if spec_path.exists():
@@ -443,6 +479,16 @@ class PackagerGUI(QWidget):
                     self.log_output.append(f"已删除 {spec_filename} 文件")
                 except Exception as e:
                     self.log_output.append(f"删除 {spec_filename} 文件时出错: {str(e)}")
+            
+            # 同时也尝试删除默认命名的 spec 文件（以防万一）
+            old_spec_filename = f"{original_name}_package.spec"
+            old_spec_path = original_dir / old_spec_filename
+            if old_spec_path.exists():
+                try:
+                    os.remove(old_spec_path)
+                    self.log_output.append(f"已删除 {old_spec_filename} 文件")
+                except:
+                    pass
             
             # 创建备份目录
             backup_dir = Path("./backup") / version

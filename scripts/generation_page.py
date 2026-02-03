@@ -603,6 +603,10 @@ class GenerationPage(QWidget):
         # 获取共享内存管理器
         self.shared_manager = get_shared_memory_manager()
         
+        # 初始化文字颜色和背景颜色
+        self.text_color = self.parent_window.settings_manager.get_Custom_value('text_color', '#333333')
+        self.background_color = self.parent_window.settings_manager.get_Custom_value('background_color', '#E5E8EF')
+        
         # 初始化组件
         self._init_components()
         self._connect_signals()
@@ -785,8 +789,11 @@ class GenerationPage(QWidget):
         """从共享内存接收主题更改"""
         try:
             # 应用背景颜色
-            bg_color = theme_data.get('background_color', '#69E0A5')
-            self.setStyleSheet(f"background-color: {bg_color};")
+            bg_color = theme_data.get('background_color', '#E5E8EF')
+            self.setStyleSheet(f"""
+                QWidget {{ background-color: {bg_color}; }}
+                QLabel {{ background-color: transparent; }}
+            """)
             # 主题更新成功
         except Exception as e:
             # 主题更新失败处理
@@ -807,9 +814,8 @@ class GenerationPage(QWidget):
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置更改"""
         try:
-            if page_name == 'custom_page':
+            if page_name in ['custom', 'custom_page']:
                 # 如果是来自个性化页面的设置更改，更新相关设置
-                # 接收个性化页面设置更新
                 # 重新加载页面以应用新设置
                 self._reload_page(settings_data)
         except Exception as e:
@@ -822,10 +828,18 @@ class GenerationPage(QWidget):
             # 更新字体
             self._update_fonts()
             
-            # 更新主题样式
+            # 更新颜色设置
             if settings_data:
-                bg_color = settings_data.get('background_color', '#69E0A5')
-                self.setStyleSheet(f"background-color: {bg_color};")
+                bg_color = settings_data.get('background_color')
+                text_color = settings_data.get('text_color')
+                
+                if bg_color:
+                    self.background_color = bg_color
+                if text_color:
+                    self.text_color = text_color
+                
+                # 应用样式表到主页面
+                self.setStyleSheet(f"QWidget {{ background-color: {self.background_color}; color: {self.text_color}; }}")
             
             # 重新布局控件（触发resize事件）
             if hasattr(self, 'resizeEvent'):

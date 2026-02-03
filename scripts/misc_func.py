@@ -5,6 +5,7 @@ import datetime
 from typing import Optional, Dict, Any, List, Tuple  # 新增Tuple导入
 import configparser
 import sys # 导入sys模块
+from debug_logger import debug_logger, LogLevel
 
 '''
 本段代码在SimeonTest Re1时使用 DeepSeek 重构
@@ -76,11 +77,14 @@ class CustomConfig:
     
     # 默认颜色配置
     DEFAULT_COLORS = {
-        "background": "#DFDFDF",
-        "highlight_button": "#4682B4",
-        "notification_info": "#C8D4DF",
-        "notification_warning": "#DFD8C6",
-        "notification_error": "#DFCCC8"
+        "background": "#E5E8EF",
+        "card_background": "#F5F8FF",
+        "component_background": "#FFFFFF",
+        "highlight_button": "#4682D6",
+        "notification_info": "#D4E1FF",
+        "notification_warning": "#FFE8D4",
+        "notification_error": "#FFD4D4",
+        "text_color": "#000000"
     }
     
     # 默认字体配置
@@ -150,38 +154,53 @@ class CustomConfig:
     THEME_PRESETS = {
         "晶瓷白": {
             "background": "#DFDFDF",
+            "card_background": "#FFFFFF",
+            "component_background": "#F5F5F5",
             "highlight_button": "#4682B4",
             "notification_info": "#C8D4DF",
             "notification_warning": "#DFD8C6",
-            "notification_error": "#DFCCC8"
+            "notification_error": "#DFCCC8",
+            "text_color": "#000000"
         },
         "水墨黑": {
             "background": "#363636",
+            "card_background": "#4A4A4A",
+            "component_background": "#3D3D3D",
             "highlight_button": "#5CAEFF",
             "notification_info": "#1E3A5F",
             "notification_warning": "#4A3520",
-            "notification_error": "#4B2420"
+            "notification_error": "#4B2420",
+            "text_color": "#E0E0E0"
         },
         "爱眼绿": {
             "background": "#C5C9C5",
+            "card_background": "#E8EFE8",
+            "component_background": "#DDE8DD",
             "highlight_button": "#46A4B4",
             "notification_info": "#D4E7D4",
             "notification_warning": "#F2E8D9",
-            "notification_error": "#F2D9D9"
+            "notification_error": "#F2D9D9",
+            "text_color": "#000000"
         },
         "绮彩红": {
             "background": "#CFC9C9",
+            "card_background": "#F9F4F4",
+            "component_background": "#FFF0F0",
             "highlight_button": "#FF6B6B",
             "notification_info": "#FFE0E6",
             "notification_warning": "#FFE8CC",
-            "notification_error": "#FFCCCC"
+            "notification_error": "#FFCCCC",
+            "text_color": "#000000"
         },
         "仁物蓝": {
             "background": "#E5E8EF",
+            "card_background": "#F5F8FF",
+            "component_background": "#FFFFFF",
             "highlight_button": "#4682D6",
             "notification_info": "#D4E1FF",
             "notification_warning": "#FFE8D4",
-            "notification_error": "#FFD4D4"
+            "notification_error": "#FFD4D4",
+            "text_color": "#000000"
         }
     }
     
@@ -248,15 +267,12 @@ class AudioConfig:
         
     def _generate_default_content(self, now: datetime.datetime) -> str:
         """生成默认文本内容"""
-        return (
-            "欢迎使用源悦TTS。用户没有输入文本。"
-            "源悦TTS 2025年12月10日编译"
-        )
+        return ''
     
     def update_timestamp(self):
         """更新时间戳"""
         now = datetime.datetime.now()
-        if "用户没有输入文本" in self.content:
+        if "用户没有输入文本" in '123':
             self.content = self._generate_default_content(now)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -450,7 +466,15 @@ class SettingsManager:
             'spacing_n': CustomConfig.DEFAULT_NOTIFICATIONS['spacing_n'],
             'auto_close_time': CustomConfig.DEFAULT_NOTIFICATIONS['auto_close_time'],
             'github_acceleration': '0',  # 新增GitHub下载加速选项，默认0（直接从GitHub获取）
-            'online_import_mode': 'False'  # 新增在线导入模式，默认False（GitHub导入模式）
+            'online_import_mode': 'False',  # 新增在线导入模式，默认False（GitHub导入模式）
+            'current_theme': '仁物蓝',
+            'highlight_button_color': CustomConfig.DEFAULT_COLORS['highlight_button'],
+            'card_background_color': CustomConfig.DEFAULT_COLORS['card_background'],
+            'component_background_color': CustomConfig.DEFAULT_COLORS['component_background'],
+            'text_color': CustomConfig.DEFAULT_COLORS['text_color'],
+            'tab_order': 'welcome,dictation,settings,personalization,misc',
+            'tab_visibility': 'welcome,dictation,settings,personalization,misc',
+            'initial_tab': 'welcome'
         }
         
         self._save_config()
@@ -460,7 +484,7 @@ class SettingsManager:
         try:
             self.config.read(self.config_file, encoding='utf-8')
         except Exception as e:
-            print(f"读取配置文件失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"读取配置文件失败: {e}")
     
     def _save_config(self) -> bool:
         """保存配置到文件"""
@@ -469,7 +493,7 @@ class SettingsManager:
                 self.config.write(configfile)
             return True
         except Exception as e:
-            print(f"保存配置文件失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"保存配置文件失败: {e}")
             return False
     
     # API Key 相关方法
@@ -630,7 +654,7 @@ class SettingsManager:
             self._create_default_config()
             return True
         except Exception as e:
-            print(f"重置设置失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"重置设置失败: {e}")
             return False
 class ContentHasher:
     """内容哈希计算器"""
@@ -680,7 +704,7 @@ class AudioFileManager:
                 os.makedirs(directory)
             return True
         except Exception as e:
-            print(f"创建目录失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"创建目录失败: {e}")
             return False
     
     @staticmethod
@@ -709,7 +733,7 @@ class AudioFileManager:
                     
             return deleted_count
         except Exception as e:
-            print(f"清理文件失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"清理文件失败: {e}")
             return 0
 class InputValidator:
     """输入验证器"""

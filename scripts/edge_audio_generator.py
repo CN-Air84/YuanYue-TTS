@@ -7,6 +7,7 @@ import tempfile
 import shutil
 from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
+from debug_logger import debug_logger, LogLevel
 
 
 @dataclass
@@ -239,9 +240,9 @@ class AudioGenerator:
         
     def generate_audio(self, config: GenerationConfig, callback: Optional[Callable] = None) -> bool:
         """生成音频文件 - 支持回调版本"""
-        print(f"[AudioGenerator] 开始验证输入 - voice: '{config.voice}', save_path: '{config.save_path}', content: '{config.content[:30]}...'")
+        debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"开始验证输入 - voice: '{config.voice}', save_path: '{config.save_path}', content: '{config.content[:30]}...'")
         success, message = self.validator.validate_inputs(config)
-        print(f"[AudioGenerator] 验证结果 - success: {success}, message: '{message}'")
+        debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"验证结果 - success: {success}, message: '{message}'")
         if not success:
             if callback:
                 callback(False, message)
@@ -367,12 +368,12 @@ class AudioGenerator:
         # 添加延迟确保文件完全写入
         import time
         mp3_size = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
-        print(f"[AudioGenerator] 音频生成完成，文件大小: {mp3_size} 字节")
+        debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"音频生成完成，文件大小: {mp3_size} 字节")
         
         if mp3_size > 0:
             # 等待一小段时间确保文件完全写入磁盘
             time.sleep(0.1)
-            print(f"[AudioGenerator] 等待文件写入完成，继续处理...")
+            debug_logger.output("edge_audio_generator.py", LogLevel.INFO, "等待文件写入完成，继续处理...")
         
         # 转换为WAV格式（如果目标路径是WAV格式）
         if config.save_path.lower().endswith('.wav'):
@@ -421,15 +422,15 @@ class AudioGenerator:
             
             # 首先检查MP3文件是否存在且大小大于0
             if not os.path.exists(mp3_path):
-                print(f"[AudioGenerator] MP3文件不存在: {mp3_path}")
+                debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"MP3文件不存在: {mp3_path}")
                 return None
                 
             mp3_size = os.path.getsize(mp3_path)
             if mp3_size == 0:
-                print(f"[AudioGenerator] MP3文件大小为0: {mp3_path}")
+                debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"MP3文件大小为0: {mp3_path}")
                 return None
             
-            print(f"[AudioGenerator] 开始MP3转WAV，文件大小: {mp3_size} 字节")
+            debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"开始MP3转WAV，文件大小: {mp3_size} 字节")
             
             # 重试机制 - 最多重试3次
             max_retries = 3
@@ -438,7 +439,7 @@ class AudioGenerator:
                     # 如果是重试，等待一下让文件完全写入
                     if retry > 0:
                         wait_time = 0.5 * retry  # 递增等待时间
-                        print(f"[AudioGenerator] 第{retry}次重试，等待{wait_time}秒...")
+                        debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"[AudioGenerator] 第{retry}次重试，等待{wait_time}秒...")
                         time.sleep(wait_time)
                     
                     # 使用FFmpeg转换格式
@@ -456,29 +457,29 @@ class AudioGenerator:
                     if result.returncode == 0 and os.path.exists(wav_path):
                         wav_size = os.path.getsize(wav_path)
                         if wav_size > 0:
-                            print(f"[AudioGenerator] MP3转WAV成功，WAV文件大小: {wav_size} 字节")
+                            debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"[AudioGenerator] MP3转WAV成功，WAV文件大小: {wav_size} 字节")
                             return wav_path
                         else:
-                            print(f"[AudioGenerator] WAV文件大小为0")
+                            debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, f"[AudioGenerator] WAV文件大小为0")
                             if retry < max_retries - 1:
                                 continue
                             else:
                                 return None
                     else:
-                        print(f"[AudioGenerator] MP3转WAV失败 (尝试 {retry + 1}/{max_retries}): {result.stderr}")
+                        debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"[AudioGenerator] MP3转WAV失败 (尝试 {retry + 1}/{max_retries}): {result.stderr}")
                         if retry < max_retries - 1:
                             continue
                         else:
                             return None
                             
                 except subprocess.TimeoutExpired:
-                    print(f"[AudioGenerator] MP3转WAV超时 (尝试 {retry + 1}/{max_retries})")
+                    debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, f"[AudioGenerator] MP3转WAV超时 (尝试 {retry + 1}/{max_retries})")
                     if retry < max_retries - 1:
                         continue
                     else:
                         return None
                 except Exception as inner_e:
-                    print(f"[AudioGenerator] MP3转WAV异常 (尝试 {retry + 1}/{max_retries}): {inner_e}")
+                    debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"[AudioGenerator] MP3转WAV异常 (尝试 {retry + 1}/{max_retries}): {inner_e}")
                     if retry < max_retries - 1:
                         continue
                     else:
@@ -487,7 +488,7 @@ class AudioGenerator:
             return None
                 
         except Exception as e:
-            print(f"[AudioGenerator] MP3转WAV总体异常: {e}")
+            debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"MP3转WAV总体异常: {e}")
             return None
 
     def _handle_generation_error(self, error: Exception):

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from PyQt5.QtCore import QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QKeyEvent
 from PyQt5.QtCore import Qt
+from debug_logger import debug_logger, LogLevel
 
 
 @dataclass
@@ -338,8 +339,7 @@ class AudioPreview:
             return
         target_position = max(0.0, min(target_position, self.state.current_audio_length))
         
-        # 添加调试信息
-        print(f"Seeking to position: {target_position}")
+        debug_logger.output("audio_preview.py", LogLevel.INFO, f"Seeking to position: {target_position}")
         
         # 停止当前播放并重新定位
         self.pygame_manager.stop_audio()
@@ -411,28 +411,28 @@ class AudioPreview:
     def _play_audio_file(self, file_path: str, start_position: float = 0.0):
         """播放音频文件并初始化时间基准点"""
         try:
-            print(f"[AudioPreview] 开始播放音频文件: {file_path}, 起始位置: {start_position}")
+            debug_logger.output("audio_preview.py", LogLevel.INFO, f"开始播放音频文件: {file_path}, 起始位置: {start_position}")
             
             if not self.pygame_manager._init_pygame():
-                print(f"[AudioPreview] pygame初始化失败")
+                debug_logger.output("audio_preview.py", LogLevel.ERROR, "pygame初始化失败")
                 return
                 
-            print(f"[AudioPreview] pygame初始化成功")
+            debug_logger.output("audio_preview.py", LogLevel.INFO, "pygame初始化成功")
             
             if not self.pygame_manager.load_audio(file_path):
-                print(f"[AudioPreview] 音频文件加载失败: {file_path}")
+                debug_logger.output("audio_preview.py", LogLevel.ERROR, f"音频文件加载失败: {file_path}")
                 return
                 
-            print(f"[AudioPreview] 音频文件加载成功: {file_path}")
+            debug_logger.output("audio_preview.py", LogLevel.INFO, f"音频文件加载成功: {file_path}")
             
             self.pygame_manager.set_volume(self.state.volume)
-            print(f"[AudioPreview] 音量设置为: {self.state.volume}")
+            debug_logger.output("audio_preview.py", LogLevel.INFO, f"音量设置为: {self.state.volume}")
                 
             if not self.pygame_manager.play_audio(start_position):
-                print(f"[AudioPreview] 音频播放启动失败")
+                debug_logger.output("audio_preview.py", LogLevel.ERROR, "音频播放启动失败")
                 return
             
-            print(f"[AudioPreview] 音频播放启动成功")
+            debug_logger.output("audio_preview.py", LogLevel.INFO, "音频播放启动成功")
             
             self.state.current_audio_length = self.pygame_manager.get_audio_length(file_path)
             self.state.current_audio_position = start_position
@@ -459,10 +459,10 @@ class AudioPreview:
             )
             self.playback_monitor.start()
             
-            print(f"[AudioPreview] 音频播放设置完成，开始监控播放状态")
+            debug_logger.output("audio_preview.py", LogLevel.INFO, "[AudioPreview] 音频播放设置完成，开始监控播放状态")
             
         except Exception as e:
-            print(f"[AudioPreview] 播放音频异常: {e}")
+            debug_logger.output("audio_preview.py", LogLevel.ERROR, f"[AudioPreview] 播放音频异常: {e}")
             self.parent_window.notification_manager.show_message(f"播放音频时发生错误: {str(e)}", "E", 5000)
 
     def _on_playback_finished(self):
@@ -584,8 +584,9 @@ class AudioPreview:
                     
                     # 每10%进度打印一次调试信息，避免输出过多
                     if int(total_progress * 10) % 100 == 0:
-                        print(f"[AudioPreview] 进度更新: 句子{current_sentence_index+1}/{total_sentences}, "
-                              f"当前句子进度{sentence_progress*100:.1f}%, 总进度{total_progress:.1f}%")
+                        debug_logger.output("audio_preview.py", LogLevel.INFO, 
+                                          f"[AudioPreview] 进度更新: 句子{current_sentence_index+1}/{total_sentences}, "
+                                          f"当前句子进度{sentence_progress*100:.1f}%, 总进度{total_progress:.1f}%")
 
     def set_seeking(self, seeking: bool):
         self.state.is_seeking = seeking
