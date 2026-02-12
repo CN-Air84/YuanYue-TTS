@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
+from debug_logger import debug_logger, LogLevel
+
 try:
     from misc_func import SettingsManager, get_app_base_path
     SETTINGS_AVAILABLE = True
@@ -17,7 +19,13 @@ except ImportError:
     SETTINGS_AVAILABLE = False
     # 如果导入失败，定义一个后备方案
     def get_app_base_path():
-        return os.getcwd()
+        import sys
+        if getattr(sys, 'frozen', False):
+            # PyInstaller打包后的路径
+            return os.path.dirname(sys.executable)
+        else:
+            # 开发环境中的路径
+            return os.path.dirname(os.path.abspath(__file__))
 
 try:
     from multi_thread_downloader import download
@@ -29,6 +37,7 @@ class ResourceDownloadDialog(QDialog):
 
     def __init__(self, parent=None, resource_info=None):
         super().__init__(parent)
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, "初始化资源下载对话框", fold_code="MP_RD_INIT")
         self.parent_window = parent
         self.resource_info = resource_info or []
         self.setWindowTitle("资源下载")
@@ -48,8 +57,10 @@ class ResourceDownloadDialog(QDialog):
 
         self._init_ui()
         self._update_fonts()
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"资源下载对话框初始化完成, 资源数量: {len(self.resource_info)}", fold_code="MP_RD_INIT")
 
     def _init_ui(self):
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, "正在构建资源下载UI", fold_code="MP_RD_INIT")
         layout = QVBoxLayout()
         layout.setSpacing(10)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -109,11 +120,13 @@ class ResourceDownloadDialog(QDialog):
 
     def resizeEvent(self, event):
         """处理窗口大小变化事件"""
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"资源下载窗口大小调整: {self.width()}x{self.height()}", fold_code="MP_RD_INIT")
         self._update_fonts()
         super().resizeEvent(event)
 
     def _calculate_font_sizes(self):
         """计算字体大小"""
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, "正在计算资源下载窗口字体大小适配", fold_code="MP_RD_INIT")
         current_width = self.width()
         current_height = self.height()
         width_ratio = current_width / self.default_width
@@ -144,8 +157,8 @@ class ResourceDownloadDialog(QDialog):
 
             self.deploy_button.setFont(QFont(self.global_font, base_font_size * 0.8))
 
-        except Exception:
-            pass
+        except Exception as e:
+            debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"更新资源下载对话框字体时出错: {e}", fold_code="MP_RD_INIT")
 
     def _extract_7z(self, file_path: str, target_path: str) -> bool:
         """
@@ -158,6 +171,7 @@ class ResourceDownloadDialog(QDialog):
         Returns:
             bool: 解压是否成功
         """
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"尝试使用 7z 解压: {file_path} 到 {target_path}", fold_code="MP_RD_EXTRACT")
         try:
             # 使用 subprocess 调用 7z 命令行工具
             # x: 带路径解压
@@ -170,16 +184,17 @@ class ResourceDownloadDialog(QDialog):
                 check=False
             )
             if result.returncode == 0:
+                debug_logger.output("mp_resource_download.py", LogLevel.INFO, "7z 解压成功", fold_code="MP_RD_EXTRACT")
                 return True
             
-            print(f"[DEBUG] 7z extraction failed with return code {result.returncode}: {result.stderr}")
+            debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"7z 解压失败, 返回码 {result.returncode}: {result.stderr}", fold_code="MP_RD_EXTRACT")
             return False
 
         except FileNotFoundError:
-            print("[DEBUG] 7z command not found. Please install 7-Zip and add it to PATH.")
+            debug_logger.output("mp_resource_download.py", LogLevel.ERROR, "未找到 7z 命令, 请安装 7-Zip 并添加到 PATH", fold_code="MP_RD_EXTRACT")
             return False
         except Exception as e:
-            print(f"[DEBUG] 7z extraction error: {str(e)}")
+            debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"7z 解压发生错误: {str(e)}", fold_code="MP_RD_EXTRACT")
             return False
 
     def _safe_remove(self, file_path: str) -> None:
@@ -192,9 +207,9 @@ class ResourceDownloadDialog(QDialog):
         try:
             if os.path.exists(file_path):
                 os.remove(file_path)
-                print(f"[DEBUG] Successfully removed: {file_path}")
+                debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"成功删除文件: {file_path}", fold_code="MP_RD_CLEAN")
         except Exception as e:
-            print(f"[DEBUG] Failed to remove {file_path}: {str(e)}")
+            debug_logger.output("mp_resource_download.py", LogLevel.WARNING, f"删除文件失败 {file_path}: {str(e)}", fold_code="MP_RD_CLEAN")
 
     def _on_deploy(self):
         """
@@ -212,16 +227,21 @@ class ResourceDownloadDialog(QDialog):
             if checkbox.isChecked():
                 selected_resources.append(self.resource_info[i])
 
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"开始部署选中的资源, 选中数量: {len(selected_resources)}", fold_code="MP_RD_DEPLOY")
         if not selected_resources:
+            debug_logger.output("mp_resource_download.py", LogLevel.WARNING, "未选中任何资源", fold_code="MP_RD_DEPLOY")
             QMessageBox.information(self, "提示", "请先选择要部署的资源")
             return
 
         # 使用 get_app_base_path 获取程序实际所在目录，避免 PyInstaller 打包后的路径偏移问题
         save_dir = get_app_base_path()
+        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"保存目录: {save_dir}", fold_code="MP_RD_DEPLOY")
 
         for resource in selected_resources:
             try:
+                debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"处理资源: {resource['name']}", fold_code="MP_RD_DEPLOY")
                 if download is None:
+                    debug_logger.output("mp_resource_download.py", LogLevel.CRITICAL, "无法导入 multi_thread_downloader", fold_code="MP_RD_DEPLOY")
                     raise ImportError("multi_thread_downloader 模块未找到，请确保已安装依赖。")
 
                 # 处理 GitHub 加速 URL
@@ -238,6 +258,7 @@ class ResourceDownloadDialog(QDialog):
                 if SETTINGS_AVAILABLE:
                     thread_num = SettingsManager().get_download_thread_num()
 
+                debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"下载资源: {resource['name']}, URL: {accelerated_url[:50]}..., 线程数: {thread_num}", fold_code="MP_RD_DEPLOY")
                 # 执行下载任务
                 download_result = download(
                     url=accelerated_url,
@@ -248,18 +269,22 @@ class ResourceDownloadDialog(QDialog):
                 )
 
                 if not download_result:
+                    debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"下载 {resource['name']} 失败", fold_code="MP_RD_DEPLOY")
                     QMessageBox.critical(self, "错误", f"下载 {resource['name']} 失败")
                     continue
 
                 file_path = os.path.join(save_dir, filename)
+                debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"下载完成, 文件路径: {file_path}", fold_code="MP_RD_DEPLOY")
 
                 if not os.path.exists(file_path):
+                    debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"下载的文件不存在: {file_path}", fold_code="MP_RD_DEPLOY")
                     QMessageBox.critical(self, "错误", f"文件未找到: {file_path}")
                     continue
 
                 # 处理后续任务（如解压）
                 if resource.get('task'):
                     task = resource['task']
+                    debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"执行任务: {task['type']}", fold_code="MP_RD_DEPLOY")
                     if task['type'] == 'UnzipTo':
                         target_path = task['path']
 
@@ -267,29 +292,38 @@ class ResourceDownloadDialog(QDialog):
                         if not os.path.isabs(target_path):
                             target_path = os.path.join(save_dir, target_path)
 
+                        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"解压目标路径: {target_path}", fold_code="MP_RD_DEPLOY")
                         if not os.path.exists(target_path):
                             os.makedirs(target_path, exist_ok=True)
+                            debug_logger.output("mp_resource_download.py", LogLevel.INFO, "已创建目标路径", fold_code="MP_RD_DEPLOY")
 
                         ext = os.path.splitext(filename)[1].lower()
                         extraction_success = False
 
                         if ext == '.zip':
+                            debug_logger.output("mp_resource_download.py", LogLevel.INFO, "正在使用 zipfile 解压 ZIP 文件", fold_code="MP_RD_DEPLOY")
                             try:
                                 with zipfile.ZipFile(file_path, 'r') as zip_ref:
                                     zip_ref.extractall(target_path)
                                 extraction_success = True
+                                debug_logger.output("mp_resource_download.py", LogLevel.INFO, "ZIP 解压成功", fold_code="MP_RD_DEPLOY")
                                 QMessageBox.information(self, "提示", f"已成功部署并解压: {resource['name']} -> {target_path}")
                             except zipfile.BadZipFile:
+                                debug_logger.output("mp_resource_download.py", LogLevel.ERROR, "ZIP 文件损坏", fold_code="MP_RD_DEPLOY")
                                 QMessageBox.warning(self, "警告", f"{resource['name']} 下载的文件不是有效的 ZIP 格式。")
                         
                         elif ext == '.7z':
+                            debug_logger.output("mp_resource_download.py", LogLevel.INFO, "正在调用 7z 解压 7z 文件", fold_code="MP_RD_DEPLOY")
                             if self._extract_7z(file_path, target_path):
                                 extraction_success = True
+                                debug_logger.output("mp_resource_download.py", LogLevel.INFO, "7z 解压成功", fold_code="MP_RD_DEPLOY")
                                 QMessageBox.information(self, "提示", f"已成功部署并解压: {resource['name']} -> {target_path}")
                             else:
+                                debug_logger.output("mp_resource_download.py", LogLevel.ERROR, "7z 解压失败", fold_code="MP_RD_DEPLOY")
                                 QMessageBox.warning(self, "提示", f"已成功下载: {resource['name']}\n但 7z 解压失败。文件位置: {file_path}")
                         
                         else:
+                            debug_logger.output("mp_resource_download.py", LogLevel.WARNING, f"不支持的解压格式: {ext}", fold_code="MP_RD_DEPLOY")
                             QMessageBox.information(self, "提示", f"已成功下载: {resource['name']}\n注意: {ext} 格式不支持自动解压，请手动处理。")
 
                         # 解压成功后删除压缩包
@@ -297,9 +331,12 @@ class ResourceDownloadDialog(QDialog):
                             self._safe_remove(file_path)
 
                     else:
+                        debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"未知任务类型: {task['type']}", fold_code="MP_RD_DEPLOY")
                         QMessageBox.information(self, "提示", f"已成功部署: {resource['name']}")
                 else:
+                    debug_logger.output("mp_resource_download.py", LogLevel.INFO, "无后续任务", fold_code="MP_RD_DEPLOY")
                     QMessageBox.information(self, "提示", f"已成功部署: {resource['name']}")
 
             except Exception as e:
+                debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"部署 {resource['name']} 失败: {str(e)}", fold_code="MP_RD_DEPLOY")
                 QMessageBox.critical(self, "错误", f"部署 {resource['name']} 失败: {str(e)}")

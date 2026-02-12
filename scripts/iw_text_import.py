@@ -12,6 +12,7 @@ from PyQt5.QtGui import QFont
 from docxfix import Document
 from iw_dialogs import MultiImageImportDialog, LoadingDialog, ClearConfirmationDialog
 from iw_online_import import OnlineImportDialog, AIOCRWorker
+from debug_logger import debug_logger, LogLevel
 try:
     from misc_func import SettingsManager
     SETTINGS_AVAILABLE = True
@@ -61,6 +62,7 @@ class TextImportManager:
     
     def import_from_txt(self, parent_dialog: QDialog) -> Optional[str]:
         """从TXT文件导入文本"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "开始从TXT导入文本", fold_code="TI_TXT")
         file_path, _ = QFileDialog.getOpenFileName(
             parent_dialog, "选择文件", "", TextImportConfig.SUPPORTED_TEXT_FORMATS
         )
@@ -77,6 +79,7 @@ class TextImportManager:
     
     def import_from_docx(self, parent_dialog: QDialog) -> Optional[str]:
         """从DOCX文件导入文本"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "开始从DOCX导入文本", fold_code="TI_DOCX")
         file_path, _ = QFileDialog.getOpenFileName(
             parent_dialog, "选择文件", "", TextImportConfig.SUPPORTED_DOC_FORMATS
         )
@@ -94,6 +97,7 @@ class TextImportManager:
     
     def import_from_image(self, parent_dialog: QDialog) -> Optional[tuple[list[str], str]]:
         """从图片导入文本"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "开始从图片导入文本", fold_code="TI_IMG")
         if not self.settings_manager:
             QMessageBox.warning(parent_dialog, "提示", "设置管理器不可用")
             return None
@@ -163,29 +167,40 @@ class ImportButtonHandler:
     
     def handle_txt_import(self) -> None:
         """处理TXT导入"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "触发处理 TXT 导入", fold_code="TI_TXT")
         content = self.import_manager.import_from_txt(self.parent_dialog)
         if content:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, f"成功从 TXT 导入 {len(content)} 字符", fold_code="TI_TXT")
             self.text_controller.set_text(content)
     
     def handle_docx_import(self) -> None:
         """处理DOCX导入"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "触发处理 DOCX 导入", fold_code="TI_DOCX")
         content = self.import_manager.import_from_docx(self.parent_dialog)
         if content:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, f"成功从 DOCX 导入 {len(content)} 字符", fold_code="TI_DOCX")
             self.text_controller.set_text(content)
     
     def handle_online_import(self) -> None:
         """处理在线导入"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "打开在线导入对话框", fold_code="TI_ONLINE")
         dialog = OnlineImportDialog(self.parent_dialog, self.parent_dialog.geometry())
         if dialog.exec_() == QDialog.Accepted and hasattr(dialog, 'result_text'):
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, f"在线导入成功: {len(dialog.result_text)} 字符", fold_code="TI_ONLINE")
             self.text_controller.append_text(dialog.result_text)
+        else:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, "在线导入已取消或未产生文本", fold_code="TI_ONLINE")
     
     def handle_image_import(self) -> None:
         """处理图片导入"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "开始处理图片导入流程", fold_code="TI_IMG")
         result = self.import_manager.import_from_image(self.parent_dialog)
         if not result:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, "图片导入流程已中止（未选择图片或 API Key 缺失）", fold_code="TI_IMG")
             return
             
         initial_file_paths, api_key = result
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"选择了 {len(initial_file_paths)} 张图片，打开多图导入对话框", fold_code="TI_IMG")
         
         # 显示多图片导入对话框
         multi_image_dialog = MultiImageImportDialog(self.parent_dialog, initial_file_paths)
@@ -193,9 +208,11 @@ class ImportButtonHandler:
             sorted_image_paths = multi_image_dialog.result_image_paths
             sorted_image_remarks = multi_image_dialog.get_image_remarks()
             if not sorted_image_paths:
+                debug_logger.output("iw_text_import.py", LogLevel.WARNING, "多图导入对话框确认但未选择任何图片", fold_code="TI_IMG")
                 QMessageBox.warning(self.parent_dialog, "提示", "没有选择图片进行导入。")
                 return
             
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, f"准备 OCR 处理 {len(sorted_image_paths)} 张图片", fold_code="TI_OCR_PROC")
             self.current_ocr_queue = list(sorted_image_paths)
             self.current_ocr_remarks = list(sorted_image_remarks)
             self.api_key = api_key # 存储api_key供后续OCR使用
@@ -206,6 +223,7 @@ class ImportButtonHandler:
             self.loading_dialog.show()
             self._process_next_ocr_image()
         else:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, "用户取消了多图片导入对话框", fold_code="TI_IMG")
             # 用户取消了多图片导入对话框
             pass
     
@@ -230,6 +248,8 @@ class ImportButtonHandler:
         if self.loading_dialog:
             self.loading_dialog.set_message(f"正在处理图片: {os.path.basename(file_path)}...")
         
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"开始OCR处理图片: {file_path}", fold_code="TI_OCR_PROC")
+
         prompt = (
             "请提取这张图片中的文字内容，"
             "将₁②⑶⒋Ⅴ❻㈦之类特殊数字符号转为普通数字，"
@@ -246,9 +266,13 @@ class ImportButtonHandler:
     
     def handle_clear_text(self) -> None:
         """处理清空文本"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "触发清空文本确认", fold_code="TI_UI")
         dialog = ClearConfirmationDialog(self.parent_dialog)
         if dialog.exec_() == QDialog.Accepted and dialog.result:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, "用户确认清空文本", fold_code="TI_UI")
             self.text_controller.clear_text()
+        else:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, "清空文本操作已取消", fold_code="TI_UI")
     
     def _on_ai_ocr_finished_multi(self, text: str) -> None:
         """多图片AI OCR完成处理"""
@@ -256,12 +280,14 @@ class ImportButtonHandler:
         current_image_name = os.path.basename(self.ai_worker.image_path)
         
         if text:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, f"OCR 成功 ({self.processed_count}/{self.total_images_to_process}): {current_image_name}", fold_code="TI_OCR_PROC")
             self.text_controller.append_text(text)
             if self.loading_dialog:
                 self.loading_dialog.set_message(
                     f"已处理 {self.processed_count}/{self.total_images_to_process} 张图片: {current_image_name} 成功"
                 )
         else:
+            debug_logger.output("iw_text_import.py", LogLevel.WARNING, f"OCR 未识别到文字 ({self.processed_count}/{self.total_images_to_process}): {current_image_name}", fold_code="TI_OCR_PROC")
             self.failed_count += 1
             if self.loading_dialog:
                 self.loading_dialog.set_message(
@@ -276,6 +302,7 @@ class ImportButtonHandler:
         """多图片AI OCR错误处理"""
         self.processed_count += 1
         current_image_name = os.path.basename(self.ai_worker.image_path)
+        debug_logger.output("iw_text_import.py", LogLevel.ERROR, f"OCR 处理失败 ({self.processed_count}/{self.total_images_to_process}): {current_image_name}, 错误: {error}", fold_code="TI_OCR_PROC")
         self.failed_count += 1
         
         if self.loading_dialog:
@@ -332,9 +359,11 @@ class TextImportDialog(QDialog):
         
     def _init_ui(self) -> None:
         """初始化UI"""
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, "初始化 TextImportDialog UI", fold_code="TI_UI")
         self.setWindowTitle("文本导入")
         # 获取用户设置的背景颜色，默认为#E5E8EF
         background_color = self.settings_manager.get_Custom_value("background_color", "#E5E8EF") if self.settings_manager else "#E5E8EF"
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"使用背景颜色: {background_color}", fold_code="TI_UI")
         # 动态生成样式表
         dynamic_style = f"""
         QDialog {{background-color: {background_color};}}
@@ -409,6 +438,7 @@ class TextImportDialog(QDialog):
         """更新字体大小"""
         current_width = self.width()
         current_height = self.height()
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"更新字体大小: 窗口尺寸={current_width}x{current_height}", fold_code="TI_UI")
         
         min_font_size = 10
         max_font_size = 20
@@ -427,6 +457,7 @@ class TextImportDialog(QDialog):
         except:
             global_font = "微软雅黑"
         
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"计算得出字体大小: {font_size:.1f}, 字体名: {global_font}", fold_code="TI_UI")
         font = QFont(global_font, int(font_size))
         
         # 更新按钮字体
@@ -446,6 +477,7 @@ class TextImportDialog(QDialog):
     def _confirm_import(self) -> None:
         """确认导入"""
         self.text_content = self.text_controller.get_text()
+        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"确认导入文本: {len(self.text_content)} 字符", fold_code="TI_CONFIRM")
         self.accept()
     
     def closeEvent(self, event) -> None:

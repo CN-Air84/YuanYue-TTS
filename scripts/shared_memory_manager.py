@@ -9,10 +9,19 @@ import mmap
 import json
 import time
 import threading
+import sys
 from PyQt5.QtCore import QObject, pyqtSignal, QTimer
 import os
 import tempfile
 from debug_logger import debug_logger, LogLevel
+
+try:
+    from misc_func import get_app_base_path
+except ImportError:
+    def get_app_base_path():
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.abspath(__file__))
 
 
 class SharedMemoryManager(QObject):
@@ -26,6 +35,7 @@ class SharedMemoryManager(QObject):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "正在初始化 SharedMemoryManager", fold_code="SHARED_INIT")
         self.memory_file = None
         self.memory_map = None
         self.memory_size = 65536  # 64KB 应该足够
@@ -40,9 +50,10 @@ class SharedMemoryManager(QObject):
         
     def _init_shared_memory(self):
         """初始化共享内存"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "正在尝试初始化共享内存映射", fold_code="SHARED_INIT")
         try:
             # 创建临时文件用于共享内存 - 使用绝对路径
-            cache_dir = os.path.abspath('./cache/')
+            cache_dir = os.path.join(get_app_base_path(), 'cache')
             os.makedirs(cache_dir, exist_ok=True)
             self.memory_file_path = os.path.join(cache_dir, 'YuanyueCaller.dat')
             
@@ -60,28 +71,30 @@ class SharedMemoryManager(QObject):
             # 启动定时器
             self.update_timer.start(self.update_interval)
             
-            debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"共享内存初始化成功: {self.memory_file_path}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"共享内存初始化成功: {self.memory_file_path}", fold_code="SHARED_INIT")
             
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"共享内存初始化失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"共享内存初始化失败: {str(e)}", fold_code="SHARED_INIT")
             self._fallback_to_file_based_communication()
     
     def _clear_memory(self):
         """清空内存区域"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "正在清空共享内存区域", fold_code="SHARED_INIT")
         if self.memory_map:
             self.memory_map.seek(0)
             self.memory_map.write(b'\x00' * self.memory_size)
     
     def _fallback_to_file_based_communication(self):
         """降级到基于文件的通信"""
-        debug_logger.output("shared_memory_manager.py", LogLevel.WARNING, "使用文件-based通信作为降级方案")
-        cache_dir = os.path.abspath('./cache/')
+        debug_logger.output("shared_memory_manager.py", LogLevel.WARNING, "共享内存不可用，降级到基于文件的通信方案", fold_code="SHARED_INIT")
+        cache_dir = os.path.join(get_app_base_path(), 'cache')
         os.makedirs(cache_dir, exist_ok=True)
         self.fallback_file = os.path.join(cache_dir, 'YuanyueFallback.json')
         self.update_timer.start(self.update_interval * 2)  # 降低检查频率
     
     def broadcast_settings_change(self, page_name, settings_data):
         """广播设置更改"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"正在广播设置更改: 来自页面 [{page_name}]", fold_code="SHARED_MSG")
         try:
             message = {
                 'type': 'settings_change',
@@ -92,10 +105,11 @@ class SharedMemoryManager(QObject):
             self._write_message(message)
             
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播设置更改失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播设置更改失败: {str(e)}", fold_code="SHARED_MSG")
     
     def broadcast_font_change(self, font_data):
         """广播字体更改"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"正在广播字体更改: {font_data.get('font_family', 'unknown')}", fold_code="SHARED_MSG")
         try:
             message = {
                 'type': 'font_change',
@@ -105,10 +119,11 @@ class SharedMemoryManager(QObject):
             self._write_message(message)
             
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播字体更改失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播字体更改失败: {str(e)}", fold_code="SHARED_MSG")
     
     def broadcast_theme_change(self, theme_data):
         """广播主题更改"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"正在广播主题更改: {theme_data.get('theme_name', 'unknown')}", fold_code="SHARED_MSG")
         try:
             message = {
                 'type': 'theme_change',
@@ -118,10 +133,11 @@ class SharedMemoryManager(QObject):
             self._write_message(message)
             
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播主题更改失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播主题更改失败: {str(e)}", fold_code="SHARED_MSG")
     
     def broadcast_window_size_change(self, width, height):
         """广播窗口尺寸更改"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"正在广播窗口尺寸更改: {width}x{height}", fold_code="SHARED_MSG")
         try:
             message = {
                 'type': 'window_size_change',
@@ -131,7 +147,7 @@ class SharedMemoryManager(QObject):
             self._write_message(message)
             
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播窗口尺寸更改失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"广播窗口尺寸更改失败: {str(e)}", fold_code="SHARED_MSG")
     
     def _write_message(self, message):
         """写入消息到共享内存"""
@@ -144,9 +160,10 @@ class SharedMemoryManager(QObject):
                     
                     # 检查消息大小
                     if len(message_bytes) > self.memory_size - 8:  # 留8字节用于长度和状态
-                        debug_logger.output("shared_memory_manager.py", LogLevel.WARNING, "消息太大，无法写入共享内存")
+                        debug_logger.output("shared_memory_manager.py", LogLevel.WARNING, f"消息太大 ({len(message_bytes)} bytes)，无法写入共享内存", fold_code="SHARED_MSG")
                         return
                     
+                    debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"正在向共享内存写入消息: {message['type']}", fold_code="SHARED_MSG")
                     # 清空内存
                     self.memory_map.seek(0)
                     
@@ -169,16 +186,17 @@ class SharedMemoryManager(QObject):
                     self._write_fallback_message(message)
                     
             except Exception as e:
-                debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"写入共享内存失败: {e}")
+                debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"写入共享内存失败: {str(e)}", fold_code="SHARED_MSG")
                 self._write_fallback_message(message)
     
     def _write_fallback_message(self, message):
         """写入降级消息到文件"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"正在写入降级消息文件: {message['type']}", fold_code="SHARED_MSG")
         try:
             with open(self.fallback_file, 'w', encoding='utf-8') as f:
                 json.dump(message, f, ensure_ascii=False)
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"写入降级文件失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"写入降级文件失败: {str(e)}", fold_code="SHARED_MSG")
     
     def _check_memory_updates(self):
         """检查内存更新"""
@@ -189,7 +207,7 @@ class SharedMemoryManager(QObject):
                 self._check_fallback_file()
                 
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"检查更新失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"检查更新失败: {str(e)}", fold_code="SHARED_MSG")
     
     def _check_shared_memory(self):
         """检查共享内存更新"""
@@ -226,6 +244,7 @@ class SharedMemoryManager(QObject):
                     return
                 
                 self.last_update_time = message['timestamp']
+                debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"检测到新的共享内存消息: {message['type']}", fold_code="SHARED_MSG")
                 
                 # 处理消息
                 self._process_message(message)
@@ -235,7 +254,7 @@ class SharedMemoryManager(QObject):
                 self.memory_map.write(b'\x00')  # 清除消息标识
                 
             except Exception as e:
-                debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"检查共享内存失败: {e}")
+                debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"检查共享内存失败: {str(e)}", fold_code="SHARED_MSG")
     
     def _check_fallback_file(self):
         """检查降级文件更新"""
@@ -247,13 +266,14 @@ class SharedMemoryManager(QObject):
                 # 检查时间戳
                 if message.get('timestamp', 0) > self.last_update_time:
                     self.last_update_time = message['timestamp']
+                    debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"检测到新的降级文件消息: {message['type']}", fold_code="SHARED_MSG")
                     self._process_message(message)
                     
                     # 删除已处理的消息文件
                     os.remove(self.fallback_file)
                     
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"检查降级文件失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"检查降级文件失败: {str(e)}", fold_code="SHARED_MSG")
     
     def _process_message(self, message):
         """处理接收到的消息"""
@@ -277,32 +297,40 @@ class SharedMemoryManager(QObject):
                 if width > 0 and height > 0:
                     self.window_size_changed.emit(width, height)
             
-            debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"处理消息: {msg_type} - {data}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"处理消息: {msg_type}", fold_code="SHARED_MSG")
             
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"处理消息失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"处理消息失败: {str(e)}", fold_code="SHARED_MSG")
     
     def cleanup(self):
         """清理资源"""
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "正在执行资源清理", fold_code="SHARED_CLEAN")
         try:
             if self.update_timer:
+                debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "停止更新定时器", fold_code="SHARED_CLEAN")
                 self.update_timer.stop()
             
             if self.memory_map:
+                debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "关闭内存映射", fold_code="SHARED_CLEAN")
                 self.memory_map.close()
             
             if self.memory_file:
+                debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "关闭内存文件句柄", fold_code="SHARED_CLEAN")
                 self.memory_file.close()
             
             # 删除临时文件
             if self.memory_file_path and os.path.exists(self.memory_file_path):
+                debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"删除临时内存文件: {self.memory_file_path}", fold_code="SHARED_CLEAN")
                 os.remove(self.memory_file_path)
                 
             if hasattr(self, 'fallback_file') and os.path.exists(self.fallback_file):
+                debug_logger.output("shared_memory_manager.py", LogLevel.INFO, f"删除降级通信文件: {self.fallback_file}", fold_code="SHARED_CLEAN")
                 os.remove(self.fallback_file)
+            
+            debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "资源清理完成", fold_code="SHARED_CLEAN")
                 
         except Exception as e:
-            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"清理共享内存失败: {e}")
+            debug_logger.output("shared_memory_manager.py", LogLevel.ERROR, f"清理资源过程中出现错误: {str(e)}", fold_code="SHARED_CLEAN")
 
 
 # 全局共享内存管理器实例
@@ -312,6 +340,7 @@ def get_shared_memory_manager():
     """获取全局共享内存管理器实例"""
     global _shared_memory_manager
     if _shared_memory_manager is None:
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "创建全局 SharedMemoryManager 实例", fold_code="SHARED_INIT")
         _shared_memory_manager = SharedMemoryManager()
     return _shared_memory_manager
 
@@ -320,5 +349,6 @@ def cleanup_shared_memory():
     """清理全局共享内存管理器"""
     global _shared_memory_manager
     if _shared_memory_manager:
+        debug_logger.output("shared_memory_manager.py", LogLevel.INFO, "触发全局 SharedMemoryManager 清理", fold_code="SHARED_CLEAN")
         _shared_memory_manager.cleanup()
         _shared_memory_manager = None

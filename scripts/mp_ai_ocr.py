@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from shared_memory_manager import get_shared_memory_manager
+from debug_logger import debug_logger, LogLevel
 
 # 界面字体大小和窗口尺寸常量
 MIN_FONT_SIZE = 22
@@ -39,9 +40,11 @@ class AIOCRWorker(QThread):
     
     def run(self):
         """执行AI OCR识别任务"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"开始 AI OCR 识别任务, 图片路径: {self.image_path}", fold_code="AI_OCR_RUN")
         try:
             from openai import OpenAI
             
+            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "正在初始化 OpenAI 客户端", fold_code="AI_OCR_RUN")
             client = OpenAI(
                 api_key=self.api_key,
                 base_url="https://open.bigmodel.cn/api/paas/v4/"
@@ -49,6 +52,7 @@ class AIOCRWorker(QThread):
             
             def encode_image(image_path):
                 """将图片编码为base64格式"""
+                debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"正在对图片进行 base64 编码: {image_path}", fold_code="AI_OCR_RUN")
                 with open(image_path, "rb") as image_file:
                     return base64.b64encode(image_file.read()).decode('utf-8')
             
@@ -56,6 +60,7 @@ class AIOCRWorker(QThread):
             
             prompt = "请提取这张图片中的所有文字内容，输出纯文字格式。"
             
+            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "正在发送 AI OCR 请求到 ChatGLM API", fold_code="AI_OCR_RUN")
             response = client.chat.completions.create(
                 model="glm-4v-flash",
                 messages=[
@@ -70,9 +75,11 @@ class AIOCRWorker(QThread):
                 max_tokens=1000
             )
             result = response.choices[0].message.content
+            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"AI OCR 识别成功, 提取文字长度: {len(result)}", fold_code="AI_OCR_RUN")
             self.finished_signal.emit(result)
             
         except Exception as e:
+            debug_logger.output("mp_ai_ocr.py", LogLevel.ERROR, f"AI OCR 识别失败: {str(e)}", fold_code="AI_OCR_RUN")
             self.error_signal.emit(f"AI识别失败: {str(e)}")
 
 
@@ -89,6 +96,7 @@ class TextResultDialog(QDialog):
             content (str): 显示的文本内容
         """
         super().__init__(parent)
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"初始化文本结果对话框: {title}", fold_code="AI_OCR_UI")
         self.parent_window = parent
         self.setWindowTitle(title)
         self.resize(600, 400)
@@ -173,6 +181,7 @@ class TextResultDialog(QDialog):
             
         current_width = self.width()
         current_height = self.height()
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"更新文本结果对话框字体, 尺寸: {current_width}x{current_height}", fold_code="AI_OCR_UI")
         
         width_ratio = current_width / DEFAULT_WIDTH
         height_ratio = current_height / DEFAULT_HEIGHT
@@ -216,14 +225,16 @@ class TextResultDialog(QDialog):
     
     def _on_font_changed_from_shared_memory(self, font_data):
         """从共享内存接收字体更改"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "收到共享内存字体更改信号", fold_code="AI_OCR_SHARED")
         try:
             # 更新字体设置
             self._update_fonts()
         except Exception as e:
-            pass
+            debug_logger.output("mp_ai_ocr.py", LogLevel.WARNING, f"处理共享内存字体更改失败: {str(e)}", fold_code="AI_OCR_SHARED")
     
     def _on_theme_changed_from_shared_memory(self, theme_data):
         """从共享内存接收主题更改"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "收到共享内存主题更改信号", fold_code="AI_OCR_SHARED")
         try:
             # 应用背景颜色和文字颜色
             bg_color = theme_data.get('background_color', '#E5E8EF')
@@ -236,30 +247,33 @@ class TextResultDialog(QDialog):
             self.setStyleSheet(f"QWidget {{ background-color: {bg_color}; color: {self.text_color}; }}")
             self._update_button_styles()
         except Exception as e:
-            pass
+            debug_logger.output("mp_ai_ocr.py", LogLevel.WARNING, f"处理共享内存主题更改失败: {str(e)}", fold_code="AI_OCR_SHARED")
     
     def _on_window_size_changed_from_shared_memory(self, width, height):
         """从共享内存接收窗口尺寸更改"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"收到共享内存窗口尺寸更改信号: {width}x{height}", fold_code="AI_OCR_SHARED")
         try:
             # 重新布局控件
             if hasattr(self, 'resizeEvent'):
                 # 触发重新布局
                 self.resize(self.width(), self.height())
         except Exception as e:
-            pass
+            debug_logger.output("mp_ai_ocr.py", LogLevel.WARNING, f"处理共享内存窗口尺寸更改失败: {str(e)}", fold_code="AI_OCR_SHARED")
     
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置更改"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"收到共享内存设置更改信号: {page_name}", fold_code="AI_OCR_SHARED")
         try:
             if page_name in ['custom', 'custom_page']:
                 # 如果是来自个性化页面的设置更改，更新相关设置
                 # 重新加载页面以应用新设置
                 self._reload_page(settings_data)
         except Exception as e:
-            pass
+            debug_logger.output("mp_ai_ocr.py", LogLevel.WARNING, f"处理共享内存设置更改失败: {str(e)}", fold_code="AI_OCR_SHARED")
     
     def _reload_page(self, settings_data=None):
         """重新加载页面以应用最新设置"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "重新加载文本结果对话框页面设置", fold_code="AI_OCR_UI")
         try:
             if SETTINGS_AVAILABLE:
                 settings = SettingsManager()
@@ -300,6 +314,7 @@ class TextResultDialog(QDialog):
     
     def copy_text(self):
         """复制文本到剪贴板"""
+        debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "正在将提取的文本复制到剪贴板", fold_code="AI_OCR_UI")
         clipboard = QApplication.clipboard()
         clipboard.setText(self.text_edit.toPlainText())
         QMessageBox.information(self, "成功", "文本已复制到剪贴板")

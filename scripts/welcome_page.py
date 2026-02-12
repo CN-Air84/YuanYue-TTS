@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal, QSize
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices, QFontDatabase, QIcon
 
 from debug_logger import debug_logger, LogLevel
-from misc_func import SettingsManager
+from misc_func import SettingsManager, get_app_base_path
 import mp_about
 
 class ClickableLabel(QLabel):
@@ -37,6 +37,7 @@ class WelcomePage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        debug_logger.output("welcome_page.py", LogLevel.INFO, "Initializing WelcomePage...", fold_code="WELCOME_INIT")
         self.parent_window = parent
         self.settings_manager = SettingsManager()
         
@@ -45,7 +46,7 @@ class WelcomePage(QWidget):
         self.bg_color = self.settings_manager.get_Custom_value('background_color', '#E5E8EF')
         
         # 缓存目录
-        self.cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        self.cache_dir = os.path.join(get_app_base_path(), "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         
         # 数据初始化
@@ -328,11 +329,13 @@ class WelcomePage(QWidget):
 
     def resizeEvent(self, event):
         """窗口大小改变事件"""
+        debug_logger.output("welcome_page.py", LogLevel.INFO, f"欢迎页面大小调整: {self.width()}x{self.height()}", fold_code="WELCOME_INIT")
         super().resizeEvent(event)
         self._update_fonts()
 
     def _update_fonts(self):
         """动态更新字体大小 - 参考 generation_page 算法"""
+        debug_logger.output("welcome_page.py", LogLevel.INFO, "正在动态计算 UI 字体缩放适配", fold_code="WELCOME_INIT")
         if not self.parent_window:
             return
             
@@ -439,11 +442,13 @@ class WelcomePage(QWidget):
 
     def _switch_tab(self, index):
         """切换选项卡"""
+        debug_logger.output("welcome_page.py", LogLevel.INFO, f"点击导航按钮，尝试切换到 Tab 索引: {index}", fold_code="WELCOME_UI")
         if self.parent_window and hasattr(self.parent_window, 'tab_manager'):
             self.parent_window.tab_manager.switch_to_tab(index)
 
     def _check_updates(self):
         """检查更新"""
+        debug_logger.output("welcome_page.py", LogLevel.INFO, "点击检查更新按钮", fold_code="WELCOME_UI")
         try:
             about_dialog = mp_about.AboutDialog(self)
             about_dialog.on_button_1_clicked()
@@ -466,14 +471,17 @@ class WelcomePage(QWidget):
             valid_fonts = ["Arial", "Helvetica", "Sans-serif"]
             
         self.current_slogan_font_name = random.choice(valid_fonts)
+        debug_logger.output("welcome_page.py", LogLevel.INFO, f"Slogan font changed to: {self.current_slogan_font_name}", fold_code="WELCOME_FONT")
         self._update_fonts()
-
+    
     def _start_async_loading(self):
         """开始异步加载网络数据"""
+        debug_logger.output("welcome_page.py", LogLevel.INFO, "Starting asynchronous data loading...", fold_code="WELCOME_ASYNC")
         # 1. 加载 Logo
         logo_url = "https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon_full_1080%20_inside.png?raw=true"
         logo_path = os.path.join(self.cache_dir, "logo_banner.png")
         if os.path.exists(logo_path):
+            debug_logger.output("welcome_page.py", LogLevel.INFO, "Using cached logo banner", fold_code="WELCOME_ASYNC")
             self._display_logo(logo_path)
         else:
             self._download_image_async(logo_url, logo_path, "logo")
@@ -508,13 +516,17 @@ class WelcomePage(QWidget):
         def task():
             try:
                 final_url = self._get_download_url(url)
+                debug_logger.output("welcome_page.py", LogLevel.INFO, f"Downloading image ({tag}) from: {final_url}", fold_code="WELCOME_ASYNC")
                 response = requests.get(final_url, timeout=10)
                 if response.status_code == 200:
                     with open(local_path, 'wb') as f:
                         f.write(response.content)
+                    debug_logger.output("welcome_page.py", LogLevel.INFO, f"Image downloaded successfully: {tag}", fold_code="WELCOME_ASYNC")
                     self.image_downloaded.emit(tag, local_path)
+                else:
+                    debug_logger.output("welcome_page.py", LogLevel.WARNING, f"Failed to download image ({tag}), status code: {response.status_code}", fold_code="WELCOME_ASYNC")
             except Exception as e:
-                print(f"下载图片失败 ({tag}): {e}")
+                debug_logger.output("welcome_page.py", LogLevel.ERROR, f"Error downloading image ({tag}): {str(e)}", fold_code="WELCOME_ASYNC")
         
         threading.Thread(target=task, daemon=True).start()
 
@@ -522,6 +534,7 @@ class WelcomePage(QWidget):
         """获取回声树洞"""
         try:
             url = "https://CN-Air84.github.io/YuanYue-TTS/docs/echo_zen.html"
+            debug_logger.output("welcome_page.py", LogLevel.INFO, "Fetching echo zen quotes...", fold_code="WELCOME_ASYNC")
             response = requests.get(url, timeout=10)
             response.encoding = 'utf-8'
             if response.status_code == 200:
@@ -529,22 +542,29 @@ class WelcomePage(QWidget):
                 text = re.sub('<[^<]+?>', '', response.text)
                 lines = [line.strip() for line in text.split('\n') if line.strip()]
                 if lines:
+                    debug_logger.output("welcome_page.py", LogLevel.INFO, f"Fetched {len(lines)} echo zen quotes", fold_code="WELCOME_ASYNC")
                     self.echo_zen_loaded.emit(lines)
+            else:
+                debug_logger.output("welcome_page.py", LogLevel.WARNING, f"Failed to fetch echo zen, status code: {response.status_code}", fold_code="WELCOME_ASYNC")
         except Exception as e:
-            print(f"获取回声树洞失败: {e}")
+            debug_logger.output("welcome_page.py", LogLevel.ERROR, f"Error fetching echo zen: {str(e)}", fold_code="WELCOME_ASYNC")
 
     def _fetch_intro_task(self):
         """获取程序简介"""
         try:
             url = "https://CN-Air84.github.io/YuanYue-TTS/docs/intro.html"
+            debug_logger.output("welcome_page.py", LogLevel.INFO, "Fetching program intro...", fold_code="WELCOME_ASYNC")
             response = requests.get(url, timeout=10)
             response.encoding = 'utf-8'
             if response.status_code == 200:
                 import re
                 text = re.sub('<[^<]+?>', '', response.text)
+                debug_logger.output("welcome_page.py", LogLevel.INFO, "Program intro fetched successfully", fold_code="WELCOME_ASYNC")
                 self.intro_loaded.emit(text.strip())
+            else:
+                debug_logger.output("welcome_page.py", LogLevel.WARNING, f"Failed to fetch intro, status code: {response.status_code}", fold_code="WELCOME_ASYNC")
         except Exception as e:
-            print(f"获取程序简介失败: {e}")
+            debug_logger.output("welcome_page.py", LogLevel.ERROR, f"Error fetching intro: {str(e)}", fold_code="WELCOME_ASYNC")
 
     def _on_intro_loaded(self, text):
         self.intro_text = text
@@ -582,6 +602,7 @@ class WelcomePage(QWidget):
 
     def _reload_page(self, settings_data):
         """重新加载页面以应用最新设置"""
+        debug_logger.output("welcome_page.py", LogLevel.INFO, "Reloading WelcomePage with new settings...", fold_code="WELCOME_RELOAD")
         try:
             # 更新颜色设置
             if settings_data:
@@ -593,11 +614,12 @@ class WelcomePage(QWidget):
             self._apply_styles()
             self._update_fonts()
         except Exception as e:
-            debug_logger.output("welcome_page.py", LogLevel.ERROR, f"欢迎页面重新加载失败: {e}")
+            debug_logger.output("welcome_page.py", LogLevel.ERROR, f"欢迎页面重新加载失败: {e}", fold_code="WELCOME_RELOAD")
 
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置变化"""
         # 如果是个性化设置更改，或者包含背景颜色、卡片背景颜色、文字颜色更改
         if page_name in ["custom", "custom_page"] or any(k in settings_data for k in ["background_color", "card_background_color", "text_color"]):
+            debug_logger.output("welcome_page.py", LogLevel.INFO, f"Settings change received from shared memory (source: {page_name})", fold_code="WELCOME_RELOAD")
             self._reload_page(settings_data)
 

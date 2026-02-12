@@ -230,6 +230,7 @@ class ApiKeyGroup(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("API密钥设置", parent)
+        debug_logger.output("settings_page.py", LogLevel.INFO, "初始化 ApiKeyGroup...", fold_code="SETTINGS_API")
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
@@ -238,50 +239,73 @@ class ApiKeyGroup(QGroupBox):
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        title_font_size = 14
-        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
-            current_width = self.parent().parent_window.width()
-            current_height = self.parent().parent_window.height()
-            base_width = 1024
-            base_height = 768
-            width_ratio = current_width / base_width
-            height_ratio = current_height / base_height
-            ratio = (width_ratio + height_ratio) / 2
-            title_font_size = max(12, min(18, int(14 * ratio)))
-        
-        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg, text_color))
-        self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'],
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        try:
+            title_font_size = 14
+            if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+                current_width = self.parent().parent_window.width()
+                current_height = self.parent().parent_window.height()
+                base_width = 1024
+                base_height = 768
+                width_ratio = current_width / base_width
+                height_ratio = current_height / base_height
+                ratio = (width_ratio + height_ratio) / 2
+                title_font_size = max(12, min(18, int(14 * ratio)))
+            
+            global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+            card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            
+            debug_logger.output("settings_page.py", LogLevel.DEBUG, f"应用 ApiKeyGroup 样式: font={global_font_name}, bg={card_bg}, text={text_color}", fold_code="SETTINGS_API")
+            
+            self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg, text_color))
+            self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'],
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"应用 ApiKeyGroup 样式时出错: {str(e)}", fold_code="SETTINGS_API")
     
     def _init_ui(self):
         """初始化UI"""
-        layout = QFormLayout()
-        layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
-        
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
-        
-        self.chatglm_key_input = QLineEdit()
-        self.chatglm_key_input.setPlaceholderText("请输入ChatGLM API密钥")
-        self.chatglm_key_input.textChanged.connect(
-            lambda text: self.settings_manager.set_api_key("api_key_ChatGLM", text)
-        )
-        self.chatglm_key_input.setStyleSheet(unified_styles['input'])
-        self.chatglm_key_input.installEventFilter(self.wheel_filter)
-        
-        layout.addRow("ChatGLM Key:", self.chatglm_key_input)
-        self.setLayout(layout)
+        try:
+            layout = QFormLayout()
+            layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+            
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+            unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
+            
+            self.chatglm_key_input = QLineEdit()
+            self.chatglm_key_input.setPlaceholderText("请输入ChatGLM API密钥")
+            self.chatglm_key_input.textChanged.connect(self._on_key_changed)
+            self.chatglm_key_input.setStyleSheet(unified_styles['input'])
+            self.chatglm_key_input.installEventFilter(self.wheel_filter)
+            
+            layout.addRow("ChatGLM Key:", self.chatglm_key_input)
+            self.setLayout(layout)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "ApiKeyGroup UI初始化完成", fold_code="SETTINGS_API")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"ApiKeyGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_API")
+
+    def _on_key_changed(self, text):
+        """API密钥变更处理"""
+        try:
+            # 不在日志中打印真实的Key以保护隐私
+            key_len = len(text)
+            masked_key = text[:4] + "*" * (key_len - 8) + text[-4:] if key_len > 8 else "***"
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"ChatGLM API密钥已更新, 长度: {key_len}, 脱敏预览: {masked_key}", fold_code="SETTINGS_API")
+            self.settings_manager.set_api_key("api_key_ChatGLM", text)
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"保存API密钥时出错: {str(e)}", fold_code="SETTINGS_API")
     
     def _load_settings(self):
         """加载设置"""
-        api_key = self.settings_manager.get_api_key("api_key_ChatGLM")
-        self.chatglm_key_input.setText(api_key)
+        try:
+            api_key = self.settings_manager.get_api_key("api_key_ChatGLM")
+            self.chatglm_key_input.setText(api_key)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "ApiKeyGroup 设置加载完成", fold_code="SETTINGS_API")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"加载API密钥时出错: {str(e)}", fold_code="SETTINGS_API")
 
 
 class GenerationSettingsGroup(QGroupBox):
@@ -289,6 +313,7 @@ class GenerationSettingsGroup(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("生成设置", parent)
+        debug_logger.output("settings_page.py", LogLevel.INFO, "初始化 GenerationSettingsGroup...", fold_code="SETTINGS_GEN")
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
@@ -297,80 +322,92 @@ class GenerationSettingsGroup(QGroupBox):
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        title_font_size = 14
-        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
-            current_width = self.parent().parent_window.width()
-            current_height = self.parent().parent_window.height()
-            base_width = 1024
-            base_height = 768
-            width_ratio = current_width / base_width
-            height_ratio = current_height / base_height
-            ratio = (width_ratio + height_ratio) / 2
-            title_font_size = max(12, min(18, int(14 * ratio)))
-        
-        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
-        self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
-        self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'],
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        try:
+            title_font_size = 14
+            if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+                current_width = self.parent().parent_window.width()
+                current_height = self.parent().parent_window.height()
+                base_width = 1024
+                base_height = 768
+                width_ratio = current_width / base_width
+                height_ratio = current_height / base_height
+                ratio = (width_ratio + height_ratio) / 2
+                title_font_size = max(12, min(18, int(14 * ratio)))
+            
+            global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+            card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
+            
+            debug_logger.output("settings_page.py", LogLevel.DEBUG, f"应用 GenerationSettingsGroup 样式: font={global_font_name}, bg={card_bg}", fold_code="SETTINGS_GEN")
+            
+            self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
+            self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'],
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"应用 GenerationSettingsGroup 样式时出错: {str(e)}", fold_code="SETTINGS_GEN")
     
     def _init_ui(self):
         """初始化UI"""
-        layout = QFormLayout()
-        layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
-        
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # 默认音源
-        self.voice_source_combo = QComboBox()
-        self.voice_source_combo.addItems(['EdgeAPI'])
-        self.voice_source_combo.currentTextChanged.connect(
-            lambda text: self.settings_manager.set_api_key('default_voice_1', text)
-        )
-        self.voice_source_combo.setStyleSheet(unified_styles['combo'])
-        self.voice_source_combo.installEventFilter(self.wheel_filter)
-        layout.addRow("默认音源:", self.voice_source_combo)
-        
-        # 默认音色
-        self.voice_combo = QComboBox()
-        self.voice_combo.addItems(['中文'])
-        self.voice_combo.currentTextChanged.connect(
-            lambda text: self.settings_manager.set_api_key('default_voice_2', text)
-        )
-        self.voice_combo.setStyleSheet(unified_styles['combo'])
-        self.voice_combo.installEventFilter(self.wheel_filter)
-        layout.addRow("默认音色:", self.voice_combo)
-        
-        # 默认语速
-        speed_layout = QHBoxLayout()
-        self.speed_slider = QSlider(Qt.Horizontal)
-        self.speed_slider.setRange(-100, 100)
-        self.speed_slider.valueChanged.connect(self._on_speed_changed)
-        self.speed_slider.setStyleSheet(unified_styles['slider'])
-        
-        self.speed_minus_btn = QPushButton('-')
-        self.speed_minus_btn.setFixedSize(32, 32)
-        self.speed_minus_btn.clicked.connect(lambda: self._adjust_speed(-1))
-        self.speed_minus_btn.setStyleSheet(unified_styles['slider_button'])
-        
-        self.speed_plus_btn = QPushButton('+')
-        self.speed_plus_btn.setFixedSize(32, 32)
-        self.speed_plus_btn.clicked.connect(lambda: self._adjust_speed(1))
-        self.speed_plus_btn.setStyleSheet(unified_styles['slider_button'])
-        
-        self.speed_display = QLabel("0")
-        self.speed_display.setAlignment(Qt.AlignCenter)
-        self.speed_display.setMinimumWidth(40)
-        
-        speed_layout.addWidget(self.speed_display)
-        speed_layout.addWidget(self.speed_minus_btn)
-        speed_layout.addWidget(self.speed_slider)
-        speed_layout.addWidget(self.speed_plus_btn)
-        layout.addRow("默认语速:", speed_layout)
+        try:
+            layout = QFormLayout()
+            layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+            
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+            unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
+            
+            # 默认音源
+            self.voice_source_combo = QComboBox()
+            self.voice_source_combo.addItems(['EdgeAPI'])
+            self.voice_source_combo.currentTextChanged.connect(
+                lambda text: self.settings_manager.set_api_key('default_voice_1', text)
+            )
+            self.voice_source_combo.setStyleSheet(unified_styles['combo'])
+            self.voice_source_combo.installEventFilter(self.wheel_filter)
+            layout.addRow("默认音源:", self.voice_source_combo)
+            
+            # 默认音色
+            self.voice_combo = QComboBox()
+            self.voice_combo.addItems(['中文'])
+            self.voice_combo.currentTextChanged.connect(
+                lambda text: self.settings_manager.set_api_key('default_voice_2', text)
+            )
+            self.voice_combo.setStyleSheet(unified_styles['combo'])
+            self.voice_combo.installEventFilter(self.wheel_filter)
+            layout.addRow("默认音色:", self.voice_combo)
+            
+            # 默认语速
+            speed_layout = QHBoxLayout()
+            self.speed_slider = QSlider(Qt.Horizontal)
+            self.speed_slider.setRange(-100, 100)
+            self.speed_slider.valueChanged.connect(self._on_speed_changed)
+            self.speed_slider.setStyleSheet(unified_styles['slider'])
+            
+            self.speed_minus_btn = QPushButton('-')
+            self.speed_minus_btn.setFixedSize(32, 32)
+            self.speed_minus_btn.clicked.connect(lambda: self._adjust_speed(-1))
+            self.speed_minus_btn.setStyleSheet(unified_styles['slider_button'])
+            
+            self.speed_plus_btn = QPushButton('+')
+            self.speed_plus_btn.setFixedSize(32, 32)
+            self.speed_plus_btn.clicked.connect(lambda: self._adjust_speed(1))
+            self.speed_plus_btn.setStyleSheet(unified_styles['slider_button'])
+            
+            self.speed_display = QLabel("0")
+            self.speed_display.setAlignment(Qt.AlignCenter)
+            self.speed_display.setMinimumWidth(40)
+            
+            speed_layout.addWidget(self.speed_display)
+            speed_layout.addWidget(self.speed_minus_btn)
+            speed_layout.addWidget(self.speed_slider)
+            speed_layout.addWidget(self.speed_plus_btn)
+            layout.addRow("默认语速:", speed_layout)
+            
+            self.setLayout(layout)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "GenerationSettingsGroup UI初始化完成", fold_code="SETTINGS_GEN")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"GenerationSettingsGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_GEN")
         
         # 音频拉伸（已注释）
         # self.stretch_enable_checkbox = QCheckBox("启用音频拉伸")
@@ -429,64 +466,47 @@ class GenerationSettingsGroup(QGroupBox):
     
     def _load_settings(self):
         """加载设置"""
-        voice1 = self.settings_manager.get_default_voice(1)
-        voice2 = self.settings_manager.get_default_voice(2)
-        
-        index1 = self.voice_source_combo.findText(voice1)
-        if index1 >= 0:
-            self.voice_source_combo.setCurrentIndex(index1)
-        
-        index2 = self.voice_combo.findText(voice2)
-        if index2 >= 0:
-            self.voice_combo.setCurrentIndex(index2)
-        
-        speed = self.settings_manager.get_default_speed()
-        self.speed_slider.setValue(speed)
-        self.speed_display.setText(str(speed))
-        
-        # 音频拉伸控件已注释
-        # stretch_factor = self.settings_manager.get_stretch_factor()
-        # self.stretch_slider.setValue(int(stretch_factor * 100))
-        # self.stretch_display.setText(f"{stretch_factor:.2f}")
-        # 
-        # stretch_enabled = self.settings_manager.get_stretch_enabled()
-        # self.stretch_enable_checkbox.setChecked(stretch_enabled)
-        # self._set_stretch_controls_enabled(stretch_enabled)
-        
-        save_path = self.settings_manager.get_default_save_path()
-        self.save_path_display.setText(save_path)
+        try:
+            voice1 = self.settings_manager.get_default_voice(1)
+            voice2 = self.settings_manager.get_default_voice(2)
+            
+            index1 = self.voice_source_combo.findText(voice1)
+            if index1 >= 0:
+                self.voice_source_combo.setCurrentIndex(index1)
+            
+            index2 = self.voice_combo.findText(voice2)
+            if index2 >= 0:
+                self.voice_combo.setCurrentIndex(index2)
+            
+            speed = self.settings_manager.get_default_speed()
+            self.speed_slider.setValue(speed)
+            self.speed_display.setText(str(speed))
+            
+            save_path = self.settings_manager.get_default_save_path()
+            self.save_path_display.setText(save_path)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "GenerationSettingsGroup 设置加载完成", fold_code="SETTINGS_GEN")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"加载生成设置时出错: {str(e)}", fold_code="SETTINGS_GEN")
     
     def _on_speed_changed(self, value):
         """语速改变时的处理"""
-        self.speed_display.setText(str(value))
-        self.settings_manager.set_default_speed(value)
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"默认语速变更: {value}", fold_code="SETTINGS_GEN")
+            self.speed_display.setText(str(value))
+            self.settings_manager.set_default_speed(value)
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"更新默认语速时出错: {str(e)}", fold_code="SETTINGS_GEN")
     
     def _adjust_speed(self, delta):
         """调整语速"""
-        current_value = self.speed_slider.value()
-        new_value = current_value + delta
-        if self.speed_slider.minimum() <= new_value <= self.speed_slider.maximum():
-            self.speed_slider.setValue(new_value)
-    
-    # 音频拉伸相关方法已注释
-    # def _on_stretch_enable_changed(self, state):
-    #     """音频拉伸开关改变时的处理"""
-    #     enabled = state == Qt.Checked
-    #     self.settings_manager.set_stretch_enabled(enabled)
-    #     self._set_stretch_controls_enabled(enabled)
-    # 
-    # def _on_stretch_factor_changed(self, value):
-    #     """音频拉伸系数改变时的处理"""
-    #     factor = value / 100.0
-    #     self.stretch_display.setText(f"{factor:.2f}")
-    #     self.settings_manager.set_stretch_factor(factor)
-    # 
-    # def _adjust_stretch(self, delta):
-    #     """调整音频拉伸系数"""
-    #     current_value = self.stretch_slider.value()
-    #     new_value = current_value + delta
-    #     if self.stretch_slider.minimum() <= new_value <= self.stretch_slider.maximum():
-    #         self.stretch_slider.setValue(new_value)
+        try:
+            current_value = self.speed_slider.value()
+            new_value = current_value + delta
+            if self.speed_slider.minimum() <= new_value <= self.speed_slider.maximum():
+                debug_logger.output("settings_page.py", LogLevel.INFO, f"微调语速: {current_value} -> {new_value}", fold_code="SETTINGS_GEN")
+                self.speed_slider.setValue(new_value)
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"微调默认语速时出错: {str(e)}", fold_code="SETTINGS_GEN")
     
     def _set_stretch_controls_enabled(self, enabled):
         """设置音频拉伸控件是否启用"""
@@ -495,10 +515,15 @@ class GenerationSettingsGroup(QGroupBox):
     
     def _select_save_path(self):
         """选择保存路径"""
-        directory = QFileDialog.getExistingDirectory(self, "选择默认保存路径")
-        if directory:
-            self.save_path_display.setText(directory)
-            self.settings_manager.set_default_save_path(directory)
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, "打开默认保存路径选择对话框", fold_code="SETTINGS_PATH")
+            directory = QFileDialog.getExistingDirectory(self, "选择默认保存路径")
+            if directory:
+                debug_logger.output("settings_page.py", LogLevel.INFO, f"选择默认保存路径: {directory}", fold_code="SETTINGS_PATH")
+                self.save_path_display.setText(directory)
+                self.settings_manager.set_default_save_path(directory)
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"选择保存路径时出错: {str(e)}", fold_code="SETTINGS_PATH")
     
     def update_fonts(self, font):
         """更新字体"""
@@ -522,6 +547,7 @@ class DownloadSettingsGroup(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("下载设置", parent)
+        debug_logger.output("settings_page.py", LogLevel.INFO, "初始化 DownloadSettingsGroup...", fold_code="SETTINGS_DOWNLOAD")
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
@@ -530,71 +556,97 @@ class DownloadSettingsGroup(QGroupBox):
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        title_font_size = 14
-        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
-            current_width = self.parent().parent_window.width()
-            current_height = self.parent().parent_window.height()
-            base_width = 1024
-            base_height = 768
-            width_ratio = current_width / base_width
-            height_ratio = current_height / base_height
-            ratio = (width_ratio + height_ratio) / 2
-            title_font_size = max(12, min(18, int(14 * ratio)))
-        
-        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
-        self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
-        self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'],
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        try:
+            title_font_size = 14
+            if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+                current_width = self.parent().parent_window.width()
+                current_height = self.parent().parent_window.height()
+                base_width = 1024
+                base_height = 768
+                width_ratio = current_width / base_width
+                height_ratio = current_height / base_height
+                ratio = (width_ratio + height_ratio) / 2
+                title_font_size = max(12, min(18, int(14 * ratio)))
+            
+            global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+            card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
+            
+            debug_logger.output("settings_page.py", LogLevel.DEBUG, f"应用 DownloadSettingsGroup 样式: font={global_font_name}, bg={card_bg}", fold_code="SETTINGS_DOWNLOAD")
+            
+            self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
+            self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'],
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"应用 DownloadSettingsGroup 样式时出错: {str(e)}", fold_code="SETTINGS_DOWNLOAD")
     
     def _init_ui(self):
         """初始化UI"""
-        layout = QFormLayout()
-        layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
-        
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # Github下载加速源
-        self.github_mirror_combo = QComboBox()
-        self.github_mirror_combo.addItems([
-        "直接从github服务器获取（海外首选）",
-        "ghfast（中国大陆首选）",
-        "ghproxy 主站（CloudFlare CDN，大陆备用）",
-        "ghproxy HK（港澳台首选）",
-        "ghproxy edgeone（备用）"
-        ])
-        self.github_mirror_combo.currentTextChanged.connect(
-            lambda text: self.settings_manager.Custom.set_value("github_mirror", text)
-        )
-        self.github_mirror_combo.setStyleSheet(unified_styles['combo'])
-        self.github_mirror_combo.installEventFilter(self.wheel_filter)
-        layout.addRow("Github下载加速源:", self.github_mirror_combo)
-        
-        # 下载线程数
-        self.download_threads_spin = QSpinBox()
-        self.download_threads_spin.setRange(1, 16)
-        self.download_threads_spin.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("download_threads", str(value))
-        )
-        self.download_threads_spin.setStyleSheet(unified_styles['input'])
-        self.download_threads_spin.installEventFilter(self.wheel_filter)
-        layout.addRow("下载线程数:", self.download_threads_spin)
-        
-        self.setLayout(layout)
+        try:
+            layout = QFormLayout()
+            layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+            
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+            unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
+            
+            # Github下载加速源
+            self.github_mirror_combo = QComboBox()
+            self.github_mirror_combo.addItems([
+            "直接从github服务器获取（海外首选）",
+            "ghfast（中国大陆首选）",
+            "ghproxy 主站（CloudFlare CDN，大陆备用）",
+            "ghproxy HK（港澳台首选）",
+            "ghproxy edgeone（备用）"
+            ])
+            self.github_mirror_combo.currentTextChanged.connect(self._on_github_mirror_changed)
+            self.github_mirror_combo.setStyleSheet(unified_styles['combo'])
+            self.github_mirror_combo.installEventFilter(self.wheel_filter)
+            layout.addRow("Github下载加速源:", self.github_mirror_combo)
+            
+            # 下载线程数
+            self.download_threads_spin = QSpinBox()
+            self.download_threads_spin.setRange(1, 16)
+            self.download_threads_spin.valueChanged.connect(self._on_download_threads_changed)
+            self.download_threads_spin.setStyleSheet(unified_styles['input'])
+            self.download_threads_spin.installEventFilter(self.wheel_filter)
+            layout.addRow("下载线程数:", self.download_threads_spin)
+            
+            self.setLayout(layout)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "DownloadSettingsGroup UI初始化完成", fold_code="SETTINGS_DOWNLOAD")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"DownloadSettingsGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_DOWNLOAD")
+
+    def _on_github_mirror_changed(self, text):
+        """Github镜像源变更"""
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"Github下载加速源变更: {text}", fold_code="SETTINGS_DOWNLOAD")
+            self.settings_manager.Custom.set_value("github_mirror", text)
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"保存Github镜像设置时出错: {str(e)}", fold_code="SETTINGS_DOWNLOAD")
+
+    def _on_download_threads_changed(self, value):
+        """下载线程数变更"""
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"下载线程数变更: {value}", fold_code="SETTINGS_DOWNLOAD")
+            self.settings_manager.Custom.set_value("download_threads", str(value))
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"保存下载线程设置时出错: {str(e)}", fold_code="SETTINGS_DOWNLOAD")
     
     def _load_settings(self):
         """加载设置"""
-        github_mirror = self.settings_manager.Custom.get_value("github_mirror", "https://ghproxy.com")
-        index = self.github_mirror_combo.findText(github_mirror)
-        if index >= 0:
-            self.github_mirror_combo.setCurrentIndex(index)
-        
-        download_threads = self.settings_manager.Custom.get_value("download_threads", "4")
-        self.download_threads_spin.setValue(int(download_threads))
+        try:
+            github_mirror = self.settings_manager.Custom.get_value("github_mirror", "https://ghproxy.com")
+            index = self.github_mirror_combo.findText(github_mirror)
+            if index >= 0:
+                self.github_mirror_combo.setCurrentIndex(index)
+            
+            download_threads = self.settings_manager.Custom.get_value("download_threads", "4")
+            self.download_threads_spin.setValue(int(download_threads))
+            debug_logger.output("settings_page.py", LogLevel.INFO, "DownloadSettingsGroup 设置加载完成", fold_code="SETTINGS_DOWNLOAD")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"加载下载设置时出错: {str(e)}", fold_code="SETTINGS_DOWNLOAD")
 
 
 class OnlineImportSettingsGroup(QGroupBox):
@@ -602,6 +654,7 @@ class OnlineImportSettingsGroup(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("在线导入设置", parent)
+        debug_logger.output("settings_page.py", LogLevel.INFO, "初始化 OnlineImportSettingsGroup...", fold_code="SETTINGS_IMPORT")
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
@@ -610,61 +663,78 @@ class OnlineImportSettingsGroup(QGroupBox):
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        title_font_size = 14
-        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
-            current_width = self.parent().parent_window.width()
-            current_height = self.parent().parent_window.height()
-            base_width = 1024
-            base_height = 768
-            width_ratio = current_width / base_width
-            height_ratio = current_height / base_height
-            ratio = (width_ratio + height_ratio) / 2
-            title_font_size = max(12, min(18, int(14 * ratio)))
-        
-        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
-        self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
-        self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'],
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        try:
+            title_font_size = 14
+            if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+                current_width = self.parent().parent_window.width()
+                current_height = self.parent().parent_window.height()
+                base_width = 1024
+                base_height = 768
+                width_ratio = current_width / base_width
+                height_ratio = current_height / base_height
+                ratio = (width_ratio + height_ratio) / 2
+                title_font_size = max(12, min(18, int(14 * ratio)))
+            
+            global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+            card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
+            
+            debug_logger.output("settings_page.py", LogLevel.DEBUG, f"应用 OnlineImportSettingsGroup 样式: font={global_font_name}, bg={card_bg}", fold_code="SETTINGS_IMPORT")
+            
+            self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
+            self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'],
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"应用 OnlineImportSettingsGroup 样式时出错: {str(e)}", fold_code="SETTINGS_IMPORT")
     
     def _init_ui(self):
         """初始化UI"""
-        layout = QFormLayout()
-        layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
-        
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # 在线导入模式下拉框
-        self.import_mode_combo = QComboBox()
-        self.import_mode_combo.addItem("GitHub导入模式", "github")
-        self.import_mode_combo.addItem("智慧教育平台导入模式", "sei")
-        self.import_mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        self.import_mode_combo.setStyleSheet(unified_styles['combo'])
-        layout.addRow("在线导入模式:", self.import_mode_combo)
-        
-        self.setLayout(layout)
+        try:
+            layout = QFormLayout()
+            layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+            
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+            unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
+            
+            # 在线导入模式下拉框
+            self.import_mode_combo = QComboBox()
+            self.import_mode_combo.addItem("GitHub导入模式", "github")
+            self.import_mode_combo.addItem("智慧教育平台导入模式", "sei")
+            self.import_mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+            self.import_mode_combo.setStyleSheet(unified_styles['combo'])
+            layout.addRow("在线导入模式:", self.import_mode_combo)
+            
+            self.setLayout(layout)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "OnlineImportSettingsGroup UI初始化完成", fold_code="SETTINGS_IMPORT")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"OnlineImportSettingsGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_IMPORT")
     
     def _on_mode_changed(self, index):
         """模式改变时的回调"""
-        mode_data = self.import_mode_combo.itemData(index)
-        is_sei_mode = (mode_data == "sei")
-        debug_logger.output("settings_page.py", LogLevel.INFO, f"OnlineImportSettingsGroup: Mode changed to {mode_data}, is_sei_mode={is_sei_mode}")
-        result = self.settings_manager.set_online_import_mode(is_sei_mode)
-        debug_logger.output("settings_page.py", LogLevel.INFO, f"OnlineImportSettingsGroup: Save result = {result}")
+        try:
+            mode_data = self.import_mode_combo.itemData(index)
+            is_sei_mode = (mode_data == "sei")
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"在线导入模式变更: {mode_data}, is_sei_mode={is_sei_mode}", fold_code="SETTINGS_IMPORT")
+            result = self.settings_manager.set_online_import_mode(is_sei_mode)
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"在线导入模式保存结果: {result}", fold_code="SETTINGS_IMPORT")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"变更在线导入模式时出错: {str(e)}", fold_code="SETTINGS_IMPORT")
     
     def _load_settings(self):
         """加载设置"""
-        is_sei_mode = self.settings_manager.get_online_import_mode()
-        if is_sei_mode:
-            index = self.import_mode_combo.findData("sei")
-        else:
-            index = self.import_mode_combo.findData("github")
-        if index >= 0:
-            self.import_mode_combo.setCurrentIndex(index)
+        try:
+            is_sei_mode = self.settings_manager.get_online_import_mode()
+            if is_sei_mode:
+                index = self.import_mode_combo.findData("sei")
+            else:
+                index = self.import_mode_combo.findData("github")
+            if index >= 0:
+                self.import_mode_combo.setCurrentIndex(index)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "OnlineImportSettingsGroup 设置加载完成", fold_code="SETTINGS_IMPORT")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"加载在线导入设置时出错: {str(e)}", fold_code="SETTINGS_IMPORT")
 
 
 class TabSettingsGroup(QGroupBox):
@@ -672,6 +742,7 @@ class TabSettingsGroup(QGroupBox):
     
     def __init__(self, parent=None):
         super().__init__("选项卡设置", parent)
+        debug_logger.output("settings_page.py", LogLevel.INFO, "初始化 TabSettingsGroup...", fold_code="SETTINGS_TAB")
         self.settings_manager = SettingsManager()
         self.available_tabs = {
             'welcome': '欢迎',
@@ -689,220 +760,268 @@ class TabSettingsGroup(QGroupBox):
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        title_font_size = 14
-        if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
-            current_width = self.parent().parent_window.width()
-            current_height = self.parent().parent_window.height()
-            base_width = 1024
-            base_height = 768
-            width_ratio = current_width / base_width
-            height_ratio = current_height / base_height
-            ratio = (width_ratio + height_ratio) / 2
-            title_font_size = max(12, min(18, int(14 * ratio)))
-        
-        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
-        self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
-        self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'],
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'], 
-                              SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        try:
+            title_font_size = 14
+            if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
+                current_width = self.parent().parent_window.width()
+                current_height = self.parent().parent_window.height()
+                base_width = 1024
+                base_height = 768
+                width_ratio = current_width / base_width
+                height_ratio = current_height / base_height
+                ratio = (width_ratio + height_ratio) / 2
+                title_font_size = max(12, min(18, int(14 * ratio)))
+            
+            global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+            card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
+            
+            debug_logger.output("settings_page.py", LogLevel.DEBUG, f"应用 TabSettingsGroup 样式: font={global_font_name}, bg={card_bg}", fold_code="SETTINGS_TAB")
+            
+            self.setStyleSheet(SettingsCustomConfig.get_dynamic_card_style(title_font_size, global_font_name, card_bg))
+            self.setContentsMargins(SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'],
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'], 
+                                  SettingsCustomConfig.SPACING_SYSTEM['lg'])
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"应用 TabSettingsGroup 样式时出错: {str(e)}", fold_code="SETTINGS_TAB")
     
     def _init_ui(self):
         """初始化UI"""
-        self.main_v_layout = QVBoxLayout()
-        self.main_v_layout.setSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
-        
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # 1. 起始选项卡设置 (使用 QFormLayout 以对齐其他卡片)
-        self.top_form_layout = QFormLayout()
-        self.top_form_layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
-        
-        self.initial_tab_combo = QComboBox()
-        for name, display_name in self.available_tabs.items():
-            self.initial_tab_combo.addItem(display_name, name)
-        self.initial_tab_combo.currentIndexChanged.connect(self._save_settings)
-        self.initial_tab_combo.setStyleSheet(unified_styles['combo'])
-        self.initial_tab_combo.installEventFilter(self.wheel_filter)
-        
-        self.top_form_layout.addRow("起始选项卡:", self.initial_tab_combo)
-        self.main_v_layout.addLayout(self.top_form_layout)
-        
-        # 2. 选项卡排序和可见性标题
-        list_header_layout = QHBoxLayout()
-        self.list_header = QLabel("选项卡排序与可见性 (勾选以显示，使用按钮调整顺序):")
-        self.list_header.setStyleSheet(f"font-weight: bold; margin-top: 10px; color: {text_color};")
-        
-        self.restart_hint = QLabel("(修改后需重启软件生效)")
-        self.restart_hint.setStyleSheet("color: #FF4500; margin-top: 10px;") # 保持红色作为提示
-        
-        list_header_layout.addWidget(self.list_header)
-        list_header_layout.addWidget(self.restart_hint)
-        list_header_layout.addStretch(1)
-        self.main_v_layout.addLayout(list_header_layout)
-        
-        # 3. 选项卡列表容器
-        self.tab_list_container = QWidget()
-        self.tab_list_layout = QVBoxLayout(self.tab_list_container)
-        self.tab_list_layout.setContentsMargins(0, 0, 0, 0)
-        self.tab_list_layout.setSpacing(SettingsCustomConfig.SPACING_SYSTEM['sm'])
-        self.main_v_layout.addWidget(self.tab_list_container)
-        
-        self.setLayout(self.main_v_layout)
+        try:
+            self.main_v_layout = QVBoxLayout()
+            self.main_v_layout.setSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+            
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+            unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
+            
+            # 1. 起始选项卡设置 (使用 QFormLayout 以对齐其他卡片)
+            self.top_form_layout = QFormLayout()
+            self.top_form_layout.setVerticalSpacing(SettingsCustomConfig.SPACING_SYSTEM['md'])
+            
+            self.initial_tab_combo = QComboBox()
+            for name, display_name in self.available_tabs.items():
+                self.initial_tab_combo.addItem(display_name, name)
+            self.initial_tab_combo.currentIndexChanged.connect(self._save_settings)
+            self.initial_tab_combo.setStyleSheet(unified_styles['combo'])
+            self.initial_tab_combo.installEventFilter(self.wheel_filter)
+            
+            self.top_form_layout.addRow("起始选项卡:", self.initial_tab_combo)
+            self.main_v_layout.addLayout(self.top_form_layout)
+            
+            # 2. 选项卡排序和可见性标题
+            list_header_layout = QHBoxLayout()
+            self.list_header = QLabel("选项卡排序与可见性 (勾选以显示，使用按钮调整顺序):")
+            self.list_header.setStyleSheet(f"font-weight: bold; margin-top: 10px; color: {text_color};")
+            
+            self.restart_hint = QLabel("(修改后需重启软件生效)")
+            self.restart_hint.setStyleSheet("color: #FF4500; margin-top: 10px;") # 保持红色作为提示
+            
+            list_header_layout.addWidget(self.list_header)
+            list_header_layout.addWidget(self.restart_hint)
+            list_header_layout.addStretch(1)
+            self.main_v_layout.addLayout(list_header_layout)
+            
+            # 3. 选项卡列表容器
+            self.tab_list_container = QWidget()
+            self.tab_list_layout = QVBoxLayout(self.tab_list_container)
+            self.tab_list_layout.setContentsMargins(0, 0, 0, 0)
+            self.tab_list_layout.setSpacing(SettingsCustomConfig.SPACING_SYSTEM['sm'])
+            self.main_v_layout.addWidget(self.tab_list_container)
+            
+            self.setLayout(self.main_v_layout)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "TabSettingsGroup UI初始化完成", fold_code="SETTINGS_TAB")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"TabSettingsGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_TAB")
     
     def _load_settings(self):
         """加载设置"""
-        # 加载排序
-        order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc")
-        self.tab_order = [t.strip() for t in order_str.split(',') if t.strip() and t.strip() in self.available_tabs]
-        # 补全缺失的选项卡
-        for name in self.available_tabs:
-            if name not in self.tab_order:
-                self.tab_order.append(name)
-        
-        # 加载可见性
-        visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc")
-        self.tab_visibility = [t.strip() for t in visibility_str.split(',') if t.strip() and t.strip() in self.available_tabs]
-        
-        # 加载初始页
-        initial_tab = self.settings_manager.get_Custom_value("initial_tab", "welcome")
-        idx = self.initial_tab_combo.findData(initial_tab)
-        if idx >= 0:
-            # 暂时断开信号以避免加载时触发保存
-            self.initial_tab_combo.blockSignals(True)
-            self.initial_tab_combo.setCurrentIndex(idx)
-            self.initial_tab_combo.blockSignals(False)
+        try:
+            # 加载排序
+            order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc")
+            self.tab_order = [t.strip() for t in order_str.split(',') if t.strip() and t.strip() in self.available_tabs]
+            # 补全缺失的选项卡
+            for name in self.available_tabs:
+                if name not in self.tab_order:
+                    self.tab_order.append(name)
             
-        self._refresh_tab_list_ui()
+            # 加载可见性
+            visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc")
+            self.tab_visibility = [t.strip() for t in visibility_str.split(',') if t.strip() and t.strip() in self.available_tabs]
+            
+            # 加载初始页
+            initial_tab = self.settings_manager.get_Custom_value("initial_tab", "welcome")
+            idx = self.initial_tab_combo.findData(initial_tab)
+            if idx >= 0:
+                # 暂时断开信号以避免加载时触发保存
+                self.initial_tab_combo.blockSignals(True)
+                self.initial_tab_combo.setCurrentIndex(idx)
+                self.initial_tab_combo.blockSignals(False)
+                
+            self._refresh_tab_list_ui()
+            debug_logger.output("settings_page.py", LogLevel.INFO, "TabSettingsGroup 设置加载完成", fold_code="SETTINGS_TAB")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"加载选项卡设置时出错: {str(e)}", fold_code="SETTINGS_TAB")
     
     def _refresh_tab_list_ui(self):
         """刷新选项卡列表UI"""
-        # 清除现有项目
-        while self.tab_list_layout.count():
-            item = self.tab_list_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-        
-        # 确保 'settings' 始终在可见列表中
-        if 'settings' not in self.tab_visibility:
-            self.tab_visibility.append('settings')
-            self._save_settings()
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, "开始刷新选项卡列表UI", fold_code="SETTINGS_TAB")
+            # 清除现有项目
+            clear_count = 0
+            while self.tab_list_layout.count():
+                item = self.tab_list_layout.takeAt(0)
+                widget = item.widget()
+                if widget:
+                    try:
+                        widget.deleteLater()
+                        clear_count += 1
+                    except Exception as e:
+                        debug_logger.output("settings_page.py", LogLevel.WARNING, f"删除选项卡项组件时出错: {str(e)}", fold_code="SETTINGS_TAB")
+            
+            if clear_count > 0:
+                debug_logger.output("settings_page.py", LogLevel.DEBUG, f"已清除 {clear_count} 个旧选项卡组件", fold_code="SETTINGS_TAB")
+            
+            # 确保 'settings' 始终在可见列表中
+            if 'settings' not in self.tab_visibility:
+                debug_logger.output("settings_page.py", LogLevel.WARNING, "检测到设置选项卡被隐藏，正在强制恢复显示以防止用户无法再次进入设置", fold_code="SETTINGS_TAB")
+                self.tab_visibility.append('settings')
+                self._save_settings()
 
-        # 获取当前全局字体和文字颜色
-        global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # 根据当前顺序创建项目
-        for i, name in enumerate(self.tab_order):
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(5, 2, 5, 2)
+            # 获取当前全局字体和文字颜色
+            global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
+            text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+            component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+            unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
             
-            # 复选框 (可见性)
-            cb = QCheckBox(self.available_tabs[name])
-            cb.setChecked(name in self.tab_visibility)
-            # 应用全局字体
-            cb.setFont(QFont(global_font_name))
-            # 设置选项卡强制可见
-            if name == 'settings':
-                cb.setEnabled(False)
-                cb.setToolTip("“设置”选项卡必须始终可见")
+            # 根据当前顺序创建项目
+            for i, name in enumerate(self.tab_order):
+                row_widget = QWidget()
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(5, 2, 5, 2)
+                
+                # 复选框 (可见性)
+                display_name = self.available_tabs.get(name, name)
+                cb = QCheckBox(display_name)
+                cb.setChecked(name in self.tab_visibility)
+                # 应用全局字体
+                cb.setFont(QFont(global_font_name))
+                # 设置选项卡强制可见
+                if name == 'settings':
+                    cb.setEnabled(False)
+                    cb.setToolTip("“设置”选项卡必须始终可见")
+                
+                cb.stateChanged.connect(lambda state, n=name: self._on_visibility_changed(n, state))
+                cb.setStyleSheet(unified_styles['checkbox'])
+                
+                # 向上按钮
+                up_btn = QPushButton("↑")
+                up_btn.setFont(QFont(global_font_name))
+                up_btn.setFixedSize(30, 30)
+                up_btn.setEnabled(i > 0)
+                up_btn.clicked.connect(lambda checked, idx=i: self._move_tab(idx, -1))
+                up_btn.setStyleSheet(unified_styles['slider_button'])
+                
+                # 向下按钮
+                down_btn = QPushButton("↓")
+                down_btn.setFont(QFont(global_font_name))
+                down_btn.setFixedSize(30, 30)
+                down_btn.setEnabled(i < len(self.tab_order) - 1)
+                down_btn.clicked.connect(lambda checked, idx=i: self._move_tab(idx, 1))
+                down_btn.setStyleSheet(unified_styles['slider_button'])
+                
+                row_layout.addWidget(cb)
+                row_layout.addStretch(1)
+                row_layout.addWidget(up_btn)
+                row_layout.addWidget(down_btn)
+                
+                self.tab_list_layout.addWidget(row_widget)
             
-            cb.stateChanged.connect(lambda state, n=name: self._on_visibility_changed(n, state))
-            cb.setStyleSheet(unified_styles['checkbox'])
+            # 更新起始页下拉框
+            self._update_initial_tab_combo()
             
-            # 向上按钮
-            up_btn = QPushButton("↑")
-            up_btn.setFont(QFont(global_font_name))
-            up_btn.setFixedSize(30, 30)
-            up_btn.setEnabled(i > 0)
-            up_btn.clicked.connect(lambda checked, idx=i: self._move_tab(idx, -1))
-            up_btn.setStyleSheet(unified_styles['slider_button'])
-            
-            # 向下按钮
-            down_btn = QPushButton("↓")
-            down_btn.setFont(QFont(global_font_name))
-            down_btn.setFixedSize(30, 30)
-            down_btn.setEnabled(i < len(self.tab_order) - 1)
-            down_btn.clicked.connect(lambda checked, idx=i: self._move_tab(idx, 1))
-            down_btn.setStyleSheet(unified_styles['slider_button'])
-            
-            row_layout.addWidget(cb)
-            row_layout.addStretch(1)
-            row_layout.addWidget(up_btn)
-            row_layout.addWidget(down_btn)
-            
-            self.tab_list_layout.addWidget(row_widget)
-        
-        # 更新起始页下拉框
-        self._update_initial_tab_combo()
-        
-        # 触发父窗口更新字体，确保新创建的控件应用正确的缩放
-        if self.parent() and hasattr(self.parent(), '_update_fonts'):
-            self.parent()._update_fonts()
+            # 触发父窗口更新字体，确保新创建的控件应用正确的缩放
+            if self.parent() and hasattr(self.parent(), '_update_fonts'):
+                self.parent()._update_fonts()
+                
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"选项卡列表UI刷新完成 (共 {len(self.tab_order)} 项)", fold_code="SETTINGS_TAB")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"刷新选项卡列表UI时发生异常: {str(e)}", fold_code="SETTINGS_TAB")
 
     def _update_initial_tab_combo(self):
         """根据可见性更新起始页下拉框"""
-        current_selection = self.initial_tab_combo.currentData()
-        
-        self.initial_tab_combo.blockSignals(True)
-        self.initial_tab_combo.clear()
-        
-        # 仅添加当前可见的选项卡，并保持 tab_order 中的顺序
-        for name in self.tab_order:
-            if name in self.tab_visibility:
-                self.initial_tab_combo.addItem(self.available_tabs[name], name)
-        
-        # 尝试恢复之前的选择
-        idx = self.initial_tab_combo.findData(current_selection)
-        if idx >= 0:
-            self.initial_tab_combo.setCurrentIndex(idx)
-        else:
-            # 如果之前的选择现在不可见，默认选第一个（通常是'welcome'或'settings'）
-            self.initial_tab_combo.setCurrentIndex(0)
-            # 既然选择变了，保存一下
-            self.initial_tab_combo.blockSignals(False)
-            self._save_settings()
-            self.initial_tab_combo.blockSignals(True)
+        try:
+            current_selection = self.initial_tab_combo.currentData()
             
-        self.initial_tab_combo.blockSignals(False)
+            self.initial_tab_combo.blockSignals(True)
+            self.initial_tab_combo.clear()
+            
+            # 仅添加当前可见的选项卡，并保持 tab_order 中的顺序
+            for name in self.tab_order:
+                if name in self.tab_visibility:
+                    self.initial_tab_combo.addItem(self.available_tabs[name], name)
+            
+            # 尝试恢复之前的选择
+            idx = self.initial_tab_combo.findData(current_selection)
+            if idx >= 0:
+                self.initial_tab_combo.setCurrentIndex(idx)
+            else:
+                # 如果之前的选择现在不可见，默认选第一个（通常是'welcome'或'settings'）
+                self.initial_tab_combo.setCurrentIndex(0)
+                # 既然选择变了，保存一下
+                self.initial_tab_combo.blockSignals(False)
+                self._save_settings()
+                self.initial_tab_combo.blockSignals(True)
+                
+            self.initial_tab_combo.blockSignals(False)
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"起始选项卡下拉框更新完成, 当前选中: {self.initial_tab_combo.currentText()}", fold_code="SETTINGS_TAB")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"更新起始选项卡下拉框时出错: {str(e)}", fold_code="SETTINGS_TAB")
             
     def _on_visibility_changed(self, name, state):
         """可见性改变"""
-        if state == Qt.Checked:
-            if name not in self.tab_visibility:
-                self.tab_visibility.append(name)
-        else:
-            if name in self.tab_visibility:
-                self.tab_visibility.remove(name)
-        
-        # 刷新起始页下拉框
-        self._update_initial_tab_combo()
-        self._save_settings()
+        try:
+            is_visible = (state == Qt.Checked)
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"选项卡可见性变更: {name} -> {is_visible}", fold_code="SETTINGS_TAB")
+            if is_visible:
+                if name not in self.tab_visibility:
+                    self.tab_visibility.append(name)
+            else:
+                if name in self.tab_visibility:
+                    self.tab_visibility.remove(name)
+            
+            # 刷新起始页下拉框
+            self._update_initial_tab_combo()
+            self._save_settings()
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"处理选项卡可见性变更时出错 ({name}): {str(e)}", fold_code="SETTINGS_TAB")
         
     def _move_tab(self, index, direction):
         """移动选项卡位置"""
-        new_index = index + direction
-        if 0 <= new_index < len(self.tab_order):
-            self.tab_order[index], self.tab_order[new_index] = self.tab_order[new_index], self.tab_order[index]
-            self._refresh_tab_list_ui()
-            self._save_settings()
+        try:
+            new_index = index + direction
+            if 0 <= new_index < len(self.tab_order):
+                debug_logger.output("settings_page.py", LogLevel.INFO, f"移动选项卡: {self.tab_order[index]} 从 {index} 移动到 {new_index}", fold_code="SETTINGS_TAB")
+                self.tab_order[index], self.tab_order[new_index] = self.tab_order[new_index], self.tab_order[index]
+                self._refresh_tab_list_ui()
+                self._save_settings()
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"移动选项卡位置时出错: {str(e)}", fold_code="SETTINGS_TAB")
             
     def _save_settings(self):
         """保存所有选项卡设置"""
-        order_str = ",".join(self.tab_order)
-        visibility_str = ",".join(self.tab_visibility)
-        initial_tab = self.initial_tab_combo.currentData()
-        
-        self.settings_manager.set_Custom_value("tab_order", order_str)
-        self.settings_manager.set_Custom_value("tab_visibility", visibility_str)
-        self.settings_manager.set_Custom_value("initial_tab", initial_tab)
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, "正在保存选项卡设置...", fold_code="SETTINGS_TAB")
+            order_str = ",".join(self.tab_order)
+            visibility_str = ",".join(self.tab_visibility)
+            initial_tab = self.initial_tab_combo.currentData()
+            
+            self.settings_manager.set_Custom_value("tab_order", order_str)
+            self.settings_manager.set_Custom_value("tab_visibility", visibility_str)
+            self.settings_manager.set_Custom_value("initial_tab", initial_tab)
+            debug_logger.output("settings_page.py", LogLevel.INFO, "选项卡设置保存成功", fold_code="SETTINGS_TAB")
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"保存选项卡设置时出错: {str(e)}", fold_code="SETTINGS_TAB")
 
 
 class SettingsPage(QWidget):
@@ -910,6 +1029,7 @@ class SettingsPage(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        debug_logger.output("settings_page.py", LogLevel.INFO, "初始化设置页面...", fold_code="SETTINGS_INIT")
         self.parent_window = parent
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()

@@ -8,6 +8,7 @@
 from PyQt5.QtWidgets import QWidget, QLabel
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QPropertyAnimation, QEasingCurve, QPoint, QObject
 from PyQt5.QtGui import QFont, QMouseEvent
+from debug_logger import debug_logger, LogLevel
 
 # ===== 常量定义 =====
 # 动画时长（毫秒）
@@ -59,6 +60,7 @@ class Notification(QWidget):
             parent: 父窗口对象
         """
         super().__init__(parent)
+        debug_logger.output("notification.py", LogLevel.INFO, "正在初始化 Notification 组件", fold_code="NOTIFICATION_INIT")
         self.parent_window = parent
         self.auto_close_time = DEFAULT_AUTO_CLOSE_TIME
         self.target_position = QPoint(0, 0)
@@ -83,7 +85,7 @@ class Notification(QWidget):
         
     def _init_ui(self):
         """初始化用户界面"""
-        
+        debug_logger.output("notification.py", LogLevel.INFO, "正在初始化 Notification UI", fold_code="NOTIFICATION_INIT")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -103,6 +105,7 @@ class Notification(QWidget):
         
     def _init_animations(self):
         """初始化动画效果"""
+        debug_logger.output("notification.py", LogLevel.INFO, "正在初始化 Notification 动画", fold_code="NOTIFICATION_INIT")
         # 出现动画 - 位置和透明度
         self.appear_position_animation = QPropertyAnimation(self, b"pos")
         self.appear_position_animation.setDuration(ANIMATION_DURATION_APPEAR)
@@ -130,6 +133,7 @@ class Notification(QWidget):
             message_type (str): 消息类型 - "info", "warning", "error"
             auto_close_time (int): 自动关闭时间(毫秒)
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"显示通知消息: [{message_type}] {message[:30]}...", fold_code="NOTIFICATION_SHOW")
         self.auto_close_time = auto_close_time
         
         # 从个性化设置中获取颜色
@@ -165,6 +169,7 @@ class Notification(QWidget):
         
         # 启动自动关闭定时器
         if auto_close_time > 0:
+            debug_logger.output("notification.py", LogLevel.INFO, f"启动自动关闭定时器: {auto_close_time}ms", fold_code="NOTIFICATION_SHOW")
             self.close_timer.start(auto_close_time)
     
     def _get_notification_colors(self):
@@ -184,6 +189,8 @@ class Notification(QWidget):
             warning_color = settings_manager.Custom.get_value("notification_warning_color", colors["warning"])
             error_color = settings_manager.Custom.get_value("notification_error_color", colors["error"])
             
+            debug_logger.output("notification.py", LogLevel.INFO, f"从设置加载通知颜色: info={info_color}, warning={warning_color}, error={error_color}", fold_code="NOTIFICATION_SHOW")
+            
             colors.update({
                 "info": info_color,
                 "warning": warning_color,
@@ -200,6 +207,7 @@ class Notification(QWidget):
             QPoint: 起始位置坐标
         """
         if not self.parent_window:
+            debug_logger.output("notification.py", LogLevel.WARNING, "未设置父窗口，无法计算起始位置", fold_code="NOTIFICATION_SHOW")
             return QPoint(0, 0)
             
         # 获取父窗口的位置和大小
@@ -221,6 +229,7 @@ class Notification(QWidget):
             QPoint: 结束位置坐标
         """
         if not self.parent_window:
+            debug_logger.output("notification.py", LogLevel.WARNING, "未设置父窗口，无法计算结束位置", fold_code="NOTIFICATION_SHOW")
             return QPoint(0, 0)
             
         # 获取父窗口的位置和大小
@@ -236,6 +245,7 @@ class Notification(QWidget):
     
     def _start_appear_animation(self):
         """启动出现动画效果"""
+        debug_logger.output("notification.py", LogLevel.INFO, "启动出现动画", fold_code="NOTIFICATION_ANIM")
         self.is_appearing = True
         
         # 设置动画参数
@@ -258,6 +268,7 @@ class Notification(QWidget):
             duration (int): 动画持续时间
             finish_callback (callable): 动画完成回调函数
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"启动透明度动画: {start_opacity} -> {end_opacity}, 耗时: {duration}ms", fold_code="NOTIFICATION_ANIM")
         # 使用QPropertyAnimation进行透明度动画
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(duration)
@@ -269,6 +280,7 @@ class Notification(QWidget):
     
     def _start_disappear_animation(self):
         """启动消失动画效果"""
+        debug_logger.output("notification.py", LogLevel.INFO, "启动消失动画", fold_code="NOTIFICATION_ANIM")
         self.is_disappearing = True
         
         # 设置动画参数
@@ -291,6 +303,7 @@ class Notification(QWidget):
         if self.is_disappearing:
             return
             
+        debug_logger.output("notification.py", LogLevel.INFO, f"启动上移动画, 目标位置: {new_target_position}", fold_code="NOTIFICATION_ANIM")
         self.is_moving = True
         self.target_position = new_target_position
         
@@ -303,18 +316,21 @@ class Notification(QWidget):
     
     def _on_appear_finished(self):
         """出现动画完成回调"""
+        debug_logger.output("notification.py", LogLevel.INFO, "出现动画已完成", fold_code="NOTIFICATION_ANIM")
         self.is_appearing = False
         # 修复透明度问题：确保动画结束后不透明度为100%
         self.setWindowOpacity(1.0)
     
     def _on_disappear_finished(self):
         """消失动画完成回调"""
+        debug_logger.output("notification.py", LogLevel.INFO, "消失动画已完成，关闭通知", fold_code="NOTIFICATION_ANIM")
         self.is_disappearing = False
         self.close()
         self.closed.emit()
     
     def _on_move_finished(self):
         """上移动画完成回调"""
+        debug_logger.output("notification.py", LogLevel.INFO, "上移动画已完成", fold_code="NOTIFICATION_ANIM")
         self.is_moving = False
     
     def _adjust_size_and_position(self):
@@ -343,11 +359,13 @@ class Notification(QWidget):
             # 计算消息框尺寸
             msg_width = int(button_width * NOTIFICATION_WIDTH_RATIO)
             msg_height = int(button_height * NOTIFICATION_HEIGHT_RATIO)
+            debug_logger.output("notification.py", LogLevel.INFO, f"基于预览按钮调整尺寸: {msg_width}x{msg_height}", fold_code="NOTIFICATION_SHOW")
         else:
             # 使用默认大小
             parent_rect = self.parent_window.geometry()
             msg_width = int(parent_rect.width() * 0.3)  # 父窗口宽度的30%
             msg_height = 60  # 默认高度60像素
+            debug_logger.output("notification.py", LogLevel.INFO, f"使用默认通知尺寸: {msg_width}x{msg_height}", fold_code="NOTIFICATION_SHOW")
         
         # 设置消息框大小
         self.message_label.setFixedSize(msg_width, msg_height)
@@ -395,6 +413,7 @@ class Notification(QWidget):
         Args:
             offset (int): 偏移量值
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"设置位置偏移量: {offset}", fold_code="NOTIFICATION_SHOW")
         self.base_offset = offset
         
         # 计算新的目标位置
@@ -427,6 +446,7 @@ class Notification(QWidget):
     
     def update_position_immediately(self):
         """立即更新位置（不带动画效果）"""
+        debug_logger.output("notification.py", LogLevel.INFO, "立即更新位置（无动画）", fold_code="NOTIFICATION_SHOW")
         # 停止所有可能的位置动画
         if self.is_appearing:
             self.appear_position_animation.stop()
@@ -454,6 +474,7 @@ class Notification(QWidget):
         if self.is_disappearing:
             return
             
+        debug_logger.output("notification.py", LogLevel.INFO, "自动关闭消息", fold_code="NOTIFICATION_SHOW")
         self.close_timer.stop()
         self._start_disappear_animation()
     
@@ -465,6 +486,7 @@ class Notification(QWidget):
             event (QMouseEvent): 鼠标事件对象
         """
         if event.button() == Qt.LeftButton:
+            debug_logger.output("notification.py", LogLevel.INFO, "检测到双击消息，触发关闭", fold_code="NOTIFICATION_EVENT")
             self._auto_close()
     
     def closeEvent(self, event):
@@ -474,6 +496,7 @@ class Notification(QWidget):
         Args:
             event (QCloseEvent): 关闭事件对象
         """
+        debug_logger.output("notification.py", LogLevel.INFO, "Notification 窗口正在关闭", fold_code="NOTIFICATION_EVENT")
         self.close_timer.stop()
         if self.is_appearing:
             self.appear_position_animation.stop()
@@ -497,6 +520,7 @@ class Notification(QWidget):
         Args:
             enabled (bool): 是否启用点击穿透
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"设置点击穿透: {enabled}", fold_code="NOTIFICATION_EVENT")
         self.click_through_enabled = enabled
     
     def update_click_through_state(self):
@@ -509,6 +533,8 @@ class Notification(QWidget):
             self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         else:
             self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+            
+        debug_logger.output("notification.py", LogLevel.INFO, f"更新点击穿透状态: effective={effective_click_through} (enabled={self.click_through_enabled}, ctrl={self.ctrl_pressed})", fold_code="NOTIFICATION_EVENT")
     
     def keyPressEvent(self, event):
         """
@@ -542,6 +568,7 @@ class Notification(QWidget):
             event (QMouseEvent): 鼠标事件对象
         """
         if event.button() == Qt.LeftButton and not self.ctrl_pressed:
+            debug_logger.output("notification.py", LogLevel.INFO, "检测到鼠标按下，开始处理滑动", fold_code="NOTIFICATION_EVENT")
             self.drag_start_pos = event.globalPos()
             self.drag_current_pos = event.globalPos()
             self.is_dragging = True
@@ -588,6 +615,7 @@ class Notification(QWidget):
             event (QMouseEvent): 鼠标事件对象
         """
         if event.button() == Qt.LeftButton and self.is_dragging and not self.ctrl_pressed:
+            debug_logger.output("notification.py", LogLevel.INFO, "检测到鼠标释放，结束滑动处理", fold_code="NOTIFICATION_EVENT")
             self.is_dragging = False
             
             # 计算滑动距离
@@ -607,9 +635,11 @@ class Notification(QWidget):
             # 检查是否满足滑动消失条件
             if (drag_distance > dynamic_threshold or is_beyond_edge) and not self.is_disappearing:
                 # 向右滑动满足条件，触发消失动画
+                debug_logger.output("notification.py", LogLevel.INFO, f"滑动满足消失条件 (distance={drag_distance}, beyond_edge={is_beyond_edge})", fold_code="NOTIFICATION_EVENT")
                 self._start_swipe_disappear_animation()
             else:
                 # 不满足条件，回到原位
+                debug_logger.output("notification.py", LogLevel.INFO, f"滑动不满足消失条件，返回原位 (distance={drag_distance})", fold_code="NOTIFICATION_EVENT")
                 self._start_return_animation()
                 
                 # 重新启动自动关闭计时器
@@ -618,6 +648,7 @@ class Notification(QWidget):
     
     def _start_swipe_disappear_animation(self):
         """启动滑动消失动画效果"""
+        debug_logger.output("notification.py", LogLevel.INFO, "启动滑动消失动画", fold_code="NOTIFICATION_ANIM")
         # 计算目标位置（完全滑出屏幕右侧）
         if self.parent_window:
             parent_right = self.parent_window.geometry().right()
@@ -645,11 +676,13 @@ class Notification(QWidget):
     
     def _on_swipe_finished(self):
         """滑动消失动画完成回调"""
+        debug_logger.output("notification.py", LogLevel.INFO, "滑动消失动画已完成", fold_code="NOTIFICATION_ANIM")
         self.close()
         self.closed.emit()
     
     def _start_return_animation(self):
         """启动返回原位的动画效果"""
+        debug_logger.output("notification.py", LogLevel.INFO, "启动返回原位动画", fold_code="NOTIFICATION_ANIM")
         return_animation = QPropertyAnimation(self, b"pos")
         return_animation.setDuration(300)
         return_animation.setEasingCurve(QEasingCurve.OutCubic)
@@ -680,6 +713,7 @@ class NotificationManager(QObject):
             parent_window: 父窗口对象
         """
         super().__init__()
+        debug_logger.output("notification.py", LogLevel.INFO, "正在初始化 NotificationManager", fold_code="NOTIFICATION_MANAGER")
         self.parent_window = parent_window
         self.notifications = []
         self.max_visible = MAX_VISIBLE_NOTIFICATIONS
@@ -703,7 +737,8 @@ class NotificationManager(QObject):
             "W": "warning", 
             "E": "error"
         }
-        actual_type = type_map.get(message_type, "info")
+        actual_type = type_map.get(message_type, message_type)
+        debug_logger.output("notification.py", LogLevel.INFO, f"NotificationManager 请求显示消息: [{actual_type}] {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
         
         # 创建新消息
         notification = Notification(self.parent_window)
@@ -718,6 +753,7 @@ class NotificationManager(QObject):
         
         # 如果超过最大可见数，让最早的消息开始退出动画
         if len(self.notifications) > self.max_visible:
+            debug_logger.output("notification.py", LogLevel.INFO, f"当前通知数量({len(self.notifications)})超过最大可见数({self.max_visible})，触发旧通知关闭", fold_code="NOTIFICATION_MANAGER")
             # 找到最早的消息（不在动画中的第一个消息）
             for old_notification in self.notifications:
                 if not old_notification.is_appearing and not old_notification.is_disappearing:
@@ -732,6 +768,7 @@ class NotificationManager(QObject):
             notification (Notification): 要移除的通知对象
         """
         if notification in self.notifications:
+            debug_logger.output("notification.py", LogLevel.INFO, "NotificationManager 移除已关闭的通知", fold_code="NOTIFICATION_MANAGER")
             self.notifications.remove(notification)
             self._update_positions_immediately()
     
@@ -752,6 +789,7 @@ class NotificationManager(QObject):
         # 计算 n 值（以渲染区为参考）
         n = render_area_width / 16
         
+        debug_logger.output("notification.py", LogLevel.INFO, f"NotificationManager 正在批量更新 {len(self.notifications)} 个通知的位置", fold_code="NOTIFICATION_MANAGER")
         # 从最新的消息开始排列
         for i, notification in enumerate(reversed(self.notifications)):
             if i >= self.max_visible:
@@ -778,6 +816,7 @@ class NotificationManager(QObject):
         # 计算 n 值（以渲染区为参考）
         n = render_area_width / 16
         
+        debug_logger.output("notification.py", LogLevel.INFO, f"NotificationManager 正在立即批量更新 {len(self.notifications)} 个通知的位置（无动画）", fold_code="NOTIFICATION_MANAGER")
         # 更新所有消息框的位置
         for i, notification in enumerate(reversed(self.notifications)):
             if i >= self.max_visible:
@@ -792,6 +831,7 @@ class NotificationManager(QObject):
     
     def close_all(self):
         """关闭所有消息框"""
+        debug_logger.output("notification.py", LogLevel.INFO, f"NotificationManager 正在关闭所有通知 (数量: {len(self.notifications)})", fold_code="NOTIFICATION_MANAGER")
         # 复制列表以避免在迭代时修改
         notifications_copy = self.notifications.copy()
         for notification in notifications_copy:
@@ -827,60 +867,40 @@ class NotificationFactory:
     def create_info_notification(manager, message, auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
         """
         创建信息类型通知
-        
-        Args:
-            manager (NotificationManager): 通知管理器实例
-            message (str): 消息内容
-            auto_close_time (int): 自动关闭时间(毫秒)
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"工厂创建信息通知: {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
         manager.show_message(message, "info", auto_close_time)
     
     @staticmethod
     def create_warning_notification(manager, message, auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
         """
         创建警告类型通知
-        
-        Args:
-            manager (NotificationManager): 通知管理器实例
-            message (str): 消息内容
-            auto_close_time (int): 自动关闭时间(毫秒)
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"工厂创建警告通知: {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
         manager.show_message(message, "warning", auto_close_time)
     
     @staticmethod
     def create_error_notification(manager, message, auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
         """
         创建错误类型通知
-        
-        Args:
-            manager (NotificationManager): 通知管理器实例
-            message (str): 消息内容
-            auto_close_time (int): 自动关闭时间(毫秒)
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"工厂创建错误通知: {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
         manager.show_message(message, "error", auto_close_time)
     
     @staticmethod
     def create_short_notification(manager, message, message_type="info"):
         """
         创建短时通知（1.5秒）
-        
-        Args:
-            manager (NotificationManager): 通知管理器实例
-            message (str): 消息内容
-            message_type (str): 消息类型
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"工厂创建短时通知: {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
         manager.show_message(message, message_type, 1500)
     
     @staticmethod
     def create_long_notification(manager, message, message_type="info"):
         """
         创建长时通知（5秒）
-        
-        Args:
-            manager (NotificationManager): 通知管理器实例
-            message (str): 消息内容
-            message_type (str): 消息类型
         """
+        debug_logger.output("notification.py", LogLevel.INFO, f"工厂创建长时通知: {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
         manager.show_message(message, message_type, 5000)
 
 
@@ -888,11 +908,6 @@ class NotificationFactory:
 def show_notification(manager, message, message_type="I", auto_close_time=DEFAULT_AUTO_CLOSE_TIME):
     """
     显示通知的便捷函数（向后兼容）
-    
-    Args:
-        manager (NotificationManager): 通知管理器实例
-        message (str): 消息内容
-        message_type (str): 消息类型 - "I"(info), "W"(warning), "E"(error)
-        auto_close_time (int): 自动关闭时间(毫秒)
     """
+    debug_logger.output("notification.py", LogLevel.INFO, f"调用向后兼容通知函数: {message[:30]}...", fold_code="NOTIFICATION_MANAGER")
     manager.show_message(message, message_type, auto_close_time)

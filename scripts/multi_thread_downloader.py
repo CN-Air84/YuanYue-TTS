@@ -40,7 +40,7 @@ class DownloadWorker(QThread):
                  user_agent: Optional[str] = None, verify_ssl: bool = True,
                  proxy: Optional[dict] = None, speed_monitor=None):
         """初始化工作线程"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "初始化下载工作线程")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "初始化下载工作线程", fold_code="MT_INIT")
         super().__init__()
         self.setTerminationEnabled(False)
         self.url = url
@@ -58,7 +58,7 @@ class DownloadWorker(QThread):
         self._is_running = False
         self._run_lock = threading.Lock()
         self._is_finished = False
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载参数: URL={url[:50]}..., 保存目录={save_dir}, 文件名={filename}, 线程数={self.thread_num}")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载参数: URL={url[:50]}..., 保存目录={save_dir}, 文件名={filename}, thread_num={self.thread_num}", fold_code="MT_INIT")
         # 文件信息
         self.file_size = 0
         self.support_range = False
@@ -72,16 +72,16 @@ class DownloadWorker(QThread):
         # 创建保存目录（支持中文路径）
         self.save_path = Path(save_dir) / filename
         self.save_path.parent.mkdir(parents=True, exist_ok=True)
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"保存路径已创建: {self.save_path}")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"保存路径已创建: {self.save_path}", fold_code="MT_INIT")
     
     def _get_file_info(self):
         """获取文件信息"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始获取文件信息")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始获取文件信息", fold_code="MT_INFO")
         try:
             headers = {'User-Agent': self.user_agent}
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"发送HEAD请求到: {self.url}")
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"验证SSL: {self.verify_ssl}")
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"代理配置: {self.proxy}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"发送HEAD请求到: {self.url}", fold_code="MT_INFO")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"验证SSL: {self.verify_ssl}", fold_code="MT_INFO")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"代理配置: {self.proxy}", fold_code="MT_INFO")
             
             response = requests.head(
                 self.url, 
@@ -91,26 +91,26 @@ class DownloadWorker(QThread):
                 allow_redirects=True,
                 proxies=self.proxy
             )
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"HEAD请求状态码: {response.status_code}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"HEAD请求状态码: {response.status_code}", fold_code="MT_INFO")
             response.raise_for_status()
             
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"HEAD请求响应头: {dict(response.headers)}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"HEAD请求响应头: {dict(response.headers)}", fold_code="MT_INFO")
             
             # 检查是否支持断点续传
             if 'accept-ranges' in response.headers and \
                response.headers['accept-ranges'].lower() == 'bytes':
                 self.support_range = True
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "支持断点续传")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "支持断点续传", fold_code="MT_INFO")
             else:
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "不支持断点续传")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "不支持断点续传", fold_code="MT_INFO")
                 
             # 获取文件大小
             if 'content-length' in response.headers:
                 self.file_size = int(response.headers['content-length'])
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"获取文件大小: {self.file_size} 字节")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"获取文件大小: {self.file_size} 字节", fold_code="MT_INFO")
             else:
                 # 如果不支持获取大小，使用单线程下载
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "无法通过HEAD请求获取文件大小，尝试GET请求")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "无法通过HEAD请求获取文件大小，尝试GET请求", fold_code="MT_INFO")
                 response = requests.get(
                     self.url, 
                     headers=headers, 
@@ -120,25 +120,25 @@ class DownloadWorker(QThread):
                     allow_redirects=True,
                     proxies=self.proxy
                 )
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"GET请求状态码: {response.status_code}")
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"GET请求响应头: {dict(response.headers)}")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"GET请求状态码: {response.status_code}", fold_code="MT_INFO")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"GET请求响应头: {dict(response.headers)}", fold_code="MT_INFO")
                 self.file_size = int(response.headers.get('content-length', 0))
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"获取文件大小: {self.file_size} 字节")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"获取文件大小: {self.file_size} 字节", fold_code="MT_INFO")
                 response.close()
                 
             if self.file_size == 0:
                 self.support_range = False
                 self.thread_num = 1
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "文件大小为0，使用单线程下载")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "文件大小为0，使用单线程下载", fold_code="MT_INFO")
             
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "文件信息获取成功")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "文件信息获取成功", fold_code="MT_INFO")
             # 发送文件大小信息
             self.file_info_updated.emit(self.file_size)
             return True
         except requests.exceptions.RequestException as e:
             error_msg = f"网络请求异常: {str(e)}"
-            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, error_msg)
-            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"异常类型: {type(e).__name__}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, error_msg, fold_code="MT_INFO")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"异常类型: {type(e).__name__}", fold_code="MT_INFO")
             import traceback
             traceback.print_exc()
             
@@ -146,8 +146,8 @@ class DownloadWorker(QThread):
             return False
         except Exception as e:
             error_msg = f"无法获取文件信息: {str(e)}"
-            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, error_msg)
-            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"异常类型: {type(e).__name__}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, error_msg, fold_code="MT_INFO")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"异常类型: {type(e).__name__}", fold_code="MT_INFO")
             import traceback
             traceback.print_exc()
             
@@ -156,8 +156,10 @@ class DownloadWorker(QThread):
     
     def _calculate_ranges(self):
         """计算每个线程的下载范围"""
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始计算下载范围", fold_code="MT_RANGE")
         if not self.support_range or self.thread_num <= 1:
             # 单线程下载整个文件
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "不支持Range或线程数为1，使用单线程下载", fold_code="MT_RANGE")
             return [(0, self.file_size - 1 if self.file_size > 0 else None)]
         
         chunk_size = math.ceil(self.file_size / self.thread_num)
@@ -169,12 +171,15 @@ class DownloadWorker(QThread):
             if start < self.file_size:
                 ranges.append((start, end))
                 
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"计算完成，共分为 {len(ranges)} 个块", fold_code="MT_RANGE")
         return ranges
     
     def _create_temp_filename(self, index: int) -> str:
         """创建临时文件名"""
         file_key = hashlib.md5(str(self.save_path).encode('utf-8')).hexdigest()
-        return str(self.save_path.parent / f".{file_key}_part{index}.tmp")
+        temp_name = str(self.save_path.parent / f".{file_key}_part{index}.tmp")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"创建临时文件名: {temp_name}", fold_code="MT_TMP")
+        return temp_name
     
     def download_chunk(self, thread_id: int, start_pos: int, end_pos: int):
         """下载文件块"""
@@ -184,11 +189,11 @@ class DownloadWorker(QThread):
         headers = {'User-Agent': self.user_agent}
         if end_pos is not None:
             headers['Range'] = f'bytes={start_pos}-{end_pos}'
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 开始下载文件块 {start_pos}-{end_pos}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 开始下载文件块 {start_pos}-{end_pos}", fold_code="MT_DL")
             # 计算此线程负责的文件块大小
             chunk_size_total = end_pos - start_pos + 1
         else:
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 开始下载整个文件")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 开始下载整个文件", fold_code="MT_DL")
             chunk_size_total = self.file_size
         
         try:
@@ -201,13 +206,13 @@ class DownloadWorker(QThread):
                 proxies=self.proxy
             )
             response.raise_for_status()
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 成功连接到服务器")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 成功连接到服务器, 状态码: {response.status_code}", fold_code="MT_DL")
             
             with open(temp_file, 'wb') as f:
                 total_written = 0
                 for chunk in response.iter_content(chunk_size=8192):
                     if self.is_canceled:
-                        debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, f"线程{thread_id}: 收到取消信号，停止下载")
+                        debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, f"线程{thread_id}: 收到取消信号，停止下载", fold_code="MT_DL")
                         break
                     
                     if chunk:
@@ -234,12 +239,12 @@ class DownloadWorker(QThread):
                             self.thread_progress_updated.emit(thread_id, thread_progress)
             
             if not self.is_canceled:
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 完成下载文件块，共写入 {total_written} 字节到 {temp_file}")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 完成下载文件块，共写入 {total_written} 字节", fold_code="MT_DL")
                 return True
             
         except Exception as e:
             if not self.is_canceled:
-                debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"线程{thread_id}: 下载失败 - {str(e)}")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"线程{thread_id}: 下载失败 - {str(e)}", fold_code="MT_DL")
                 if hasattr(self, 'error_occurred'):
                     self.error_occurred.emit(f"线程{thread_id}下载失败: {str(e)}")
             return False
@@ -252,49 +257,46 @@ class DownloadWorker(QThread):
     
     def _merge_files(self):
         """合并临时文件"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始合并临时文件")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始合并临时文件", fold_code="MT_MERGE")
         try:
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"打开输出文件: {self.save_path}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"打开输出文件: {self.save_path}", fold_code="MT_MERGE")
             with open(self.save_path, 'wb') as outfile:
                 for i, temp_file in enumerate(self.temp_files):
                     if os.path.exists(temp_file):
-                        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"合并第{i+1}/{len(self.temp_files)}个临时文件: {temp_file}")
+                        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"合并第{i+1}/{len(self.temp_files)}个临时文件: {temp_file}", fold_code="MT_MERGE")
                         with open(temp_file, 'rb') as infile:
                             outfile.write(infile.read())
                         # 删除临时文件
-                        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"删除临时文件: {temp_file}")
+                        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"删除临时文件: {temp_file}", fold_code="MT_MERGE")
                         os.remove(temp_file)
                     else:
-                        debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, f"临时文件不存在: {temp_file}")
+                        debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, f"临时文件不存在: {temp_file}", fold_code="MT_MERGE")
             
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"文件合并完成，保存到: {self.save_path}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"文件合并完成，保存到: {self.save_path}", fold_code="MT_MERGE")
             return True
             
         except Exception as e:
             error_msg = f"合并文件失败: {str(e)}"
-            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, error_msg)
+            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, error_msg, fold_code="MT_MERGE")
             raise Exception(error_msg)
     
     def _cleanup_temp_files(self):
         """清理临时文件"""
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始清理临时文件", fold_code="MT_CLEAN")
         for temp_file in self.temp_files:
             if os.path.exists(temp_file):
                 try:
                     os.remove(temp_file)
-                except:
-                    pass
+                    debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"已清理临时文件: {temp_file}", fold_code="MT_CLEAN")
+                except Exception as e:
+                    debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, f"清理临时文件失败 {temp_file}: {str(e)}", fold_code="MT_CLEAN")
     
     def cancel_download(self):
         """取消下载"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始取消下载")
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"当前线程状态: _is_running={self._is_running}, _is_finished={self._is_finished}")
-        
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "收到取消下载请求", fold_code="MT_CANCEL")
         self.is_canceled = True
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "设置取消标志，开始清理临时文件")
         self._cleanup_temp_files()
-        
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "取消下载完成")
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"取消后的线程状态: _is_running={self._is_running}, _is_finished={self._is_finished}")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "取消下载完成", fold_code="MT_CANCEL")
     
     def is_running(self):
         """检查线程是否正在运行"""
@@ -308,7 +310,7 @@ class DownloadWorker(QThread):
     
     def run(self):
         """线程执行函数"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载线程开始执行")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载线程开始执行", fold_code="MT_RUN")
         
         with self._run_lock:
             self._is_running = True
@@ -316,21 +318,21 @@ class DownloadWorker(QThread):
         
         try:
             # 获取文件信息
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始获取文件信息")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始获取文件信息", fold_code="MT_RUN")
             if not self._get_file_info():
-                debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, "获取文件信息失败")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, "获取文件信息失败", fold_code="MT_RUN")
                 if hasattr(self, 'finished_signal'):
                     self.finished_signal.emit(False)
                 return
             
             # 计算下载范围
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始计算下载范围")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始计算下载范围", fold_code="MT_RUN")
             ranges = self._calculate_ranges()
             self.thread_num = len(ranges)
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"计算完成，共分 {self.thread_num} 个文件块")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"计算完成，共分 {self.thread_num} 个文件块", fold_code="MT_RUN")
             
             # 创建下载线程
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始创建下载线程")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始创建下载线程", fold_code="MT_RUN")
             self.download_threads = []
             for i, (start, end) in enumerate(ranges):
                 thread_id = i + 1  # 线程ID从1开始
@@ -340,51 +342,51 @@ class DownloadWorker(QThread):
                     daemon=True
                 )
                 self.download_threads.append(thread)
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"完成创建 {len(self.download_threads)} 个下载线程")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"完成创建 {len(self.download_threads)} 个下载线程", fold_code="MT_RUN")
             
             # 启动所有线程
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始启动所有下载线程")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始启动所有下载线程", fold_code="MT_RUN")
             for thread in self.download_threads:
                 thread.start()
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "所有下载线程已启动")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "所有下载线程已启动", fold_code="MT_RUN")
             
             # 等待所有线程完成
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始等待所有下载线程完成")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始等待所有下载线程完成", fold_code="MT_RUN")
             for thread in self.download_threads:
                 thread.join()
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "所有下载线程已完成")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "所有下载线程已完成", fold_code="MT_RUN")
             
             # 检查是否取消
             if self.is_canceled:
-                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载已被取消")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载已被取消", fold_code="MT_RUN")
                 self._cleanup_temp_files()
                 if hasattr(self, 'finished_signal'):
                     self.finished_signal.emit(False)
                 return
             
             # 合并文件
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始合并临时文件")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始合并临时文件", fold_code="MT_RUN")
             self._merge_files()
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "文件合并完成")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "文件合并完成", fold_code="MT_RUN")
             
             # 发送完成信号
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载完成，发送完成信号")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载完成，发送完成信号", fold_code="MT_RUN")
             if hasattr(self, 'finished_signal'):
                 self.finished_signal.emit(True)
                 
         except Exception as e:
-            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"下载过程中发生异常: {str(e)}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"下载过程中发生异常: {str(e)}", fold_code="MT_RUN")
             self._cleanup_temp_files()
             if hasattr(self, 'error_occurred'):
                 self.error_occurred.emit(f"下载异常: {str(e)}")
             if hasattr(self, 'finished_signal'):
                 self.finished_signal.emit(False)
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "异常处理完成")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "异常处理完成", fold_code="MT_RUN")
         finally:
             with self._run_lock:
                 self._is_running = False
                 self._is_finished = True
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载线程执行完成，状态: _is_running={self._is_running}, _is_finished={self._is_finished}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载线程执行完成，状态: _is_running={self._is_running}, _is_finished={self._is_finished}", fold_code="MT_RUN")
 
 
 # ==================== Qt界面部分 ====================
@@ -561,6 +563,7 @@ class ProgressWindow(QWidget):
         
         def on_cancel(self):
             """取消下载"""
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "用户点击取消下载按钮", fold_code="UI_CANCEL")
             self.cancel_clicked.emit()
             self.close()
 
@@ -606,18 +609,24 @@ class MultiThreadDownloader:
     
     def _init_qt(self):
         """初始化Qt环境"""
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "初始化Qt环境", fold_code="MTD_INIT")
         if not QApplication.instance():
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "创建新的QApplication实例", fold_code="MTD_INIT")
             self.app = QApplication(sys.argv)
         else:
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "使用现有的QApplication实例", fold_code="MTD_INIT")
             self.app = QApplication.instance()
         
         # 创建速度监控
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"创建速度监控，线程数={self.thread_num}", fold_code="MTD_INIT")
         self.speed_monitor = SpeedMonitor(self.thread_num)
         
         # 创建进度窗口
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "创建进度窗口", fold_code="MTD_INIT")
         self.progress_window = ProgressWindow(self.thread_num)
         
         # 创建下载工作线程
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "创建下载工作线程", fold_code="MTD_INIT")
         self.download_worker = DownloadWorker(
             url=self.url,
             save_dir=self.save_dir,
@@ -631,16 +640,20 @@ class MultiThreadDownloader:
         # 不设置父对象，由MultiThreadDownloader直接管理生命周期
         
         # 连接信号槽
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "连接信号槽", fold_code="MTD_INIT")
         self.download_worker.progress_updated.connect(self.progress_window.update_progress)
         if self.progress_callback:
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "连接外部进度回调", fold_code="MTD_INIT")
             self.download_worker.progress_updated.connect(self.progress_callback)
         
         # 连接文件大小信号
         if hasattr(self.download_worker, 'file_info_updated'):
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "连接文件大小更新信号", fold_code="MTD_INIT")
             self.download_worker.file_info_updated.connect(self.progress_window.set_file_size)
         
         # 连接线程进度信号
         if hasattr(self.download_worker, 'thread_progress_updated'):
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "连接线程进度更新信号", fold_code="MTD_INIT")
             self.download_worker.thread_progress_updated.connect(self.progress_window.update_thread_progress)
         
         self.speed_monitor.speed_updated.connect(self.progress_window.update_speed)
@@ -649,56 +662,58 @@ class MultiThreadDownloader:
         self.download_worker.error_occurred.connect(self._on_error)
         
         # 定时计算速度
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "启动速度监控定时器", fold_code="MTD_INIT")
         self.speed_timer = QTimer()
         self.speed_timer.timeout.connect(self.speed_monitor.calculate_speed)
         self.speed_timer.start(1000)
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "Qt环境和信号连接完成", fold_code="MTD_INIT")
     
     def _on_download_finished(self, success: bool):
         """下载完成回调"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"收到下载完成信号，结果: {'成功' if success else '失败'}")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"收到下载完成信号，结果: {'成功' if success else '失败'}", fold_code="MTD_FIN")
         self.success = success
         self.is_finished = True  # 设置下载完成标志
         
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "停止速度监控计时器")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "停止速度监控计时器", fold_code="MTD_FIN")
         self.speed_timer.stop()
         
         # 确保线程完成后再清理资源和关闭窗口
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始清理资源")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始清理资源", fold_code="MTD_FIN")
         
         # 先关闭进度窗口
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "立即关闭进度窗口")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "立即关闭进度窗口", fold_code="MTD_FIN")
         if hasattr(self, 'progress_window') and self.progress_window:
             self.progress_window.close()
             self.progress_window = None
         
         if hasattr(self, 'download_worker') and self.download_worker:
             # 等待线程完成
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "等待下载线程完成")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "等待下载线程完成", fold_code="MTD_FIN")
             # 设置最大等待时间为5秒，避免无限等待
             self.download_worker.wait(5000)
             
             # 额外检查线程状态
             if self.download_worker.is_running():
-                debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, "线程仍在运行，尝试强制终止")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, "线程仍在运行，尝试强制终止", fold_code="MTD_FIN")
                 self.download_worker.terminate()
                 self.download_worker.wait(2000)
             # 清理引用
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "清理下载线程引用")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "清理下载线程引用", fold_code="MTD_FIN")
             self.download_worker = None
         
         # 最后显示消息框
         if success:
             filepath = os.path.join(self.save_dir, self.filename)
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载成功，文件路径: {filepath}")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载成功，文件路径: {filepath}", fold_code="MTD_FIN")
 
         else:
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载失败或已取消")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "下载失败或已取消", fold_code="MTD_FIN")
         
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "资源清理完成")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "资源清理完成", fold_code="MTD_FIN")
     
     def _on_error(self, error_msg: str):
         """错误回调"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"收到错误信号: {error_msg}")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.ERROR, f"收到错误信号: {error_msg}", fold_code="MTD_ERR")
         self.success = False
         self.is_finished = True  # 设置下载完成标志
         
@@ -708,51 +723,51 @@ class MultiThreadDownloader:
         
         # 停止速度监控计时器
         if hasattr(self, 'speed_timer') and self.speed_timer:
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "停止速度监控计时器")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "停止速度监控计时器", fold_code="MTD_ERR")
             self.speed_timer.stop()
         
         # 确保线程完成后再清理资源和关闭窗口
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始清理资源")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始清理资源", fold_code="MTD_ERR")
         if hasattr(self, 'download_worker') and self.download_worker:
             # 等待线程完成
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "等待下载线程完成")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "等待下载线程完成", fold_code="MTD_ERR")
             self.download_worker.wait(5000)
             
             # 额外检查线程状态
             if self.download_worker.is_running():
-                debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, "线程仍在运行，尝试强制终止")
+                debug_logger.output("multi_thread_downloader.py", LogLevel.WARNING, "线程仍在运行，尝试强制终止", fold_code="MTD_ERR")
                 self.download_worker.terminate()
                 self.download_worker.wait(2000)
             # 清理引用
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "清理下载线程引用")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "清理下载线程引用", fold_code="MTD_ERR")
             self.download_worker = None
         
         # 关闭进度窗口
         if hasattr(self, 'progress_window') and self.progress_window:
-            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "关闭进度窗口")
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "关闭进度窗口", fold_code="MTD_ERR")
             self.progress_window.close()
             self.progress_window = None
             
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "资源清理完成")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "资源清理完成", fold_code="MTD_ERR")
     
     def start(self) -> bool:
         """启动下载（GUI模式）"""
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始启动下载")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始启动下载", fold_code="MTD_START")
         
         # 初始化Qt
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "初始化Qt环境")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "初始化Qt环境", fold_code="MTD_START")
         self._init_qt()
         
         # 显示进度窗口
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "显示下载进度窗口")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "显示下载进度窗口", fold_code="MTD_START")
         self.progress_window.show()
         
         # 启动下载线程
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "启动下载工作线程")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "启动下载工作线程", fold_code="MTD_START")
         self.download_worker.start()
         
         # 等待下载完成，同时处理Qt事件保持GUI响应
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始等待下载完成")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始等待下载完成", fold_code="MTD_START")
         while not self.is_finished:
             # 处理Qt事件，保持GUI响应
             if self.app:
@@ -760,7 +775,7 @@ class MultiThreadDownloader:
             # 短暂休眠，避免CPU占用过高
             time.sleep(0.1)
         
-        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载完成，返回结果: {self.success}")
+        debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"下载完成，返回结果: {self.success}", fold_code="MTD_START")
         return self.success
     
     def _start_cli(self) -> bool:

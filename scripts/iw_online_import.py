@@ -62,6 +62,7 @@ class AIOCRWorker(QThread):
     
     def run(self):
         try:
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "AIOCRWorker: 开始识别", fold_code="OI_WORKER")
             from openai import OpenAI
             
             client = OpenAI(
@@ -101,6 +102,7 @@ class OnlineImportDialog(QDialog):
     """在线导入对话框"""
     def __init__(self, parent=None, window_size=None):
         super().__init__(parent)
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "初始化 OnlineImportDialog", fold_code="OI_INIT")
         self.window_size = window_size
         self.selected_pdf_url = None
         self.selected_pdf_name = None
@@ -113,7 +115,7 @@ class OnlineImportDialog(QDialog):
         
         # 检查在线导入模式
         self.is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"OnlineImportDialog: is_sei_mode = {self.is_sei_mode}")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"在线导入模式: {'SEI' if self.is_sei_mode else 'GitHub'}", fold_code="OI_INIT")
         
         self.init_ui()
         
@@ -123,14 +125,15 @@ class OnlineImportDialog(QDialog):
         
         # 根据模式初始化
         if not self.is_sei_mode:
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "Loading GitHub mode UI")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在加载 GitHub 模式 UI", fold_code="OI_INIT")
             self.load_root_directory()
         else:
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "Loading SEI mode UI")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在加载 SEI 模式 UI", fold_code="OI_INIT")
             self._init_sei_mode_ui()
     
     def center_on_parent(self):
         """将窗口居中显示在主窗口上"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "将 OnlineImportDialog 居中", fold_code="OI_INIT")
         if self.parent_window:
             parent_geometry = self.parent_window.geometry()
             x = parent_geometry.x() + (parent_geometry.width() - self.width()) // 2
@@ -139,6 +142,7 @@ class OnlineImportDialog(QDialog):
 
     def init_ui(self):
         """初始化UI界面"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "初始化 OnlineImportDialog UI", fold_code="OI_INIT")
         self.setWindowTitle("从教科书中导入 - 选择一本教科书并指定内容：")
         if self.window_size:
             self.setGeometry(self.window_size)
@@ -243,6 +247,7 @@ class OnlineImportDialog(QDialog):
 
     def _init_sei_mode_ui(self):
         """初始化SEI模式的UI"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "初始化 SEI 模式 UI", fold_code="OI_SEI")
         # 隐藏GitHub模式相关的UI元素
         self.back_button.setVisible(False)
         self.refresh_button.setVisible(False)
@@ -270,32 +275,34 @@ class OnlineImportDialog(QDialog):
 
     def _launch_sei_and_show_inputs(self):
         """启动SEI.exe并在结束后显示输入框"""
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, "_launch_sei_and_show_inputs: Starting SEI.exe")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在启动 SmartEduInteract.exe", fold_code="OI_SEI")
         
         try:
             # 启动SmartEduInteract.exe并等待结束
             sei_exe_path = os.path.join(get_app_base_path(), "SEI", "SmartEduInteract.exe")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 路径: {sei_exe_path}", fold_code="OI_SEI")
             if not os.path.exists(sei_exe_path):
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"找不到 SmartEduInteract.exe: {sei_exe_path}", fold_code="OI_SEI")
                 QMessageBox.critical(self, "错误", f"找不到SmartEduInteract.exe\n路径: {sei_exe_path}")
                 return
             
             # 使用新线程运行SEI，避免阻塞主线程
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"_launch_sei_and_show_inputs: Launching {sei_exe_path}")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"启动 SEI 线程: {sei_exe_path}", fold_code="OI_SEI")
             self.status_label.setText("正在呼出智慧教育平台交互窗口...")
             
             self.sei_thread = SEIRunnerThread(sei_exe_path)
             self.sei_thread.finished_signal.connect(self._on_sei_finished)
             self.sei_thread.error_signal.connect(self._on_sei_error)
             self.sei_thread.start()
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "_launch_sei_and_show_inputs: SEI thread started")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "SEI 线程已启动", fold_code="OI_SEI")
             
         except Exception as e:
-            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"_launch_sei_and_show_inputs: Exception - {e}")
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"启动 SmartEduInteract 失败: {e}", fold_code="OI_SEI")
             QMessageBox.critical(self, "错误", f"启动SmartEduInteract失败: {str(e)}")
     
     def _on_sei_finished(self):
         """SEI运行完成后的回调"""
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, "_on_sei_finished: SEI.exe finished")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "SmartEduInteract.exe 运行结束", fold_code="OI_SEI")
         
         # 显示输入框
         self.page_label.setVisible(True)
@@ -307,11 +314,12 @@ class OnlineImportDialog(QDialog):
     
     def _on_sei_error(self, error_msg):
         """SEI.exe出错时的回调"""
-        debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"_on_sei_error: {error_msg}")
+        debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"SmartEduInteract 运行时出错: {error_msg}", fold_code="OI_SEI")
         QMessageBox.critical(self, "错误", f"运行SmartEduInteract失败: {error_msg}")
 
     def _update_fonts(self):
         """更新字体大小"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "更新 OnlineImportDialog 字体大小", fold_code="OI_INIT")
         if not self.parent_window:
             return
             
@@ -334,7 +342,7 @@ class OnlineImportDialog(QDialog):
         global_font = self.parent_window.settings_manager.Custom.get_value("global_font", "微软雅黑") if self.parent_window else "微软雅黑"
         other_font = QFont(global_font, other_font_size)
         
-        #设置所有标签和输入框的字体
+        #设置所有标签 and 输入框的字体
         for widget in [self.path_label, self.status_label, self.page_label, self.extract_label]:
             if widget.isVisible():
                 widget.setFont(other_font)
@@ -357,21 +365,25 @@ class OnlineImportDialog(QDialog):
 
     def load_root_directory(self):
         """加载根目录"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在加载 GitHub 根目录", fold_code="OI_DIR")
         self.current_path = ""
         self.path_history = []
         self.load_directory_contents("")
 
     def load_directory_contents(self, path):
         """加载指定路径的目录内容"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在加载目录内容: {path}", fold_code="OI_DIR")
         self.status_label.setText("正在加载目录内容...")
         self.tree_widget.clear()
         
         try:
             url = f"https://api.github.com/repos/TapXWorld/ChinaTextbook/contents/{path}"
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"发送请求到: {url}", fold_code="OI_DIR")
             
             response = requests.get(url, verify=certifi.where(), timeout=15)
             response.raise_for_status()
             contents = response.json()
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"成功获取目录内容，项目数: {len(contents)}", fold_code="OI_DIR")
             
             #添加目录项
             for item in contents:
@@ -400,8 +412,10 @@ class OnlineImportDialog(QDialog):
             
             self.path_label.setText(f"当前路径: /{path}")
             self.status_label.setText(f"加载完成，共 {len(contents)} 个项目")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"当前路径已更新: /{path}", fold_code="OI_DIR")
             
         except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"加载目录内容失败: {e}", fold_code="OI_DIR")
             self.status_label.setText(f"加载失败: {str(e)}")
             QMessageBox.critical(self, "错误", f"无法加载目录内容: ……{str(e)[0:10]}")
 
@@ -437,10 +451,12 @@ class OnlineImportDialog(QDialog):
         """处理项目双击事件"""
         item_data = item.data(0, Qt.UserRole)
         if not item_data:
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "双击的项目没有关联数据", fold_code="OI_DIR")
             return
             
         if item_data['type'] == 'dir':
             #进入目录
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在进入目录: {item_data['path']}", fold_code="OI_DIR")
             self.path_history.append(self.current_path)
             self.current_path = item_data['path']
             self.back_button.setEnabled(True)
@@ -449,34 +465,44 @@ class OnlineImportDialog(QDialog):
             #选择PDF文件
             self.selected_file_info = item_data['file_info']
             self.selected_pdf_name = item.text(0)
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"已选择 PDF 文件: {self.selected_pdf_name}", fold_code="OI_DIR")
             self.status_label.setText(f"已选择: {self.selected_pdf_name}")
             self.confirm_button.setEnabled(True)
         else:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"未知的项目类型: {item_data.get('type')}", fold_code="OI_DIR")
             self.status_label.setText(f"发生错误，请截图并在github上提交issue（杂项→帮助→Github项目主页）")
 
     def go_back(self):
         """返回上一级目录"""
         if self.path_history:
+            old_path = self.current_path
             self.current_path = self.path_history.pop()
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"返回上一级目录: {old_path} -> {self.current_path}", fold_code="OI_DIR")
             self.load_directory_contents(self.current_path)
             
             if not self.path_history:
                 self.back_button.setEnabled(False)
+        else:
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "已经在根目录，无法返回", fold_code="OI_DIR")
 
     def refresh_current_directory(self):
         """刷新当前目录"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"刷新当前目录: {self.current_path}", fold_code="OI_DIR")
         self.load_directory_contents(self.current_path)
 
     def process_sei_import(self):
         """处理通过SmartEduInteract.exe的在线导入（第二种解决方案）"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "开始处理 SEI 导入流程", fold_code="OI_SEI")
         # 首先检查页码输入
         page_str = self.page_input.text().strip()
         if not page_str or not page_str.isdigit():
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"无效的页码输入: '{page_str}'", fold_code="OI_SEI")
             QMessageBox.warning(self, "提示", "请输入有效页码")
             return
         
         page_number = int(page_str)
         extract_type = self.extract_input.text().strip() or "所有文字"
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 导入参数: 页码={page_number}, 提取内容='{extract_type}'", fold_code="OI_SEI")
         
         loading_dialog = LoadingDialog(self)
         loading_dialog.text_label.setText("正在读取链接信息...")
@@ -486,7 +512,9 @@ class OnlineImportDialog(QDialog):
         try:
             # 1. 读取links.txt文件
             links_txt_path = os.path.join(get_app_base_path(), "SEI", "links.txt")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"读取 SEI 链接文件: {links_txt_path}", fold_code="OI_SEI")
             if not os.path.exists(links_txt_path):
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"找不到 links.txt: {links_txt_path}", fold_code="OI_SEI")
                 loading_dialog.close()
                 QMessageBox.critical(self, "错误", f"找不到links.txt\n路径: {links_txt_path}")
                 return
@@ -494,25 +522,29 @@ class OnlineImportDialog(QDialog):
             # 2. 提取最后一串链接
             last_link = self._extract_last_link_from_file(links_txt_path)
             if not last_link:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "未能从 links.txt 中提取到有效链接", fold_code="OI_SEI")
                 loading_dialog.close()
                 QMessageBox.critical(self, "错误", "未能从links.txt中提取到有效链接")
                 return
             
             # 3. 调用tchMP.parse解析下载链接和标题
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在通过 tchMP 解析下载链接...", fold_code="OI_SEI")
             loading_dialog.text_label.setText("正在解析下载链接...")
             QApplication.processEvents()
             
             download_url, pdf_title, _ = tchMP.parse(last_link, bookmarks=False)
             if not download_url:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "tchMP 解析下载链接失败", fold_code="OI_SEI")
                 loading_dialog.close()
                 QMessageBox.critical(self, "错误", "无法解析下载链接")
                 return
             
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"process_sei_import: PDF title = {pdf_title}")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"解析成功: PDF 标题='{pdf_title}', URL='{download_url}'", fold_code="OI_SEI")
             
             # 4. 确定保存路径和文件名
             downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
             if not os.path.exists(downloads_dir):
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"创建下载目录: {downloads_dir}", fold_code="OI_SEI")
                 os.makedirs(downloads_dir)
             
             # 使用服务器提供的标题作为文件名
@@ -527,21 +559,24 @@ class OnlineImportDialog(QDialog):
                     filename = datetime.now().strftime("%H-%M-%S.pdf")
             
             saved_pdf_path = os.path.join(downloads_dir, filename)
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"目标保存路径: {saved_pdf_path}", fold_code="OI_SEI")
             
             # 5. 检查本地是否已存在该PDF文件
             if os.path.exists(saved_pdf_path):
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, "检测到本地已存在同名 PDF，跳过下载", fold_code="OI_SEI")
                 loading_dialog.close()
                 self.status_label.setText(f"使用本地PDF文件: {saved_pdf_path}")
                 self.process_pdf_with_offset(saved_pdf_path, page_number, extract_type)
                 return
             
             # 5. 使用multi_thread_downloader.download下载文件（使用用户设置的线程数）
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在下载 PDF: {filename}", fold_code="OI_SEI")
             loading_dialog.text_label.setText(f"正在下载: {filename}")
             QApplication.processEvents()
             
             # 获取用户设置的下载线程数
             thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 1
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"process_sei_import: Using thread_num = {thread_num}")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"下载线程数: {thread_num}", fold_code="OI_SEI")
             
             download(
                 url=download_url,
@@ -555,20 +590,24 @@ class OnlineImportDialog(QDialog):
             
             # 6. 检查下载是否成功
             if os.path.exists(saved_pdf_path):
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"PDF 下载成功，保存在: {saved_pdf_path}", fold_code="OI_SEI")
                 self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
                 
                 # 直接使用偏移量处理PDF
                 self.process_pdf_with_offset(saved_pdf_path, page_number, extract_type)
             else:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "PDF 下载失败，未找到文件", fold_code="OI_SEI")
                 QMessageBox.critical(self, "错误", "PDF文件下载失败")
                 
         except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"SEI 导入处理失败: {e}", fold_code="OI_SEI")
             loading_dialog.close()
             QMessageBox.critical(self, "错误", f"处理失败: {str(e)}")
 
     def _extract_last_link_from_file(self, file_path):
         """从links.txt中提取最后一串链接"""
         try:
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"尝试从文件提取链接: {file_path}", fold_code="OI_SEI")
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
@@ -577,20 +616,22 @@ class OnlineImportDialog(QDialog):
             pattern = r'\[\d{2}[-_]\d{2}[-_]\d{2}\s+\d{2}-\d{2}-\d{2}\](https?://[^\s]+)'
             matches = re.findall(pattern, content)
             
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"_extract_last_link_from_file: Found {len(matches)} links")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"提取到 {len(matches)} 个匹配的链接", fold_code="OI_SEI")
             if matches:
-                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"_extract_last_link_from_file: Last link = {matches[-1]}")
-                return matches[-1]
+                last_link = matches[-1]
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用最后一个链接: {last_link}", fold_code="OI_SEI")
+                return last_link
             
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "_extract_last_link_from_file: No links found")
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "未能在文件中找到符合格式的链接", fold_code="OI_SEI")
             return None
         except Exception as e:
-            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"_extract_last_link_from_file: Exception - {e}")
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"提取链接时发生异常: {e}", fold_code="OI_SEI")
             return None
 
     def _extract_filename_from_url(self, url):
         """尝试从URL中提取文件名"""
         try:
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"尝试从 URL 提取文件名: {url}", fold_code="OI_SEI")
             # 尝试从URL路径中提取文件名
             parsed = re.search(r'/([^/]+?)(?:\.pdf)?(?:\?|$)', url)
             if parsed:
@@ -600,44 +641,46 @@ class OnlineImportDialog(QDialog):
                     filename += '.pdf'
                 # 清理文件名中的非法字符
                 filename = re.sub(r'[^\w\-_.]', '_', filename)
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"成功提取文件名: {filename}", fold_code="OI_SEI")
                 return filename
-        except:
-            pass
+        except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"从 URL 提取文件名失败: {e}", fold_code="OI_SEI")
         return None
 
     def process_selection(self):
         """处理选择的文件"""
         # 检查在线导入模式
         is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"process_selection: is_sei_mode = {is_sei_mode}")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"处理确认选择，当前 SEI 模式: {is_sei_mode}", fold_code="OI_CONFIRM")
         
         if is_sei_mode:
             # 智慧教育平台导入模式
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "Calling process_sei_import()")
             self.process_sei_import()
         else:
             # GitHub导入模式（原有逻辑）
             if not hasattr(self, 'selected_file_info'):
+                debug_logger.output("iw_online_import.py", LogLevel.WARNING, "GitHub 模式下未选择文件", fold_code="OI_CONFIRM")
                 QMessageBox.warning(self, "提示", "请先选择PDF文件")
                 return
             
             page_str = self.page_input.text().strip()
             if not page_str or not page_str.isdigit():
+                debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"GitHub 模式下无效页码: '{page_str}'", fold_code="OI_CONFIRM")
                 QMessageBox.warning(self, "提示", "请输入有效页码")
                 return
             
             page_number = int(page_str)  # 用户输入的页码
             
             # 获取提取内容
-            extract_type = self.extract_input.text().strip()
-            if not extract_type:
-                extract_type = "所有文字"
+            extract_type = self.extract_input.text().strip() or "所有文字"
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"GitHub 模式参数: 文件='{self.selected_pdf_name}', 页码={page_number}, 提取内容='{extract_type}'", fold_code="OI_CONFIRM")
             
             # 使用AI OCR处理
             self.process_with_ai_ocr(page_number, extract_type)
 
     def process_with_ai_ocr(self, user_page, extract_type):
         """AI处理PDF"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始 AI OCR 处理流程: 页码={user_page}", fold_code="OI_CONFIRM")
         loading_dialog = LoadingDialog(self)
         text_per_line=int((len(self.selected_pdf_name)-8)/2)
         loading_dialog.text_label.setText(f"正在处理 ……\n{self.selected_pdf_name[8:8+text_per_line]}\n{self.selected_pdf_name[8+text_per_line:9+2*text_per_line]}")  # 显示处理中的PDF名称
@@ -648,13 +691,16 @@ class OnlineImportDialog(QDialog):
             local_pdf_path = self._check_local_pdf(self.selected_pdf_name)
             
             if local_pdf_path:
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用本地缓存 PDF: {local_pdf_path}", fold_code="OI_CONFIRM")
                 self.status_label.setText(f"使用本地PDF: {local_pdf_path}")
                 loading_dialog.close()
                 self.process_pdf_with_offset(local_pdf_path, user_page, extract_type)
             else:
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, "本地无缓存，准备下载 PDF", fold_code="OI_CONFIRM")
                 self._download_pdf_and_process(user_page, extract_type, loading_dialog)
                 
         except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"AI OCR 处理失败: {e}", fold_code="OI_CONFIRM")
             loading_dialog.close()
             QMessageBox.critical(self, "错误", f"处理失败: {str(e)}")
 
@@ -662,36 +708,46 @@ class OnlineImportDialog(QDialog):
         """检查本地是否有同名PDF"""
         try:
             downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"检查本地缓存目录: {downloads_dir}", fold_code="OI_FILE")
             if not os.path.exists(downloads_dir):
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, "本地缓存目录不存在", fold_code="OI_FILE")
                 return None
             
             # 首先尝试直接匹配
             direct_path = os.path.join(downloads_dir, pdf_name)
             if os.path.exists(direct_path):
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"找到直接匹配的本地文件: {direct_path}", fold_code="OI_FILE")
                 return direct_path
             
             # 如果是SEI模式，尝试转换文件名格式
             if self.is_sei_mode:
                 converted_filename = self._convert_sei_filename(pdf_name)
                 converted_path = os.path.join(downloads_dir, converted_filename)
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 模式尝试匹配转换后的文件名: {converted_filename}", fold_code="OI_FILE")
                 if os.path.exists(converted_path):
+                    debug_logger.output("iw_online_import.py", LogLevel.INFO, f"找到转换后匹配的本地文件: {converted_path}", fold_code="OI_FILE")
                     return converted_path
             
             # 最后尝试安全名称匹配
             safe_name = re.sub(r'[^\w\-_.]', '_', pdf_name)
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"尝试安全名称匹配: {safe_name}", fold_code="OI_FILE")
             for filename in os.listdir(downloads_dir):
                 if filename.endswith('.pdf'):
                     local_safe_name = re.sub(r'[^\w\-_.]', '_', filename)
                     if safe_name == local_safe_name:
-                        return os.path.join(downloads_dir, filename)
+                        full_path = os.path.join(downloads_dir, filename)
+                        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"找到安全名称匹配的本地文件: {full_path}", fold_code="OI_FILE")
+                        return full_path
             
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "未找到匹配的本地 PDF 文件", fold_code="OI_FILE")
             return None
         except Exception as e:
-            # 检查本地PDF失败，静默处理
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"检查本地 PDF 失败: {e}", fold_code="OI_FILE")
             return None
 
     def _convert_sei_filename(self, sei_filename):
         """将SEI显示的文件名转换为本地存储的文件名格式"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"转换 SEI 文件名: {sei_filename}", fold_code="OI_FILE")
         # 替换特殊字符为下划线
         converted = sei_filename.replace("（", "_")
         converted = converted.replace("）", "_")
@@ -704,10 +760,12 @@ class OnlineImportDialog(QDialog):
         # 添加.pdf后缀
         if not converted.endswith('.pdf'):
             converted += '.pdf'
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"转换后文件名: {converted}", fold_code="OI_FILE")
         return converted
     
     def _download_pdf_and_process(self, user_page, extract_type, loading_dialog):
         """下载PDF并处理"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "开始 GitHub 模式下载流程", fold_code="OI_FILE")
         try:
             # 检查本地是否已存在PDF文件
             pdf_name = self.selected_file_info.get('name', 'unknown.pdf')
@@ -717,66 +775,72 @@ class OnlineImportDialog(QDialog):
             # 检查本地PDF文件
             local_pdf_path = self._check_local_pdf(pdf_name)
             if local_pdf_path:
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"检测到本地已存在 PDF: {local_pdf_path}", fold_code="OI_FILE")
                 loading_dialog.close()
                 self.status_label.setText(f"使用本地PDF文件: {local_pdf_path}")
                 self.ask_for_page_offset(local_pdf_path, user_page, extract_type)
                 return
             
-            #导入多线程下载模块
-            
-            
             #获取下载URL
             pdf_url = self._get_pdf_download_url(self.selected_file_info)
-            
             # 根据GitHub下载加速设置构建最终下载URL
             final_download_url = self._get_download_url(pdf_url)
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"下载 URL: {final_download_url}", fold_code="OI_FILE")
             
             #获取用户设置的下载线程数
             thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 5
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"下载线程数: {thread_num}", fold_code="OI_FILE")
             
             #使用多线程下载器下载文件
             download(
                 url=final_download_url,
                 save_dir=downloads_dir,
                 filename=pdf_name,
-                thread_num=thread_num,  # 使用用户设置的线程数
-                verify_ssl=False  # 禁用SSL验证以提高兼容性
+                thread_num=thread_num,
+                verify_ssl=False
             )
             
             loading_dialog.close()
             
             if os.path.exists(saved_pdf_path):
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"PDF 下载成功: {saved_pdf_path}", fold_code="OI_FILE")
                 self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
                 #询问实际页码
                 self.ask_for_page_offset(saved_pdf_path, user_page, extract_type)
             else:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "PDF 下载后未找到文件", fold_code="OI_FILE")
                 QMessageBox.critical(self, "错误", "PDF文件保存失败")
                 
         except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"下载 PDF 流程出错: {e}", fold_code="OI_FILE")
             loading_dialog.close()
             QMessageBox.critical(self, "错误", f"下载失败: {str(e)}")
 
     def ask_for_page_offset(self, pdf_path, user_page, extract_type):
         """询问用户页码偏移量"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"弹出页码偏移对话框: {os.path.basename(pdf_path)}", fold_code="OI_FILE")
         dialog = PageOffsetDialog(self, os.path.basename(pdf_path), str(user_page), pdf_path)
         if dialog.exec_() == QDialog.Accepted and dialog.actual_page:
             actual_page = int(dialog.actual_page)
             #计算偏移量
             offset = actual_page - user_page
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"用户设置实际页码: {actual_page}, 偏移量: {offset}", fold_code="OI_FILE")
             #保存偏移量
             self._save_page_offset(os.path.basename(pdf_path), offset)
             #使用实际页码处理PDF
             self.process_single_page(pdf_path, actual_page - 1, extract_type)
+        else:
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "用户取消了页码偏移设置", fold_code="OI_FILE")
 
     def _save_page_offset(self, pdf_name, offset):
         """保存页码偏移量到设置文件"""
         try:
             if self.settings_manager:
                 setting_name = f"pdfOffset_{pdf_name}"
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"保存偏移量: {setting_name}={offset}", fold_code="OI_FILE")
                 self.settings_manager.set_offset_value(setting_name, str(offset))
         except Exception as e:
-            # 保存页码偏移量失败，静默处理
-            pass
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"保存偏移量失败: {e}", fold_code="OI_FILE")
 
     def _get_page_offset(self, pdf_name):
         """从设置文件获取页码偏移量"""
@@ -784,29 +848,34 @@ class OnlineImportDialog(QDialog):
             if self.settings_manager:
                 setting_name = f"pdfOffset_{pdf_name}"
                 offset_str = self.settings_manager.get_offset_value(setting_name, "")
-                if offset_str and offset_str.isdigit():
-                    return int(offset_str)
+                if offset_str and (offset_str.isdigit() or (offset_str.startswith('-') and offset_str[1:].isdigit())):
+                    offset = int(offset_str)
+                    debug_logger.output("iw_online_import.py", LogLevel.INFO, f"获取到保存的偏移量: {setting_name}={offset}", fold_code="OI_FILE")
+                    return offset
             return None
         except Exception as e:
-            # 获取页码偏移量失败，静默处理
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"获取偏移量失败: {e}", fold_code="OI_FILE")
             return None
 
     def process_pdf_with_offset(self, pdf_path, user_page, extract_type):
         """使用偏移量处理PDF"""
         pdf_name = os.path.basename(pdf_path)
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用偏移量处理 PDF: {pdf_name}, 用户输入页码: {user_page}", fold_code="OI_FILE")
         offset = self._get_page_offset(pdf_name)
         
         if offset is not None:
             #有偏移量，直接算页码
             actual_page = user_page + offset
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"应用偏移量 {offset}，实际页码: {actual_page}", fold_code="OI_FILE")
             self.process_single_page(pdf_path, actual_page - 1, extract_type)#0-based索引
         else:
             #没有偏移量，显示对话框让用户确认页码
-            #对话框会在5秒后自动打开PDF，或者用户手动点击"打开PDF"按钮
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, "未找到保存的偏移量，需要询问用户", fold_code="OI_FILE")
             self.ask_for_page_offset(pdf_path, user_page, extract_type)
 
     def _open_pdf_file(self, pdf_path):
         """使用系统默认方式打开PDF文件"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用系统默认方式打开 PDF: {pdf_path}", fold_code="OI_FILE")
         try:
             if sys.platform == "win32":  # Windows
                 os.startfile(pdf_path)
@@ -815,11 +884,11 @@ class OnlineImportDialog(QDialog):
             else:  # Linux
                 os.system(f"xdg-open '{pdf_path}'")
         except Exception as e:
-            # 打开PDF文件失败，静默处理
-            pass
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"打开 PDF 失败: {e}", fold_code="OI_FILE")
 
     def process_single_page(self, pdf_path, page_number, extract_type):
         """处理单页PDF"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始处理单页 PDF: {os.path.basename(pdf_path)}, 索引={page_number}", fold_code="OI_FILE")
         loading_dialog = LoadingDialog(self)
         loading_dialog.text_label.setText(f"正在转换第{page_number+1}页为图片...")
         loading_dialog.show()
@@ -830,20 +899,25 @@ class OnlineImportDialog(QDialog):
             loading_dialog.close()
             
             if image_path:
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"页面已转换为图片: {image_path}", fold_code="OI_FILE")
                 self.process_image_with_ai(image_path, extract_type, pdf_path)
             else:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "PDF 页面转换图片失败", fold_code="OI_FILE")
                 QMessageBox.critical(self, "错误", "PDF页面转换失败")
                 
         except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"处理单页 PDF 异常: {e}", fold_code="OI_FILE")
             loading_dialog.close()
             QMessageBox.critical(self, "错误", f"处理失败: {str(e)}")
 
     def _convert_pdf_page_to_image(self, pdf_path, page_number):
         """将PDF单页转换为图像"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在将 PDF 页转换为图像: {os.path.basename(pdf_path)}, 索引={page_number}", fold_code="OI_FILE")
         try:
             #打开文档
             doc = fitz.open(pdf_path)
             if page_number < 0 or page_number >= doc.page_count:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"页码超出范围: {page_number}, 总页数: {doc.page_count}", fold_code="OI_FILE")
                 doc.close()
                 raise ValueError(f"页码超出范围，共{doc.page_count}页")
             
@@ -861,11 +935,16 @@ class OnlineImportDialog(QDialog):
             doc.close()
             
             #保存图像到临时文件
-            with tempfile.NamedTemporaryFile(dir='./cache/', suffix=f"_page{page_number+1}.png", delete=False) as temp_img:
+            cache_dir = os.path.join(get_app_base_path(), 'cache')
+            os.makedirs(cache_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=cache_dir, suffix=f"_page{page_number+1}.png", delete=False) as temp_img:
                 image.save(temp_img, "PNG", quality=95)
-                return temp_img.name
+                temp_name = temp_img.name
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"临时图片已保存: {temp_name}", fold_code="OI_FILE")
+                return temp_name
             
         except Exception as e:
+            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"PDF 转图像失败: {e}", fold_code="OI_FILE")
             raise Exception(f"PDF页面转图像失败: {str(e)}")
 
     @staticmethod
@@ -906,8 +985,10 @@ class OnlineImportDialog(QDialog):
 
     def process_image_with_ai(self, image_path, extract_type, pdf_path=""):
         """使用AI处理图像"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始 AI 图像识别: 提取类型={extract_type}", fold_code="OI_AI")
         api_key = self.settings_manager.get_api_key("api_key_ChatGLM") if self.settings_manager else ""
         if not api_key:
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "未配置 ChatGLM API Key", fold_code="OI_AI")
             QMessageBox.warning(self, "API Key未设置", "请在设置界面中配置ChatGLM API Key")
             return
         prompt = f"""
@@ -929,6 +1010,7 @@ class OnlineImportDialog(QDialog):
         loading_dialog.show()
         QApplication.processEvents()
         
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"启动 AIOCRWorker, 图片: {image_path}", fold_code="OI_AI")
         self.ai_worker = AIOCRWorker(api_key, image_path, prompt)
         self.ai_worker.finished_signal.connect(lambda text: self.on_ai_finished(text, loading_dialog, image_path))
         self.ai_worker.error_signal.connect(lambda err: self.on_ai_error(err, loading_dialog, image_path))
@@ -936,30 +1018,36 @@ class OnlineImportDialog(QDialog):
 
     def on_ai_finished(self, text, loading_dialog, image_path):
         """AI处理完成"""
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "AI 图像识别成功完成", fold_code="OI_AI")
         loading_dialog.close()
         
         #清理临时图像
         if os.path.exists(image_path):
             try:
                 os.unlink(image_path)
-            except:
-                pass
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"已清理临时图片: {image_path}", fold_code="OI_AI")
+            except Exception as e:
+                debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"清理临时图片失败: {e}", fold_code="OI_AI")
         
         if text:
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"成功获取识别文本，长度: {len(text)}", fold_code="OI_AI")
             self.result_text = text
             self.accept()
         else:
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "AI 未能识别到任何文字", fold_code="OI_AI")
             QMessageBox.warning(self, "提示", "未能识别到文字")
 
     def on_ai_error(self, error_message, loading_dialog, image_path):
         """AI处理错误"""
+        debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"AI 图像识别发生错误: {error_message}", fold_code="OI_AI")
         loading_dialog.close()
         
         #清理临时图像
         if os.path.exists(image_path):
             try:
                 os.unlink(image_path)
-            except:
-                pass
-                    
+                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"已清理临时图片: {image_path}", fold_code="OI_AI")
+            except Exception as e:
+                debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"清理临时图片失败: {e}", fold_code="OI_AI")
+        
         QMessageBox.critical(self, "错误", error_message)

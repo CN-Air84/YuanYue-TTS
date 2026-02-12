@@ -1,5 +1,6 @@
 # coding=utf-8
 import os
+import sys
 import requests
 import certifi
 from PyQt5.QtWidgets import (
@@ -8,12 +9,18 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
+from debug_logger import debug_logger, LogLevel
 
 try:
-    from misc_func import SettingsManager
+    from misc_func import SettingsManager, get_app_base_path
     SETTINGS_AVAILABLE = True
 except ImportError:
     SETTINGS_AVAILABLE = False
+    # 如果导入失败，定义一个后备方案
+    def get_app_base_path():
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.abspath(__file__))
 
 try:
     from iw_dialogs import LoadingDialog
@@ -33,6 +40,7 @@ class PDFDownloadDialog(QDialog):
             window_size: 窗口尺寸
         """
         super().__init__(parent)
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, "初始化PDF下载对话框", fold_code="PDF_INIT")
         self.parent_window = parent
         self.window_size = window_size
         self.selected_file_info = None
@@ -56,6 +64,7 @@ class PDFDownloadDialog(QDialog):
     
     def init_ui(self):
         """初始化用户界面"""
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, "正在构建PDF下载UI界面", fold_code="PDF_INIT")
         self.setWindowTitle("PDF电子书下载")
         if self.window_size:
             self.setGeometry(self.window_size)
@@ -148,6 +157,7 @@ class PDFDownloadDialog(QDialog):
     
     def _update_fonts(self):
         """更新界面字体大小"""
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, "正在计算并更新UI字体适配", fold_code="PDF_INIT")
         current_width = self.width()
         current_height = self.height()
         
@@ -180,11 +190,13 @@ class PDFDownloadDialog(QDialog):
     
     def resizeEvent(self, event):
         """处理窗口大小变化事件"""
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"窗口大小调整: {self.width()}x{self.height()}", fold_code="PDF_INIT")
         self._update_fonts()
         super().resizeEvent(event)
     
     def load_root_directory(self):
         """加载根目录"""
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, "正在加载GitHub仓库根目录", fold_code="PDF_NAV")
         self.current_path = ""
         self.path_history = []
         self.load_directory_contents("")
@@ -196,6 +208,7 @@ class PDFDownloadDialog(QDialog):
         Args:
             path (str): 目录路径
         """
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"加载目录: {path}", fold_code="PDF_NAV")
         self.tree_widget.clear()
         
         try:
@@ -223,8 +236,10 @@ class PDFDownloadDialog(QDialog):
                     self.tree_widget.addTopLevelItem(file_item)
             
             self.path_label.setText(f"当前路径: /{path}")
+            debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"成功解析目录内容: {len(contents)} 项", fold_code="PDF_NAV")
             
         except Exception as e:
+            debug_logger.output("mp_pdf_download.py", LogLevel.ERROR, f"加载目录内容失败: {str(e)}", fold_code="PDF_NAV")
             QMessageBox.critical(self, "错误", f"无法加载目录内容: {str(e)}")
     
     def format_file_size(self, size_bytes):
@@ -260,6 +275,8 @@ class PDFDownloadDialog(QDialog):
         if not item_data:
             return
             
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"双击项目: {item.text(0)} ({item_data['type']})", fold_code="PDF_NAV")
+        
         if item_data['type'] == 'dir':
             self.path_history.append(self.current_path)
             self.current_path = item_data['path']
@@ -274,6 +291,7 @@ class PDFDownloadDialog(QDialog):
         """返回上级目录"""
         if self.path_history:
             self.current_path = self.path_history.pop()
+            debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"返回上级目录: {self.current_path}", fold_code="PDF_NAV")
             self.load_directory_contents(self.current_path)
             
             if not self.path_history:
@@ -281,12 +299,15 @@ class PDFDownloadDialog(QDialog):
     
     def refresh_current_directory(self):
         """刷新当前目录"""
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"手动刷新当前目录: {self.current_path}", fold_code="PDF_NAV")
         self.load_directory_contents(self.current_path)
     
     def browse_save_path(self):
         """浏览保存路径"""
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, "打开保存路径选择对话框", fold_code="PDF_NAV")
         directory = QFileDialog.getExistingDirectory(self, "选择保存路径")
         if directory:
+            debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"选择保存路径: {directory}", fold_code="PDF_NAV")
             if self.selected_pdf_name:
                 full_path = os.path.join(directory, self.selected_pdf_name)
                 self.save_path_input.setText(full_path)
@@ -298,6 +319,8 @@ class PDFDownloadDialog(QDialog):
         if not self.selected_file_info:
             QMessageBox.warning(self, "提示", "请先选择PDF文件")
             return
+        
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"开始下载PDF: {self.selected_pdf_name}", fold_code="PDF_DL")
         
         save_path = self.save_path_input.text().strip()
         if not save_path:
@@ -341,11 +364,13 @@ class PDFDownloadDialog(QDialog):
             msg.setStyleSheet(f"QMessageBox {{ background-color: {background_color}; }} QLabel {{ background-color: transparent; }}")
             msg.exec_()
             
+            debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"PDF下载成功: {save_path}", fold_code="PDF_DL")
             self.accept()
             
         except Exception as e:
             if loading_dialog:
                 loading_dialog.close()
+            debug_logger.output("mp_pdf_download.py", LogLevel.ERROR, f"下载失败: {e}", fold_code="PDF_DL")
             QMessageBox.critical(self, "错误", f"下载失败: {str(e)}")
     
     def get_default_save_path(self):
@@ -355,8 +380,9 @@ class PDFDownloadDialog(QDialog):
         Returns:
             str: 默认保存路径
         """
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, "获取默认保存路径", fold_code="PDF_DL")
         if self.selected_pdf_name:
-            downloads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloaded_pdfs")
+            downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
             os.makedirs(downloads_dir, exist_ok=True)
             return os.path.join(downloads_dir, self.selected_pdf_name)
         return ""
@@ -374,13 +400,18 @@ class PDFDownloadDialog(QDialog):
         Raises:
             Exception: 获取URL失败时抛出异常
         """
+        debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"正在解析 PDF 下载链接: {file_info.get('path', 'unknown')}", fold_code="PDF_DL")
         try:
             if 'download_url' in file_info and file_info['download_url']:
-                return file_info['download_url']
+                url = file_info['download_url']
+                debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"获取到 API 提供的直接下载链接: {url[:50]}...", fold_code="PDF_DL")
+                return url
             
             file_path = file_info['path']
             raw_url = f"https://raw.githubusercontent.com/TapXWorld/ChinaTextbook/main/{file_path}"
+            debug_logger.output("mp_pdf_download.py", LogLevel.INFO, f"回退到原始 Raw 链接: {raw_url[:50]}...", fold_code="PDF_DL")
             return raw_url
             
         except Exception as e:
+            debug_logger.output("mp_pdf_download.py", LogLevel.ERROR, f"解析下载链接失败: {str(e)}", fold_code="PDF_DL")
             raise Exception(f"无法获取PDF下载URL: {str(e)}")

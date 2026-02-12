@@ -1,5 +1,6 @@
 # coding=utf-8
 import os
+import sys
 import requests
 import time
 from PyQt5.QtWidgets import (
@@ -8,12 +9,18 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices
+from debug_logger import debug_logger, LogLevel
 
 try:
-    from misc_func import SettingsManager
+    from misc_func import SettingsManager, get_app_base_path
     SETTINGS_AVAILABLE = True
 except ImportError:
     SETTINGS_AVAILABLE = False
+    # 如果导入失败，定义一个后备方案
+    def get_app_base_path():
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.abspath(__file__))
 
 try:
     from iw_dialogs import LoadingDialog
@@ -43,6 +50,7 @@ class AboutDialog(QDialog):
             parent: 父窗口
         """
         super().__init__(parent)
+        debug_logger.output("mp_about.py", LogLevel.INFO, "正在初始化关于对话框", fold_code="ABOUT_INIT")
         self.parent_window = parent
         self.setWindowTitle("关于")
         self.resize(1080, 1200)
@@ -76,7 +84,7 @@ class AboutDialog(QDialog):
         self.left_background_color = f"#{r:02x}{g:02x}{b:02x}"
         
         self.image_url = "https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon_full_1080%20_inside.png?raw=true"
-        self.cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        self.cache_dir = os.path.join(get_app_base_path(), "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
         self.image_path = os.path.join(self.cache_dir, "icon_full_1080.png")
         
@@ -194,6 +202,7 @@ class AboutDialog(QDialog):
 
     def _apply_dynamic_styles(self):
         """应用动态样式（主要用于文字颜色更新）"""
+        debug_logger.output("mp_about.py", LogLevel.INFO, "正在应用关于对话框动态样式", fold_code="ABOUT_UI")
         from misc_func import SettingsManager
         settings_manager = SettingsManager()
         background_color_hex = settings_manager.get_Custom_value('background_color', '#E5E8EF')
@@ -250,16 +259,21 @@ class AboutDialog(QDialog):
     
     def _download_image(self):
         """后台静默下载图片"""
+        debug_logger.output("mp_about.py", LogLevel.INFO, f"尝试下载关于页面图片: {self.image_url}", fold_code="ABOUT_IMG")
         def download_thread():
             try:
                 final_url = self._get_download_url(self.image_url)
+                debug_logger.output("mp_about.py", LogLevel.INFO, f"正在从 {final_url} 下载图片", fold_code="ABOUT_IMG")
                 response = requests.get(final_url, timeout=30)
                 if response.status_code == 200:
                     with open(self.image_path, 'wb') as f:
                         f.write(response.content)
+                    debug_logger.output("mp_about.py", LogLevel.INFO, f"图片下载成功并保存至: {self.image_path}", fold_code="ABOUT_IMG")
                     QTimer.singleShot(0, self._display_image)
+                else:
+                    debug_logger.output("mp_about.py", LogLevel.WARNING, f"下载图片失败，状态码: {response.status_code}", fold_code="ABOUT_IMG")
             except Exception as e:
-                print(f"下载图片失败: {e}")
+                debug_logger.output("mp_about.py", LogLevel.ERROR, f"下载图片过程中发生异常: {str(e)}", fold_code="ABOUT_IMG")
         
         import threading
         thread = threading.Thread(target=download_thread, daemon=True)
@@ -267,14 +281,21 @@ class AboutDialog(QDialog):
     
     def _display_image(self):
         """显示图片"""
+        debug_logger.output("mp_about.py", LogLevel.INFO, "正在显示关于页面图片", fold_code="ABOUT_IMG")
         if os.path.exists(self.image_path):
             pixmap = QPixmap(self.image_path)
             if not pixmap.isNull():
                 scaled_pixmap = pixmap.scaled(1080, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 self.image_label.setPixmap(scaled_pixmap)
+                debug_logger.output("mp_about.py", LogLevel.INFO, "图片显示成功", fold_code="ABOUT_IMG")
+            else:
+                debug_logger.output("mp_about.py", LogLevel.WARNING, "图片文件无效，无法显示", fold_code="ABOUT_IMG")
+        else:
+            debug_logger.output("mp_about.py", LogLevel.WARNING, "图片文件不存在", fold_code="ABOUT_IMG")
     
     def _get_version_info(self):
         """从VersionInfos获取版本信息"""
+        debug_logger.output("mp_about.py", LogLevel.INFO, "正在获取版本信息", fold_code="ABOUT_VER")
         self.version = "未知版本"
         self.version_date = "未知日期"
         self.update_content = ""
@@ -284,19 +305,23 @@ class AboutDialog(QDialog):
             self.version = version_info.version()
             self.version_date = version_info.update_date()
             self.update_content = version_info.update_content()
+            debug_logger.output("mp_about.py", LogLevel.INFO, f"从 main_window_package 获取到版本: {self.version}", fold_code="ABOUT_VER")
         except ImportError:
             try:
                 from main_window import version_info
                 self.version = version_info.version()
                 self.version_date = version_info.update_date()
                 self.update_content = version_info.update_content()
+                debug_logger.output("mp_about.py", LogLevel.INFO, f"从 main_window 获取到版本: {self.version}", fold_code="ABOUT_VER")
             except (ImportError, AttributeError):
+                debug_logger.output("mp_about.py", LogLevel.WARNING, "无法获取版本信息", fold_code="ABOUT_VER")
                 pass
     
     def _update_fonts(self):
         """更新界面字体大小"""
         current_width = self.width()
         current_height = self.height()
+        debug_logger.output("mp_about.py", LogLevel.INFO, f"正在更新关于对话框字体, 尺寸: {current_width}x{current_height}", fold_code="ABOUT_UI")
         
         DEFAULT_WIDTH = 1280
         DEFAULT_HEIGHT = 1080
@@ -348,11 +373,12 @@ class AboutDialog(QDialog):
         Returns:
             dict: 包含tag_name、browser_download_url、has_pre_release和pre_release_tag_name的字典，失败返回None
         """
+        debug_logger.output("mp_about.py", LogLevel.INFO, "正在请求 GitHub 获取最新发布版本", fold_code="ABOUT_GH")
         # 检查缓存是否有效（5分钟内）
         if self._cached_release_info:
             cached_time = self._cached_release_info.get('timestamp', 0)
             if time.time() - cached_time < self._cache_timeout:
-                print("使用缓存的版本信息")
+                debug_logger.output("mp_about.py", LogLevel.INFO, "使用缓存的 GitHub 版本信息", fold_code="ABOUT_GH")
                 return self._cached_release_info
         
         # 首先尝试获取所有发布版本
@@ -364,10 +390,12 @@ class AboutDialog(QDialog):
                 'User-Agent': 'YuanYue-TTS-Update-Checker'
             }
             
+            debug_logger.output("mp_about.py", LogLevel.INFO, f"正在从 {url} 获取发布版本列表", fold_code="ABOUT_GH")
             response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code == 200:
                 releases = response.json()
+                debug_logger.output("mp_about.py", LogLevel.INFO, f"成功获取发布版本列表, 共 {len(releases)} 个", fold_code="ABOUT_GH")
                 
                 # 过滤掉预发布版本，找到最新的稳定版本
                 stable_releases = []
@@ -386,10 +414,12 @@ class AboutDialog(QDialog):
                 # 如果没有稳定版本，使用最新的预发布版本
                 if not stable_releases and pre_releases:
                     latest_release = pre_releases[0]
+                    debug_logger.output("mp_about.py", LogLevel.INFO, f"未找到稳定版本, 使用最新的预发布版本: {latest_release.get('tag_name')}", fold_code="ABOUT_GH")
                 elif stable_releases:
                     latest_release = stable_releases[0]
+                    debug_logger.output("mp_about.py", LogLevel.INFO, f"找到最新的稳定版本: {latest_release.get('tag_name')}", fold_code="ABOUT_GH")
                 else:
-                    print("没有找到任何发布版本")
+                    debug_logger.output("mp_about.py", LogLevel.WARNING, "GitHub 仓库没有任何发布版本", fold_code="ABOUT_GH")
                     return None
                 
                 # 获取下载链接
@@ -412,13 +442,13 @@ class AboutDialog(QDialog):
                 return self._cached_release_info
                 
             elif response.status_code == 403 and 'rate limit' in response.text.lower():
-                print("GitHub API速率限制，尝试使用备用方案或缓存")
+                debug_logger.output("mp_about.py", LogLevel.WARNING, "GitHub API 速率限制, 尝试备用方案", fold_code="ABOUT_GH")
                 return self._get_latest_release_fallback()
             else:
-                print(f"Error: {response.status_code} - {response.text}")
+                debug_logger.output("mp_about.py", LogLevel.ERROR, f"获取 GitHub 版本信息失败, 状态码: {response.status_code}", fold_code="ABOUT_GH")
                 return self._get_latest_release_fallback()
         except Exception as e:
-            print(f"获取版本信息失败: {e}")
+            debug_logger.output("mp_about.py", LogLevel.ERROR, f"获取 GitHub 版本信息异常: {str(e)}", fold_code="ABOUT_GH")
             return self._get_latest_release_fallback()
     
     def _get_latest_release_fallback(self):
@@ -428,6 +458,7 @@ class AboutDialog(QDialog):
         Returns:
             dict: 包含tag_name、browser_download_url、has_pre_release和pre_release_tag_name的字典，失败返回None
         """
+        debug_logger.output("mp_about.py", LogLevel.INFO, "正在尝试 GitHub 备用获取方案", fold_code="ABOUT_GH")
         url = "https://api.github.com/repos/CN-Air84/YuanYue-TTS/releases/latest"
         try:
             headers = {
@@ -446,6 +477,7 @@ class AboutDialog(QDialog):
                 tag_name = release_info.get('tag_name', '')
                 is_pre_release = release_info.get('prerelease', False) or 'pre' in tag_name.lower()
                 
+                debug_logger.output("mp_about.py", LogLevel.INFO, f"备用方案获取成功: {tag_name}", fold_code="ABOUT_GH")
                 return {
                     'tag_name': tag_name,
                     'browser_download_url': download_url,
@@ -453,31 +485,35 @@ class AboutDialog(QDialog):
                     'pre_release_tag_name': tag_name if is_pre_release else ''
                 }
             elif response.status_code == 403:
-                print("GitHub API速率限制，无法获取版本信息")
+                debug_logger.output("mp_about.py", LogLevel.ERROR, "GitHub API 速率限制, 备用方案亦无法获取", fold_code="ABOUT_GH")
                 return None
             else:
-                print(f"备用方案失败: {response.status_code} - {response.text}")
+                debug_logger.output("mp_about.py", LogLevel.ERROR, f"备用方案获取失败, 状态码: {response.status_code}", fold_code="ABOUT_GH")
                 return None
         except Exception as e:
-            print(f"备用方案获取版本信息失败: {e}")
+            debug_logger.output("mp_about.py", LogLevel.ERROR, f"备用方案获取异常: {str(e)}", fold_code="ABOUT_GH")
             return None
     
     def _get_download_url(self, original_url):
         """根据加速选项获取下载URL"""
+        debug_logger.output("mp_about.py", LogLevel.INFO, f"正在处理加速 URL: {original_url[:50]}...", fold_code="ABOUT_GH")
         from misc_func import SettingsManager
         settings_manager = SettingsManager()
         github_acceleration = settings_manager.get_github_acceleration() if settings_manager else 0
         
+        acc_url = original_url
         if github_acceleration == 1:
-            return f"https://ghfast.top/{original_url}"
+            acc_url = f"https://ghfast.top/{original_url}"
         elif github_acceleration == 2:
-            return f"https://gh-proxy.org/{original_url}"
+            acc_url = f"https://gh-proxy.org/{original_url}"
         elif github_acceleration == 3:
-            return f"https://hk.gh-proxy.org/{original_url}"
+            acc_url = f"https://hk.gh-proxy.org/{original_url}"
         elif github_acceleration == 4:
-            return f"https://edgeone.gh-proxy.org/{original_url}"
-        else:
-            return original_url
+            acc_url = f"https://edgeone.gh-proxy.org/{original_url}"
+            
+        if acc_url != original_url:
+            debug_logger.output("mp_about.py", LogLevel.INFO, f"已应用加速, 最终 URL: {acc_url[:50]}...", fold_code="ABOUT_GH")
+        return acc_url
     
     def compare_versions(self, version1, version2):
         """

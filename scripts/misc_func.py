@@ -55,7 +55,22 @@ class VoiceConfig:
     @classmethod
     def is_valid_voice(cls, voice: str) -> bool:
         """检查音色是否有效"""
-        return voice in cls.EDGE_VOICES and "（" not in voice
+        if not voice:
+            return False
+            
+        # 预处理：去除首尾空格
+        voice = voice.strip()
+        
+        # 1. 检查是否在硬编码列表中（排除分类标题）
+        if voice in cls.EDGE_VOICES and not (voice.startswith("（") or voice.endswith("）")):
+            return True
+            
+        # 2. 检查是否为带 "Neural" 后缀的有效格式
+        if voice.endswith("Neural"):
+            base_voice = voice[:-6]  # 移除 "Neural"
+            return base_voice in cls.EDGE_VOICES and not (base_voice.startswith("（") or base_voice.endswith("）"))
+            
+        return False
     
     @classmethod
     def get_voice_categories(cls) -> Dict[str, List[str]]:
@@ -252,10 +267,17 @@ class AudioConfig:
         
     def _init_default_config(self):
         """初始化默认配置"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, "初始化 AudioConfig 默认配置", fold_code="AC_INIT")
         now = datetime.datetime.now()
 
-        settings_manager = SettingsManager()
-        self.speed = settings_manager.get_default_speed()
+        try:
+            settings_manager = SettingsManager()
+            self.speed = settings_manager.get_default_speed()
+            debug_logger.output("misc_func.py", LogLevel.DEBUG, f"加载默认语速: {self.speed}", fold_code="AC_INIT")
+        except Exception as e:
+            self.speed = 0
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"从设置加载默认语速失败: {str(e)}，已回退至0", fold_code="AC_INIT")
+            
         self.pitch = 0
         self.volume = 0
 
@@ -264,15 +286,18 @@ class AudioConfig:
         self.voice = "（以下为英语音色）"
         self.stretch_factor = 1.0
         self.stretch_enabled = False
+        debug_logger.output("misc_func.py", LogLevel.DEBUG, "AudioConfig 默认状态初始化完毕", fold_code="AC_INIT")
         
     def _generate_default_content(self, now: datetime.datetime) -> str:
         """生成默认文本内容"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, "生成默认文本内容", fold_code="AC_CONTENT")
         return ''
     
     def update_timestamp(self):
         """更新时间戳"""
         now = datetime.datetime.now()
         if "用户没有输入文本" in '123':
+            debug_logger.output("misc_func.py", LogLevel.INFO, "用户未输入文本，更新时间戳内容", fold_code="AC_TIMESTAMP")
             self.content = self._generate_default_content(now)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -290,6 +315,7 @@ class AudioConfig:
     
     def from_dict(self, config_dict: Dict[str, Any]):
         """从字典加载配置"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"从字典加载配置: {len(config_dict)} 个项", fold_code="AC_LOAD")
         for key, value in config_dict.items():
             if hasattr(self, key):
                 setattr(self, key, value)
@@ -315,10 +341,13 @@ class StringConfigSection(ConfigSection):
         try:
             self.settings_manager._load_config()
             if self.section_name in self.settings_manager.config:
-                return self.settings_manager.config[self.section_name].get(key, default)
+                val = self.settings_manager.config[self.section_name].get(key, default)
+                debug_logger.output("misc_func.py", LogLevel.INFO, f"获取配置值: [{self.section_name}] {key} = {val}", fold_code="CFG_GET")
+                return val
             return default
         except Exception as e:
             # 静默处理配置读取错误，返回默认值
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"获取字符串配置失败 [{self.section_name}] {key}: {e}", fold_code="CFG_ERR")
             return default
     
     def set_value(self, key: str, value: str) -> bool:
@@ -328,9 +357,11 @@ class StringConfigSection(ConfigSection):
             if self.section_name not in self.settings_manager.config:
                 self.settings_manager.config[self.section_name] = {}
             self.settings_manager.config[self.section_name][key] = str(value)
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"Set string config: [{self.section_name}] {key}={value}", fold_code="CFG_SET")
             return self.settings_manager._save_config()
         except Exception as e:
             # 静默处理配置设置错误
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"设置字符串配置失败 [{self.section_name}] {key}: {e}", fold_code="CFG_ERR")
             return False
 class IntConfigSection(ConfigSection):
     """整数配置段落"""
@@ -389,7 +420,7 @@ class SettingsManager:
     SECTION_Custom = 'Custom'  # 新增个性化设置段落
     
     def __init__(self):
-        self.config_file = self.CONFIG_FILE
+        self.config_file = os.path.join(get_app_base_path(), self.CONFIG_FILE)
         self.config = configparser.ConfigParser()
         
         # 初始化配置段落管理器
@@ -400,6 +431,7 @@ class SettingsManager:
     
     def _init_config_sections(self):
         """初始化配置段落管理器"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, "初始化配置段落管理器", fold_code="MF_INIT")
         self.api_keys = StringConfigSection(self, self.SECTION_API_KEYS)
         self.default_voices = StringConfigSection(self, self.SECTION_DEFAULT_VOICES)
         self.default_paths = StringConfigSection(self, self.SECTION_DEFAULT_PATHS)
@@ -410,10 +442,12 @@ class SettingsManager:
     def _ensure_config_file(self):
         """确保配置文件存在"""
         if not os.path.exists(self.config_file):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "配置文件不存在，创建默认配置", fold_code="CFG_INIT")
             self._create_default_config()
     
     def _create_default_config(self):
         """创建默认配置文件"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, "正在创建默认配置文件...", fold_code="CFG_CREATE")
         # API Keys 配置
         self.config[self.SECTION_API_KEYS] = {
             'api_key_ChatGLM': '',
@@ -474,7 +508,15 @@ class SettingsManager:
             'text_color': CustomConfig.DEFAULT_COLORS['text_color'],
             'tab_order': 'welcome,dictation,settings,personalization,misc',
             'tab_visibility': 'welcome,dictation,settings,personalization,misc',
-            'initial_tab': 'welcome'
+            'initial_tab': 'welcome',
+            # 默认热键设置 (Qt.Key 枚举值)
+            'hk_toggle_pause': '32',      # Space
+            'hk_seek_backward': '65',     # A
+            'hk_seek_forward': '68',      # D
+            'hk_volume_up': '87',         # W
+            'hk_volume_down': '83',       # S
+            'hk_next_sentence': '16777236',  # Right
+            'hk_prev_sentence': '16777234'   # Left
         }
         
         self._save_config()
@@ -482,47 +524,58 @@ class SettingsManager:
     def _load_config(self):
         """从文件加载配置"""
         try:
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"正在从文件加载配置: {self.config_file}", fold_code="CFG_LOAD")
             self.config.read(self.config_file, encoding='utf-8')
         except Exception as e:
-            debug_logger.output("misc_func.py", LogLevel.ERROR, f"读取配置文件失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"读取配置文件失败: {e}", fold_code="CFG_ERR")
     
     def _save_config(self) -> bool:
         """保存配置到文件"""
         try:
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"正在保存配置到文件: {self.config_file}", fold_code="CFG_SAVE")
             with open(self.config_file, 'w', encoding='utf-8') as configfile:
                 self.config.write(configfile)
             return True
         except Exception as e:
-            debug_logger.output("misc_func.py", LogLevel.ERROR, f"保存配置文件失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"保存配置文件失败: {e}", fold_code="CFG_ERR")
             return False
     
     # API Key 相关方法
     def get_api_key(self, key_name: str) -> str:
         """获取API Key"""
-        return self.api_keys.get_value(key_name, '')
+        val = self.api_keys.get_value(key_name, '')
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取 API Key: {key_name}", fold_code="CFG_API")
+        return val
     
     def set_api_key(self, key_name: str, value: str) -> bool:
         """设置API Key"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置 API Key: {key_name}", fold_code="CFG_API")
         return self.api_keys.set_value(key_name, value)
     
     # 默认音色相关方法
     def get_default_voice(self, index: int) -> str:
         """获取默认音色"""
         key = f'default_voice_{index}'
-        return self.default_voices.get_value(key, 'abc')
+        val = self.default_voices.get_value(key, 'abc')
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取默认音色 {index}: {val}", fold_code="CFG_VOICE")
+        return val
     
     def set_default_voice(self, index: int, value: str) -> bool:
         """设置默认音色"""
         key = f'default_voice_{index}'
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置默认音色 {index}: {value}", fold_code="CFG_VOICE")
         return self.default_voices.set_value(key, value)
     
     # 默认保存路径相关方法
     def get_default_save_path(self) -> str:
         """获取默认保存路径"""
-        return self.default_paths.get_value('default_save_path', '')
+        val = self.default_paths.get_value('default_save_path', '')
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取默认保存路径: {val}", fold_code="CFG_PATH")
+        return val
     
     def set_default_save_path(self, value: str) -> bool:
         """设置默认保存路径"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置默认保存路径: {value}", fold_code="CFG_PATH")
         return self.default_paths.set_value('default_save_path', value)
     
     # 默认参数相关方法
@@ -530,51 +583,68 @@ class SettingsManager:
         """获取默认语速"""
         speed_str = self.default_parameters.get_value('default_speed', '0')
         try:
-            return int(speed_str) if speed_str else 0
+            speed = int(speed_str) if speed_str else 0
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"获取默认语速: {speed}", fold_code="CFG_PARAM")
+            return speed
         except (ValueError, TypeError):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"默认语速解析失败: {speed_str}", fold_code="CFG_ERR")
             return 0
     
     def set_default_speed(self, value: int) -> bool:
         """设置默认语速"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置默认语速: {value}", fold_code="CFG_PARAM")
         return self.default_parameters.set_value('default_speed', str(value))
     
     def get_stretch_factor(self) -> float:
         """获取音频拉伸倍数"""
         stretch_str = self.default_parameters.get_value('stretch_factor', '1.0')
         try:
-            return float(stretch_str) if stretch_str else 1.0
+            factor = float(stretch_str) if stretch_str else 1.0
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"获取拉伸倍数: {factor}", fold_code="CFG_PARAM")
+            return factor
         except (ValueError, TypeError):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"拉伸倍数解析失败: {stretch_str}", fold_code="CFG_ERR")
             return 1.0
     
     def set_stretch_factor(self, value: float) -> bool:
         """设置音频拉伸倍数"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置拉伸倍数: {value}", fold_code="CFG_PARAM")
         return self.default_parameters.set_value('stretch_factor', str(value))
     
     def get_stretch_enabled(self) -> bool:
         """获取音频拉伸开关状态"""
         enabled_str = self.default_parameters.get_value('stretch_enabled', 'False')
-        return enabled_str.lower() == 'true'
+        enabled = enabled_str.lower() == 'true'
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取拉伸启用状态: {enabled}", fold_code="CFG_PARAM")
+        return enabled
     
     def set_stretch_enabled(self, value: bool) -> bool:
         """设置音频拉伸开关状态"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置拉伸启用状态: {value}", fold_code="CFG_PARAM")
         return self.default_parameters.set_value('stretch_enabled', str(value))
     
     # 页码偏移量相关方法
     def set_offset_value(self, key: str, value: str) -> bool:
         """设置页码偏移量"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置页码偏移量: {key}={value}", fold_code="CFG_OFFSET")
         return self.page_offsets.set_value(key, value)
     
     def get_offset_value(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """获取页码偏移量"""
-        return self.page_offsets.get_value(key, default)
+        val = self.page_offsets.get_value(key, default)
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取页码偏移量: {key}={val}", fold_code="CFG_OFFSET")
+        return val
     
     # 个性化设置相关方法（新增）
     def get_Custom_value(self, key: str, default: str = "") -> str:
         """获取个性化设置值"""
-        return self.Custom.get_value(key, default)
+        val = self.Custom.get_value(key, default)
+        # debug_logger.output("misc_func.py", LogLevel.INFO, f"获取个性化设置: {key}={val}", fold_code="CFG_CUSTOM")
+        return val
     
     def set_Custom_value(self, key: str, value: str) -> bool:
         """设置个性化设置值"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置个性化设置: {key}={value}", fold_code="CFG_CUSTOM")
         return self.Custom.set_value(key, value)
     
     # GitHub下载加速相关方法（新增）
@@ -582,12 +652,16 @@ class SettingsManager:
         """获取GitHub下载加速选项"""
         try:
             acceleration_str = self.Custom.get_value('github_acceleration', '0')
-            return int(acceleration_str) if acceleration_str else 0
+            acceleration = int(acceleration_str) if acceleration_str else 0
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"获取GitHub加速选项: {acceleration}", fold_code="CFG_NET")
+            return acceleration
         except (ValueError, TypeError):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "GitHub加速选项解析失败", fold_code="CFG_ERR")
             return 0
     
     def set_github_acceleration(self, value: int) -> bool:
         """设置GitHub下载加速选项"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置GitHub加速选项: {value}", fold_code="CFG_NET")
         return self.Custom.set_value('github_acceleration', str(value))
     
     # 下载线程数相关方法（新增）
@@ -597,8 +671,11 @@ class SettingsManager:
             thread_num_str = self.Custom.get_value('download_thread_num', '5')
             thread_num = int(thread_num_str) if thread_num_str else 5
             # 确保线程数在合理范围内
-            return max(1, min(32, thread_num))
+            final_num = max(1, min(32, thread_num))
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"获取下载线程数: {final_num}", fold_code="CFG_NET")
+            return final_num
         except (ValueError, TypeError):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "下载线程数解析失败", fold_code="CFG_ERR")
             return 5
     
     def set_download_thread_num(self, value: int) -> bool:
@@ -607,7 +684,9 @@ class SettingsManager:
             # 验证输入值
             thread_num = int(value)
             if not 0 < thread_num <= 32:
+                debug_logger.output("misc_func.py", LogLevel.WARNING, f"设置无效的下载线程数: {thread_num}", fold_code="CFG_NET")
                 return False
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"设置下载线程数: {thread_num}", fold_code="CFG_NET")
             return self.Custom.set_value('download_thread_num', str(thread_num))
         except (ValueError, TypeError):
             return False
@@ -622,7 +701,9 @@ class SettingsManager:
         """
         try:
             mode_str = self.Custom.get_value('online_import_mode', 'False')
-            return mode_str.lower() == 'true'
+            mode = mode_str.lower() == 'true'
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"获取在线导入模式: {mode}", fold_code="CFG_NET")
+            return mode
         except Exception:
             return False
     
@@ -635,11 +716,13 @@ class SettingsManager:
         Returns:
             bool: 设置是否成功
         """
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置在线导入模式: {value}", fold_code="CFG_NET")
         return self.Custom.set_value('online_import_mode', str(value))
     
     # 工具方法
     def get_all_settings(self) -> Dict[str, Dict[str, str]]:
         """获取所有设置"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, "获取所有配置项", fold_code="CFG_ALL")
         self._load_config()
         settings = {}
         for section in self.config.sections():
@@ -649,12 +732,13 @@ class SettingsManager:
     def reset_to_defaults(self) -> bool:
         """重置为默认设置"""
         try:
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "正在重置所有配置为默认值", fold_code="CFG_RESET")
             if os.path.exists(self.config_file):
                 os.remove(self.config_file)
             self._create_default_config()
             return True
         except Exception as e:
-            debug_logger.output("misc_func.py", LogLevel.ERROR, f"重置设置失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"重置设置失败: {e}", fold_code="CFG_ERR")
             return False
 class ContentHasher:
     """内容哈希计算器"""
@@ -663,7 +747,9 @@ class ContentHasher:
     def get_content_hash(config: AudioConfig) -> str:
         """获取配置内容的哈希值"""
         content = f"{config.content}_{config.voice}_{config.speed}_{config.pitch}_{config.volume}_{config.stretch_factor}"
-        return hashlib.md5(content.encode('utf-8')).hexdigest()
+        h = hashlib.md5(content.encode('utf-8')).hexdigest()
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"计算内容哈希: {h[:8]}...", fold_code="HASH_CALC")
+        return h
     
     @staticmethod
     def get_cache_key(config: AudioConfig) -> str:
@@ -674,7 +760,9 @@ class ContentHasher:
     def calculate_hash(*args) -> str:
         """计算任意参数的哈希值"""
         content = "_".join(str(arg) for arg in args)
-        return hashlib.md5(content.encode('utf-8')).hexdigest()
+        h = hashlib.md5(content.encode('utf-8')).hexdigest()
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"计算任意参数哈希: {h[:8]}...", fold_code="HASH_CALC")
+        return h
 class AudioFileManager:
     """音频文件管理器"""
     
@@ -683,17 +771,22 @@ class AudioFileManager:
         """生成音频文件名"""
         now = datetime.datetime.now()
         timestamp = now.strftime('%m-%d-%H-%M-%S')
-        return f"{prefix}{timestamp}{extension}"
+        filename = f"{prefix}{timestamp}{extension}"
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"生成音频文件名: {filename}", fold_code="FILE_GEN")
+        return filename
     
     @staticmethod
     def get_default_save_path(config: AudioConfig, settings_manager: SettingsManager) -> Optional[str]:
         """获取默认保存路径"""
         default_save_path = settings_manager.get_default_save_path()
         if not default_save_path:
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "未设置默认保存路径", fold_code="FILE_PATH")
             return None
             
         filename = AudioFileManager.generate_filename()
-        return os.path.join(default_save_path, filename)
+        full_path = os.path.join(default_save_path, filename)
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取完整保存路径: {full_path}", fold_code="FILE_PATH")
+        return full_path
     
     @staticmethod
     def ensure_directory_exists(file_path: str) -> bool:
@@ -701,10 +794,11 @@ class AudioFileManager:
         try:
             directory = os.path.dirname(file_path)
             if directory and not os.path.exists(directory):
+                debug_logger.output("misc_func.py", LogLevel.INFO, f"创建目录: {directory}", fold_code="FILE_DIR")
                 os.makedirs(directory)
             return True
         except Exception as e:
-            debug_logger.output("misc_func.py", LogLevel.ERROR, f"创建目录失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"创建目录失败: {e}", fold_code="FILE_ERR")
             return False
     
     @staticmethod
@@ -712,13 +806,18 @@ class AudioFileManager:
         """检查是否为有效的音频文件"""
         valid_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.flac'}
         _, ext = os.path.splitext(file_path)
-        return ext.lower() in valid_extensions and os.path.exists(file_path)
+        exists = os.path.exists(file_path)
+        is_valid = ext.lower() in valid_extensions and exists
+        if not is_valid and exists:
+             debug_logger.output("misc_func.py", LogLevel.WARNING, f"无效的音频文件扩展名: {ext}", fold_code="FILE_VAL")
+        return is_valid
     
     @staticmethod
     def cleanup_old_files(directory: str, pattern: str, max_files: int = 50) -> int:
         """清理旧文件"""
         try:
             import glob
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"开始清理旧文件: {directory}/{pattern}, 最大保留: {max_files}", fold_code="FILE_CLEAN")
             files = glob.glob(os.path.join(directory, pattern))
             files.sort(key=os.path.getmtime)
             
@@ -730,10 +829,12 @@ class AudioFileManager:
                     deleted_count += 1
                 except OSError:
                     pass
-                    
+            
+            if deleted_count > 0:
+                debug_logger.output("misc_func.py", LogLevel.INFO, f"已清理 {deleted_count} 个旧文件", fold_code="FILE_CLEAN")
             return deleted_count
         except Exception as e:
-            debug_logger.output("misc_func.py", LogLevel.ERROR, f"清理文件失败: {e}")
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"清理文件失败: {e}", fold_code="FILE_ERR")
             return 0
 class InputValidator:
     """输入验证器"""
@@ -742,6 +843,7 @@ class InputValidator:
     def validate_preview_inputs(config: AudioConfig) -> Tuple[bool, str]:  # 改为Tuple
         """验证预览输入参数"""
         if not VoiceConfig.is_valid_voice(config.voice):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"预览验证失败: 音色选择错误 ({config.voice})", fold_code="VAL_PREVIEW")
             return False, "音色选择错误"
         return True, ""
     
@@ -758,9 +860,12 @@ class InputValidator:
         if config.voice == "选项1" or not VoiceConfig.is_valid_voice(config.voice):
             empty_fields.append("语音选项")
         if empty_fields:
-            return False, "请配置以下内容: " + ", ".join(empty_fields)
+            msg = "请配置以下内容: " + ", ".join(empty_fields)
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"生成验证失败: {msg}", fold_code="VAL_GEN")
+            return False, msg
         
         if "（" in config.voice:
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"生成验证失败: 音色选择错误 ({config.voice})", fold_code="VAL_GEN")
             return False, f"音色选择错误"
             
         return True, ""
@@ -782,10 +887,12 @@ class InputValidator:
     def validate_file_path(file_path: str) -> Tuple[bool, str]:  # 改为Tuple
         """验证文件路径"""
         if not file_path:
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "路径验证失败: 路径为空", fold_code="VAL_PATH")
             return False, "文件路径不能为空"
         
         directory = os.path.dirname(file_path)
         if directory and not os.path.exists(directory):
+            debug_logger.output("misc_func.py", LogLevel.WARNING, f"路径验证失败: 目录不存在 ({directory})", fold_code="VAL_PATH")
             return False, f"目录不存在: {directory}"
             
         return True, ""
@@ -794,9 +901,11 @@ class InputValidator:
     def validate_api_key(api_key: str) -> Tuple[bool, str]:  # 改为Tuple
         """验证API Key格式"""
         if not api_key:
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "API Key验证失败: 为空", fold_code="VAL_API")
             return False, "API Key不能为空"
         
         if len(api_key) < 10:
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "API Key验证失败: 长度不足", fold_code="VAL_API")
             return False, "API Key格式不正确"
             
         return True, ""

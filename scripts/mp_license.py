@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QTabWidget, QTextEdit, QHBoxLayout, QPushButton
 )
 from PyQt5.QtGui import QFont
+from debug_logger import debug_logger, LogLevel
 
 try:
     from misc_func import SettingsManager
@@ -21,6 +22,7 @@ class LicenseDialog(QDialog):
             parent: 父窗口
         """
         super().__init__(parent)
+        debug_logger.output("mp_license.py", LogLevel.INFO, "正在初始化许可协议对话框", fold_code="LICENSE_INIT")
         self.parent_window = parent
         self.setWindowTitle("许可协议")
         self.resize(900, 700)
@@ -67,6 +69,7 @@ class LicenseDialog(QDialog):
     
     def _init_ui(self):
         """初始化用户界面"""
+        debug_logger.output("mp_license.py", LogLevel.INFO, "正在初始化许可协议界面组件", fold_code="LICENSE_UI")
         layout = QVBoxLayout()
         layout.setSpacing(10)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -233,6 +236,7 @@ SOFTWARE.
         Returns:
             QTextEdit: 文本编辑控件
         """
+        debug_logger.output("mp_license.py", LogLevel.INFO, f"正在创建许可协议标签页: {title}", fold_code="LICENSE_UI")
         text_edit = QTextEdit()
         text_edit.setPlainText(text)
         text_edit.setReadOnly(True)
@@ -253,6 +257,7 @@ SOFTWARE.
         """更新界面字体大小"""
         current_width = self.width()
         current_height = self.height()
+        debug_logger.output("mp_license.py", LogLevel.INFO, f"正在更新许可协议对话框字体, 尺寸: {current_width}x{current_height}", fold_code="LICENSE_UI")
         
         DEFAULT_WIDTH = 900
         DEFAULT_HEIGHT = 700

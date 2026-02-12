@@ -12,7 +12,7 @@ from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QPixmap, QImage
 
 from misc_func import SettingsManager
-
+from debug_logger import debug_logger, LogLevel
 
 
 class AnimationConfig:
@@ -320,6 +320,7 @@ class PageOffsetDialog(QDialog):
     
     def _open_pdf(self) -> None:
         """手动打开PDF文件"""
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, "用户手动请求打开PDF", fold_code="PDF_OPEN")
         if not self.pdf_opened:
             self._open_pdf_file(self.pdf_path)
             self.pdf_opened = True
@@ -328,6 +329,7 @@ class PageOffsetDialog(QDialog):
     
     def _auto_open_pdf(self) -> None:
         """自动打开PDF文件"""
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, "定时器自动请求打开PDF", fold_code="PDF_OPEN")
         if not self.pdf_opened:
             self._open_pdf_file(self.pdf_path)
             self.pdf_opened = True
@@ -337,6 +339,7 @@ class PageOffsetDialog(QDialog):
     def _open_pdf_file(self, pdf_path: str) -> None:
         """使用系统默认方式打开PDF文件"""
         try:
+            debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"尝试使用系统默认应用打开PDF: {pdf_path}", fold_code="PDF_OPEN")
             if sys.platform == "win32":  # Windows
                 os.startfile(pdf_path)
             elif sys.platform == "darwin":  # Mac
@@ -344,16 +347,19 @@ class PageOffsetDialog(QDialog):
             else:  # Linux
                 os.system(f"xdg-open '{pdf_path}'")
         except Exception as e:
+            debug_logger.output("iw_dialogs.py", LogLevel.ERROR, f"打开PDF文件失败: {e}", fold_code="PDF_OPEN")
             # 打开PDF文件失败，静默处理
             pass
     
     def _confirm(self) -> None:
         """确认按钮处理"""
         page_text = self.page_input.text().strip()
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"用户确认页码输入: {page_text}", fold_code="PAGE_OFFSET")
         if page_text and page_text.isdigit():
             self.actual_page = page_text
             self.accept()
         else:
+            debug_logger.output("iw_dialogs.py", LogLevel.WARNING, "用户输入了无效的页码", fold_code="PAGE_OFFSET")
             QMessageBox.warning(self, "提示", "请输入有效的页码")
 
 
@@ -445,11 +451,13 @@ class ClearConfirmationDialog(QDialog):
     
     def _on_yes_clicked(self) -> None:
         """是按钮点击处理"""
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, "用户确认清空内容", fold_code="CLEAR_CONTENT")
         self.result = True
         self.accept()
     
     def _on_no_clicked(self) -> None:
         """否按钮点击处理"""
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, "用户取消清空内容", fold_code="CLEAR_CONTENT")
         self.result = False
         self.reject()
 
@@ -674,6 +682,7 @@ class MultiImageImportDialog(QDialog):
     def _display_image(self, index: int) -> None:
         """显示指定索引的图片"""
         if 0 <= index < len(self.image_paths):
+            debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"预览图片: 索引 {index}, 路径: {self.image_paths[index]}", fold_code="IMG_IMPORT")
             self.current_preview_index = index
             image_path = self.image_paths[index]
             pixmap = QPixmap(image_path)
@@ -692,6 +701,7 @@ class MultiImageImportDialog(QDialog):
     def _switch_remark_image(self, index: int) -> None:
         """切换右侧备注框显示的图片内容"""
         if 0 <= index < len(self.image_paths):
+            debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"切换备注到图片: 索引 {index}", fold_code="IMG_IMPORT")
             self.current_remark_index = index
             filename = os.path.basename(self.image_paths[index])
             self.remark_title_label.setText(f"图片识别备注 - {filename}")
@@ -704,11 +714,14 @@ class MultiImageImportDialog(QDialog):
     def _on_remark_text_changed(self) -> None:
         """当备注文本框内容变化时保存到对应的存储中"""
         if 0 <= self.current_remark_index < len(self.image_remarks):
+            content_len = len(self.remark_text_edit.toPlainText())
+            # 仅在长度发生显著变化或初次输入时记录，避免过度打洞
             self.image_remarks[self.current_remark_index] = self.remark_text_edit.toPlainText()
 
     def _update_ui_visibility(self) -> None:
         """根据图片数量更新组件可见性"""
         num_images = len(self.image_paths)
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"更新图片导入UI可见性, 图片数量: {num_images}", fold_code="IMG_IMPORT")
         for i in range(5):
             visible = i < num_images
             self.image_select_buttons[i].setVisible(visible)
@@ -728,18 +741,22 @@ class MultiImageImportDialog(QDialog):
 
     def _on_checkbox_state_changed(self, state: int, index: int) -> None:
         """处理复选框状态变化"""
+        is_checked = state == Qt.Checked
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"图片 {index} 导入状态变更: {'启用' if is_checked else '禁用'}", fold_code="IMG_IMPORT")
         # 启用/禁用对应的spinbox
-        self.image_sort_entries[index][2].setEnabled(state == Qt.Checked)
+        self.image_sort_entries[index][2].setEnabled(is_checked)
         # 启用/禁用对应的备注按钮
-        self.image_sort_entries[index][4].setEnabled(state == Qt.Checked)
+        self.image_sort_entries[index][4].setEnabled(is_checked)
 
     def _on_spinbox_value_changed(self, value: int, index: int) -> None:
         """处理SpinBox值变化"""
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"图片 {index} 排序序号变更: {value}", fold_code="IMG_IMPORT")
         # 现在取消联动，不在此处进行处理
         pass
 
     def _start_import(self) -> None:
         """开始导入按钮点击处理"""
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, "点击开始导入按钮", fold_code="IMG_IMPORT")
         self.result_image_paths = []
         self.result_image_remarks = []
         
@@ -754,17 +771,20 @@ class MultiImageImportDialog(QDialog):
                 })
         
         if not enabled_data:
+            debug_logger.output("iw_dialogs.py", LogLevel.WARNING, "未选择任何图片，导入取消", fold_code="IMG_IMPORT")
             QMessageBox.warning(self, "警告", "请至少选择一张图片进行导入。")
             return
 
         # 校验顺序是否连续且唯一
         orders = [item['order'] for item in enabled_data]
         if len(orders) != len(set(orders)):
+            debug_logger.output("iw_dialogs.py", LogLevel.WARNING, f"顺序重复: {orders}", fold_code="IMG_IMPORT")
             QMessageBox.warning(self, "警告", "图片顺序不能重复，请检查。")
             return
         
         expected_orders = list(range(1, len(orders) + 1))
         if sorted(orders) != expected_orders:
+            debug_logger.output("iw_dialogs.py", LogLevel.WARNING, f"顺序不连续: {sorted(orders)}", fold_code="IMG_IMPORT")
             QMessageBox.warning(self, "警告", f"图片顺序必须是连续的，从1到{len(orders)}。当前顺序为: {sorted(orders)}")
             return
 
@@ -775,6 +795,7 @@ class MultiImageImportDialog(QDialog):
         self.result_image_paths = [item['path'] for item in enabled_data]
         self.result_image_remarks = [item['remark'] for item in enabled_data]
         
+        debug_logger.output("iw_dialogs.py", LogLevel.INFO, f"图片导入配置验证通过，准备导入 {len(self.result_image_paths)} 张图片", fold_code="IMG_IMPORT")
         self.accept() # 关闭对话框并返回Accepted
 
     def get_selected_image_paths(self) -> list[str]:

@@ -8,6 +8,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
+from debug_logger import debug_logger, LogLevel
+
 try:
     from misc_func import SettingsManager
     SETTINGS_AVAILABLE = True
@@ -19,6 +21,7 @@ class MoreSettingsDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "初始化更多设置对话框", fold_code="MP_MTD_MORE")
         self.parent_window = parent
         self.setWindowTitle("更多设置")
         self.setFixedSize(400, 300) # 设置固定大小
@@ -37,8 +40,11 @@ class MoreSettingsDialog(QDialog):
         
         self._init_ui()
         self._update_fonts()
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "多线程下载对话框初始化完成", fold_code="MP_MTD_MAIN")
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "更多设置对话框初始化完成", fold_code="MP_MTD_MORE")
     
     def _init_ui(self):
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在构建更多设置UI", fold_code="MP_MTD_MORE")
         # 应用样式
         self._apply_styles()
         
@@ -88,11 +94,13 @@ class MoreSettingsDialog(QDialog):
     
     def resizeEvent(self, event):
         """处理窗口大小变化事件"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"窗口大小调整: {self.width()}x{self.height()}", fold_code="MP_MTD_MORE")
         self._update_fonts()
         super().resizeEvent(event)
     
     def _calculate_font_sizes(self):
         """计算字体大小"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在计算字体大小适配", fold_code="MP_MTD_MORE")
         # 优先参考主窗口的大小进行比例计算
         if self.parent_window:
             current_width = self.parent_window.width()
@@ -129,10 +137,11 @@ class MoreSettingsDialog(QDialog):
                 widget.setFont(other_font)
                 
         except Exception as e:
-            print(f"更新字体时出错: {e}")
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.ERROR, f"更新更多设置对话框字体时出错: {e}", fold_code="MP_MTD_MORE")
     
     def _apply_styles(self):
         """应用与主界面一致的样式"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在为更多设置对话框应用样式", fold_code="MP_MTD_MORE")
         # 获取全局字体设置
         global_font = '微软雅黑'
         background_color = SettingsManager().get_Custom_value("background_color", "#E5E8EF") if SETTINGS_AVAILABLE else "#E5E8EF"
@@ -227,11 +236,13 @@ class MoreSettingsDialog(QDialog):
                 "https": proxy_text
             }
         
-        return {
+        settings = {
             "user_agent": user_agent,
             "proxy": proxy,
             "verify_ssl": verify_ssl
         }
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"更多设置已获取: {settings}", fold_code="MP_MTD_MORE")
+        return settings
 
 
 class MultiThreadDownloadDialog(QDialog):
@@ -239,6 +250,7 @@ class MultiThreadDownloadDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "初始化多线程下载对话框", fold_code="MP_MTD_MAIN")
         self.parent_window = parent
         self.setWindowTitle("多线程高速下载")
         self.setFixedSize(800, 450) # 设置固定大小，禁止用户调整尺寸
@@ -266,6 +278,7 @@ class MultiThreadDownloadDialog(QDialog):
         self._update_fonts()
     
     def _init_ui(self):
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在构建多线程下载UI", fold_code="MP_MTD_MAIN")
         # 应用样式
         self._apply_styles()
         
@@ -343,11 +356,13 @@ class MultiThreadDownloadDialog(QDialog):
     
     def resizeEvent(self, event):
         """处理窗口大小变化事件"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"主下载窗口大小调整: {self.width()}x{self.height()}", fold_code="MP_MTD_MAIN")
         self._update_fonts()
         super().resizeEvent(event)
     
     def _calculate_font_sizes(self):
         """计算字体大小"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在计算主窗口字体大小适配", fold_code="MP_MTD_MAIN")
         # 优先参考主窗口的大小进行比例计算
         if self.parent_window:
             current_width = self.parent_window.width()
@@ -387,10 +402,11 @@ class MultiThreadDownloadDialog(QDialog):
                 widget.setFont(other_font)
                     
         except Exception as e:
-            print(f"更新字体时出错: {e}")
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.ERROR, f"更新下载对话框字体时出错: {e}", fold_code="MP_MTD_MAIN")
     
     def _apply_styles(self):
         """应用与主界面一致的样式"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在为下载对话框应用样式", fold_code="MP_MTD_MAIN")
         # 获取全局字体设置
         background_color = "#E5E8EF"
         
@@ -474,20 +490,26 @@ class MultiThreadDownloadDialog(QDialog):
     
     def _browse_save_path(self):
         """浏览保存路径"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在浏览保存路径", fold_code="MP_MTD_BROWSE")
         path = QFileDialog.getExistingDirectory(self, "选择保存路径", self.path_edit.text())
         if path:
             self.path_edit.setText(path)
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"已选择路径: {path}", fold_code="MP_MTD_BROWSE")
     
     def _show_more_settings(self):
         """显示更多设置对话框"""
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "打开更多设置对话框", fold_code="MP_MTD_MORE")
         dialog = MoreSettingsDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             self.more_settings = dialog.get_settings()
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "更多设置已更新", fold_code="MP_MTD_MORE")
     
     def _start_download(self):
         """开始下载"""
         url = self.url_edit.text().strip()
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"尝试开始下载, URL: {url[:50]}...", fold_code="MP_MTD_START")
         if not url:
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.WARNING, "未输入下载链接", fold_code="MP_MTD_START")
             QMessageBox.warning(self, "错误", "请输入下载链接")
             return
         
@@ -500,25 +522,31 @@ class MultiThreadDownloadDialog(QDialog):
         # 获取保存路径
         save_path = self.path_edit.text().strip() or self.default_save_path
         
+        debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"下载参数: 线程数={thread_num}, 文件名={filename}, 保存路径={save_path}", fold_code="MP_MTD_START")
+        
         # 创建目录（如果不存在）
         try:
-            os.makedirs(save_path, exist_ok=True)
+            if not os.path.exists(save_path):
+                os.makedirs(save_path, exist_ok=True)
+                debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"已创建保存目录: {save_path}", fold_code="MP_MTD_START")
         except Exception as e:
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.ERROR, f"无法创建保存目录: {str(e)}", fold_code="MP_MTD_START")
             QMessageBox.warning(self, "错误", f"无法创建保存目录: {str(e)}")
             return
         
         # 获取文件名
-        filename = self.filename_edit.text().strip()
         if not filename:
             # 尝试从URL提取文件名
             filename = url.split('/')[-1].split('?')[0]
             if not filename:
                 filename = f"download_{int(time.time())}"
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, f"自动提取文件名: {filename}", fold_code="MP_MTD_START")
         
         # 导入多线程下载器
         try:
             from multi_thread_downloader import download
             
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "正在调用底层下载器", fold_code="MP_MTD_START")
             # 开始下载
             success = download(
                 url=url,
@@ -531,12 +559,16 @@ class MultiThreadDownloadDialog(QDialog):
             )
             
             if success:
+                debug_logger.output("mp_multi_thread_download.py", LogLevel.INFO, "下载成功", fold_code="MP_MTD_START")
                 QMessageBox.information(self, "成功", "下载完成！")
                 self.accept()
             else:
+                debug_logger.output("mp_multi_thread_download.py", LogLevel.ERROR, "下载失败", fold_code="MP_MTD_START")
                 QMessageBox.warning(self, "失败", "下载失败，请检查链接和网络设置")
                 
         except ImportError:
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.CRITICAL, "无法导入 multi_thread_downloader", fold_code="MP_MTD_START")
             QMessageBox.critical(self, "错误", "多线程下载模块未找到")
         except Exception as e:
+            debug_logger.output("mp_multi_thread_download.py", LogLevel.ERROR, f"下载过程中发生异常: {str(e)}", fold_code="MP_MTD_START")
             QMessageBox.critical(self, "错误", f"下载过程中发生错误: {str(e)}")

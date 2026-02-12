@@ -24,6 +24,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices
 import certifi
 from shared_memory_manager import get_shared_memory_manager
+from debug_logger import debug_logger, LogLevel
 
 # 导入拆分后的子页面
 from mp_ai_ocr import AIOCRWorker, TextResultDialog
@@ -252,6 +253,7 @@ class MiscPage(QWidget):
     
     def _on_pdf_ebook_download(self):
         """处理PDF电子书下载功能"""
+        debug_logger.output("misc_page.py", LogLevel.INFO, "打开PDF电子书下载对话框", fold_code="MP_PDF")
         if self.parent_window:
             window_rect = self.parent_window.geometry()
             dialog = PDFDownloadDialog(self, window_rect)
@@ -375,6 +377,7 @@ class MiscPage(QWidget):
     
     def _on_multi_thread_download(self):
         """处理多线程下载功能"""
+        debug_logger.output("misc_page.py", LogLevel.INFO, "打开多线程下载对话框", fold_code="MP_MT")
         dialog = MultiThreadDownloadDialog(self)
         dialog.exec_()
     

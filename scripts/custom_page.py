@@ -6,15 +6,101 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
     QLineEdit, QPushButton, QColorDialog, QGroupBox, QFormLayout,
     QSpinBox, QMessageBox, QDoubleSpinBox, QScrollArea, QGridLayout,
-    QFontComboBox
+    QFontComboBox, QSizePolicy, QCheckBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent, QCoreApplication
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent, QCoreApplication, QProcess
 from PyQt5.QtGui import QFont, QColor, QFontDatabase
 
 from misc_func import SettingsManager
 import misc_func
-from audio_preview import KeyboardControlScheme
+from hotkey_manager import HotkeyManager, HotkeyAction
 from shared_memory_manager import get_shared_memory_manager
+from debug_logger import debug_logger, LogLevel
+
+class HotkeyEditButton(QPushButton):
+    """专门用于录制热键的按钮"""
+    hotkey_changed = pyqtSignal(int)
+
+    def __init__(self, key_code, parent=None):
+        super().__init__(parent)
+        self.key_code = key_code
+        self.sdl_binding = None  # (guid, button_id)
+        self.use_sdl_mode = False
+        self.recording = False
+        self._update_text()
+        self.setCheckable(True)
+        self.clicked.connect(self._toggle_recording)
+
+    def set_sdl_mode(self, enabled: bool):
+        self.use_sdl_mode = enabled
+        self.recording = False
+        self.setChecked(False)
+        self._update_text()
+
+    def set_sdl_binding(self, binding):
+        self.sdl_binding = binding
+        self._update_text()
+
+    def _update_text(self):
+        if self.recording:
+            self.setText("请按设备按键..." if self.use_sdl_mode else "请按键盘按键...")
+        else:
+            if self.use_sdl_mode and self.sdl_binding:
+                # 优先显示 SDL 绑定
+                guid, btn_id = self.sdl_binding
+                self.setText(f"Button {btn_id}")
+                self.setToolTip(f"GUID: {guid}\nButton: {btn_id}")
+            elif self.key_code:
+                # 显示 Qt 热键 (作为回退或键盘录入)
+                self.setText(HotkeyManager.key_to_string(self.key_code))
+                self.setToolTip("")
+            else:
+                self.setText("未绑定")
+                self.setToolTip("")
+        
+        # 强制更新样式以确保 :checked 状态生效
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _toggle_recording(self):
+        self.recording = self.isChecked()
+        debug_logger.output("custom_page.py", LogLevel.INFO, f"Hotkey recording toggled: {self.recording} (SDL Mode: {self.use_sdl_mode})", fold_code="CUSTOM_HOTKEY")
+        self._update_text()
+        if self.recording:
+            # 无论什么模式都获取焦点，以便捕获键盘事件
+            self.setFocus()
+        else:
+            self.clearFocus()
+
+    def keyPressEvent(self, event):
+        if self.recording:
+            key = event.key()
+            debug_logger.output("custom_page.py", LogLevel.INFO, f"Key pressed during recording: {key}", fold_code="CUSTOM_HOTKEY")
+            if key == Qt.Key_Escape:
+                debug_logger.output("custom_page.py", LogLevel.INFO, "Hotkey recording cancelled (Escape pressed)", fold_code="CUSTOM_HOTKEY")
+                self.recording = False
+                self.setChecked(False)
+                self._update_text()
+                return
+
+            # 录制键盘按键
+            debug_logger.output("custom_page.py", LogLevel.INFO, f"Hotkey recorded: {key}", fold_code="CUSTOM_HOTKEY")
+            self.key_code = key
+            self.hotkey_changed.emit(key)
+            
+            self.recording = False
+            self.setChecked(False)
+            self._update_text()
+            self.clearFocus()
+        else:
+            super().keyPressEvent(event)
+
+    def focusOutEvent(self, event):
+        if self.recording and not self.use_sdl_mode:
+            self.recording = False
+            self.setChecked(False)
+            self._update_text()
+        super().focusOutEvent(event)
 
 class CustomConfig:
     """个性化配置常量"""
@@ -99,15 +185,20 @@ class CustomConfig:
                     color: #ffffff;
                     font-weight: 500;
                     min-height: 32px;
-                    min-width: 80px;
-                }}
+                min-width: 60px;
+            }}
                 QPushButton:hover {{
                     background-color: #357ABD;
                     border-color: #357ABD;
                 }}
-                QPushButton:pressed {{
-                    background-color: #2E5A8E;
-                    border-color: #2E5A8E;
+                QPushButton:pressed, QPushButton:checked {{
+                    background-color: #1a4a7a;
+                    border-color: #1a4a7a;
+                    color: #FFD700;
+                    font-weight: bold;
+                }}
+                QPushButton:focus {{
+                    border: 2px solid #FFD700;
                 }}
                 QPushButton:disabled {{
                     background-color: #cccccc;
@@ -153,9 +244,6 @@ class CustomConfig:
         }
     
     # 窗口尺寸预设已迁移到misc_func.py中的CustomConfig类
-    
-    # 键盘控制方案选项
-    KEYBOARD_SCHEMES = KeyboardControlScheme.get_all_schemes()
     
     # 默认颜色配置
     DEFAULT_COLORS = {
@@ -363,36 +451,28 @@ class ColorPickerWidget(QWidget):
         return self.color_value
 
 
-class KeyboardControlGroup(QGroupBox):
-    """键盘控制设置组 - 卡片式设计"""
+class HotkeyControlWidget(QGroupBox):
+    """自定义热键设置组 - 卡片式设计"""
     
     def __init__(self, parent=None):
-        super().__init__("键盘控制设置", parent)
+        super().__init__("自定义热键设置", parent)
         self.settings_manager = SettingsManager()
+        self.hotkey_manager = HotkeyManager(self.settings_manager)
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
-        self._load_settings()
         self._apply_card_style()
     
     def _apply_card_style(self):
         """应用卡片样式"""
-        # 获取父窗口的字体大小来计算标题字体大小
-        title_font_size = 14  # 默认标题字体大小
+        title_font_size = 14
         if self.parent() and hasattr(self.parent(), 'parent_window') and self.parent().parent_window:
-            # 计算基于窗口大小的标题字体大小
             current_width = self.parent().parent_window.width()
             current_height = self.parent().parent_window.height()
             base_width = 1024
             base_height = 768
-            
-            width_ratio = current_width / base_width
-            height_ratio = current_height / base_height
-            ratio = (width_ratio + height_ratio) / 2
-            
-            # 标题字体大小范围：12-18px
+            ratio = (current_width / base_width + current_height / base_height) / 2
             title_font_size = max(12, min(18, int(14 * ratio)))
         
-        # 使用动态卡片样式
         card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
         text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
         self.setStyleSheet(CustomConfig.get_dynamic_card_style(title_font_size, card_bg, text_color))
@@ -404,98 +484,208 @@ class KeyboardControlGroup(QGroupBox):
     def _init_ui(self):
         """初始化UI"""
         layout = QVBoxLayout()
-        layout.setSpacing(CustomConfig.SPACING_SYSTEM['md'])  # 添加间距
+        layout.setSpacing(CustomConfig.SPACING_SYSTEM['md'])
         
-        # 获取文字颜色和统一样式
         text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
         component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
         unified_styles = CustomConfig.get_unified_styles(text_color, component_bg)
         
-        # 标题标签
-        title_label = QLabel("选择键盘控制方案:   （注：需要重启软件）")
-        title_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+        # 顶部控制栏：模式切换
+        control_layout = QHBoxLayout()
+        control_layout.setSpacing(CustomConfig.SPACING_SYSTEM['md'])
         
-        # 键盘控制方案选择
-        self.scheme_combo = QComboBox()
-        schemes = KeyboardControlScheme.get_all_schemes()
-        for scheme_id, scheme_name in schemes.items():
-            self.scheme_combo.addItem(scheme_name, scheme_id)
+        # 连接 SDL 信号
+        self.hotkey_manager.sdl_button_pressed.connect(self._on_sdl_input_received)
+        self.hotkey_manager.sdl_devices_updated.connect(self._update_device_combo)
         
-        self.scheme_combo.currentIndexChanged.connect(self._on_scheme_changed)
-        self.scheme_combo.setStyleSheet(unified_styles['combo'])
-        # 安装滚轮事件过滤器
-        self.scheme_combo.installEventFilter(self.wheel_filter)
+        # 读取初始 SDL 模式状态
+        use_sdl_raw = self.settings_manager.Custom.get_value("use_sdl_input", False)
+        # 确保转换为 bool 类型，处理字符串或布尔值
+        if isinstance(use_sdl_raw, str):
+            use_sdl = use_sdl_raw.lower() == 'true'
+        else:
+            use_sdl = bool(use_sdl_raw)
         
-        # 方案说明标签
-        self.scheme_description = QLabel()
-        self.scheme_description.setWordWrap(True)
-        self.scheme_description.setStyleSheet(f"""
-            QLabel {{
-                color: {text_color};
-                font-size: 12px;
-                background-color: #f8f9fa;
-                padding: 8px;
-                border-radius: 6px;
-                border: 1px solid #e9ecef;
-            }}
+        self.sdl_mode_check = QCheckBox("高级监听模式（理论支持所有设备）")
+        self.sdl_mode_check.setStyleSheet(f"color: {text_color}; font-weight: bold;")
+        self.sdl_mode_check.setChecked(use_sdl)
+        self.sdl_mode_check.toggled.connect(self._on_sdl_mode_toggled)
+        
+        # 设备选择下拉框
+        self.device_combo = QComboBox()
+        self.device_combo.setStyleSheet(unified_styles['combo'])
+        self.device_combo.setMinimumWidth(200)
+        self.device_combo.setVisible(use_sdl) # 初始显示状态取决于 SDL 模式
+        self.device_combo.currentIndexChanged.connect(self._on_device_changed)
+        
+        control_layout.addWidget(self.sdl_mode_check)
+        control_layout.addWidget(self.device_combo)
+        control_layout.addStretch()
+        layout.addLayout(control_layout)
+
+        # 热键列表容器
+        hotkey_layout = QGridLayout()
+        hotkey_layout.setSpacing(CustomConfig.SPACING_SYSTEM['sm'])
+        
+        # 定义要显示的热键
+        self.hotkey_actions = [
+            (HotkeyAction.TOGGLE_PAUSE, "播放/暂停"),
+            (HotkeyAction.SEEK_BACKWARD, "快退5秒"),
+            (HotkeyAction.SEEK_FORWARD, "快进5秒"),
+            (HotkeyAction.VOLUME_UP, "增加音量"),
+            (HotkeyAction.VOLUME_DOWN, "降低音量"),
+            (HotkeyAction.NEXT_SENTENCE, "下一句 (听写模式)"),
+            (HotkeyAction.PREV_SENTENCE, "上一句 (听写模式)"),
+        ]
+        
+        self.edit_buttons = {}
+        
+        for i, (action, label_text) in enumerate(self.hotkey_actions):
+            row = i // 3
+            col = (i % 3) * 2
+            
+            label = QLabel(label_text + ":")
+            label.setStyleSheet(f"color: {text_color};")
+            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            
+            key_code = self.hotkey_manager.get_hotkey(action)
+            btn = HotkeyEditButton(key_code)
+            
+            # 初始化 SDL 状态
+            if action in self.hotkey_manager.sdl_bindings:
+                btn.set_sdl_binding(self.hotkey_manager.sdl_bindings[action])
+            btn.set_sdl_mode(use_sdl)
+            
+            btn.setStyleSheet(unified_styles['button']) # 初始应用样式
+            btn.setMinimumWidth(80)
+            btn.hotkey_changed.connect(lambda k, a=action: self._on_hotkey_changed(a, k))
+            
+            hotkey_layout.addWidget(label, row, col)
+            hotkey_layout.addWidget(btn, row, col + 1)
+            self.edit_buttons[action] = btn
+            
+        # 设置列比例
+        for c in range(3):
+            hotkey_layout.setColumnStretch(c * 2, 0)     # 标签列
+            hotkey_layout.setColumnStretch(c * 2 + 1, 1) # 按钮列
+            hotkey_layout.setColumnMinimumWidth(c * 2 + 1, 100)
+            
+        layout.addLayout(hotkey_layout)
+        
+        # 重置按钮布局 - 放在右下角
+        reset_layout = QHBoxLayout()
+        reset_layout.addStretch(1)
+        
+        self.reset_btn = QPushButton("重置")
+        self.reset_btn.clicked.connect(self._reset_to_defaults)
+        
+        # 动态设置宽度为热键按钮最小宽度的 1.25 倍 (80 * 1.25 = 100)
+        self.reset_btn.setMinimumWidth(100)
+        self.reset_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        
+        # 应用红底白字样式
+        self.reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e53935;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+            QPushButton:pressed {
+                background-color: #b71c1c;
+            }
         """)
         
-        layout.addWidget(title_label)
-        layout.addWidget(self.scheme_combo)
-        layout.addWidget(self.scheme_description)
-        layout.addStretch()  # 添加弹性空间
+        reset_layout.addWidget(self.reset_btn)
+        layout.addLayout(reset_layout)
+        
+        layout.addStretch()
         
         self.setLayout(layout)
-        
-        # 更新初始方案说明
-        self._update_scheme_description()
     
-    def _apply_card_style(self):
-        """应用卡片样式"""
+    def _on_hotkey_changed(self, action: HotkeyAction, key_code: int):
+        """热键改变回调，带冲突检测"""
+        # 检查冲突
+        conflict_action = None
+        for a, btn in self.edit_buttons.items():
+            if a != action and btn.key_code == key_code and key_code != 0:
+                conflict_action = a
+                break
+        
+        if conflict_action:
+            action_name = next((name for act, name in self.hotkey_actions if act == action), str(action))
+            conflict_name = next((name for act, name in self.hotkey_actions if act == conflict_action), str(conflict_action))
+            
+            reply = QMessageBox.warning(
+                self, "热键冲突", 
+                f"键位 '{HotkeyManager.key_to_string(key_code)}' 已被 '{conflict_name}' 使用。\n是否要重新分配？",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 清除冲突的热键
+                self.hotkey_manager.set_hotkey(conflict_action, 0)
+                self.edit_buttons[conflict_action].key_code = 0
+                self.edit_buttons[conflict_action]._update_text()
+            else:
+                # 恢复原来的热键
+                old_key = self.hotkey_manager.get_hotkey(action)
+                self.edit_buttons[action].key_code = old_key
+                self.edit_buttons[action]._update_text()
+                return
+
+        # 更新设置
+        self.hotkey_manager.set_hotkey(action, key_code)
+        
+        # 如果设置了键盘热键，则在 SDL 模式下清除对应的 SDL 绑定（避免一个动作对应多个设备造成混乱）
+        # 或者可以选择保留，但为了 UI 逻辑清晰，我们这里选择清除
+        if key_code != 0:
+            self.hotkey_manager.set_sdl_binding(action, "", 0)
+            self.edit_buttons[action].set_sdl_binding(None)
+        
+        # 实时更新样式
         text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        self.setStyleSheet(CustomConfig.get_card_style(text_color))
-        # 设置内边距
-        self.setContentsMargins(
-            CustomConfig.SPACING_SYSTEM['lg'],
-            CustomConfig.SPACING_SYSTEM['lg'],
-            CustomConfig.SPACING_SYSTEM['lg'],
-            CustomConfig.SPACING_SYSTEM['lg']
-        )
-    
+        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+        unified_styles = CustomConfig.get_unified_styles(text_color, component_bg)
+        
+        for btn in self.edit_buttons.values():
+            btn.setStyleSheet(unified_styles['button'])
+
+    def _update_fonts(self, font_family):
+        """应用字体到内部按钮"""
+        font = QFont(font_family)
+        for btn in self.edit_buttons.values():
+            btn.setFont(font)
+        if hasattr(self, 'reset_btn'):
+            self.reset_btn.setFont(font)
+        if hasattr(self, 'sdl_mode_check'):
+            self.sdl_mode_check.setFont(font)
+        if hasattr(self, 'device_combo'):
+            self.device_combo.setFont(font)
+
     def _load_settings(self):
-        """加载设置"""
-        keyboard_scheme = self.settings_manager.Custom.get_value("keyboard_scheme", "1")
-        try:
-            scheme_id = int(keyboard_scheme)
-            index = self.scheme_combo.findData(scheme_id)
-            if index >= 0:
-                self.scheme_combo.setCurrentIndex(index)
-        except (ValueError, TypeError):
-            self.scheme_combo.setCurrentIndex(0)  # 默认方案①
+        """重新加载热键设置（用于重置或外部变更）"""
+        for action, btn in self.edit_buttons.items():
+            key_code = self.hotkey_manager.get_hotkey(action)
+            btn.key_code = key_code
+            btn._update_text()
     
-    def _on_scheme_changed(self, index):
-        """键盘控制方案改变事件"""
-        scheme_id = self.scheme_combo.currentData()
-        self.settings_manager.Custom.set_value("keyboard_scheme", str(scheme_id))
-        
-        # 更新方案说明
-        self._update_scheme_description()
-        
-        # 更新音频预览的键盘控制方案
-        if hasattr(self.parent(), 'parent_window'):
-            self.parent().parent_window.audio_preview.set_keyboard_scheme(scheme_id)
-    
-    def _update_scheme_description(self):
-        """更新方案说明"""
-        scheme_id = self.scheme_combo.currentData()
-        
-        descriptions = {
-            1: "方案①：\n在“生成”选项卡中：空格键暂停/继续，A键回退5秒，W键增加音量，S键降低音量\n在“听写”选项卡中：空格键暂停/继续，A键结束本句播放，D键播放下一句，W键增加音量，S键降低音量",
-            2: "方案②：\n在“生成”选项卡中：右Shift键暂停/继续，方向键控制音量和进度\n在“听写”选项卡中：右Shift键暂停/继续，方向上下增减音量，方向左结束本次播放，方向右播放下一句",
-            3: "方案③：\n在“生成”选项卡中：小键盘0或5暂停/继续，小键盘8和2控制音量，小键盘4回退5秒\n在“听写”选项卡中：小键盘0/5暂停/继续，8/2增减音量，小键盘4结束本次播放，小键盘6播放下一句"
-        }
-        
-        self.scheme_description.setText(descriptions.get(scheme_id, ""))
+    def _reset_to_defaults(self):
+        """重置为默认值"""
+        reply = QMessageBox.question(self, "确认", "确定要将所有热键重置为默认值吗？",
+                                   QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.hotkey_manager.reset_to_defaults()
+            # 更新UI按钮
+            for action, btn in self.edit_buttons.items():
+                key_code = self.hotkey_manager.get_hotkey(action)
+                btn.key_code = key_code
+                btn._update_text()
     
     def _get_combo_box_style(self):
         global_font = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
@@ -518,6 +708,99 @@ class KeyboardControlGroup(QGroupBox):
             height: 0px;
         }}
         """
+
+    def _on_sdl_mode_toggled(self, checked: bool):
+        """切换 SDL 模式"""
+        actual_state = self.hotkey_manager.set_sdl_mode(checked)
+        
+        if checked and not actual_state:
+            # 初始化失败
+            QMessageBox.warning(self, "错误", "无法初始化 SDL2 库。\n请确保已安装 pysdl2 和 pysdl2-dll。\n(pip install pysdl2 pysdl2-dll)")
+            self.sdl_mode_check.blockSignals(True)
+            self.sdl_mode_check.setChecked(False)
+            self.sdl_mode_check.blockSignals(False)
+            return
+        
+        # 显示/隐藏设备选择下拉框
+        self.device_combo.setVisible(actual_state)
+        if actual_state:
+            self._update_device_combo(self.hotkey_manager.sdl_manager.get_connected_devices())
+        
+        # 更新所有按钮模式
+        for action, btn in self.edit_buttons.items():
+            btn.set_sdl_mode(actual_state)
+
+    def _update_device_combo(self, devices: list):
+        """更新设备下拉框列表"""
+        self.device_combo.blockSignals(True)
+        current_guid = self.device_combo.currentData()
+        self.device_combo.clear()
+        
+        self.device_combo.addItem("", None)
+        
+        for dev in devices:
+            self.device_combo.addItem(dev['name'], dev['guid'])
+            
+        # 尝试恢复之前选择的设备
+        index = self.device_combo.findData(current_guid)
+        if index >= 0:
+            self.device_combo.setCurrentIndex(index)
+        else:
+            self.device_combo.setCurrentIndex(0)
+            self.hotkey_manager.target_sdl_device_guid = None
+            
+        self.device_combo.blockSignals(False)
+
+    def _on_device_changed(self, index: int):
+        """设备选择改变"""
+        guid = self.device_combo.currentData()
+        self.hotkey_manager.target_sdl_device_guid = guid
+
+    def _on_sdl_input_received(self, guid: str, button_id: int, device_name: str):
+        """收到 SDL 输入事件"""
+        # 查找当前正在录制的按钮
+        target_action = None
+        target_btn = None
+        
+        for action, btn in self.edit_buttons.items():
+            if btn.recording:
+                target_action = action
+                target_btn = btn
+                break
+        
+        if target_action and target_btn:
+            # 检查冲突
+            conflict_action = None
+            for a, btn in self.edit_buttons.items():
+                if a != target_action and btn.sdl_binding and btn.sdl_binding == (guid, button_id):
+                    conflict_action = a
+                    break
+            
+            if conflict_action:
+                conflict_name = next((name for act, name in self.hotkey_actions if act == conflict_action), str(conflict_action))
+                reply = QMessageBox.warning(
+                    self, "热键冲突", 
+                    f"SDL 按钮已被 '{conflict_name}' 使用。\n是否要重新分配？",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    self.hotkey_manager.set_sdl_binding(conflict_action, "", 0)
+                    self.edit_buttons[conflict_action].set_sdl_binding(None)
+                else:
+                    return
+
+            # 更新绑定
+            self.hotkey_manager.set_sdl_binding(target_action, guid, button_id)
+            target_btn.set_sdl_binding((guid, button_id))
+            
+            # 清除该动作对应的键盘热键，保持单一绑定
+            self.hotkey_manager.set_hotkey(target_action, 0)
+            target_btn.key_code = 0
+            
+            # 结束录制
+            target_btn.recording = False
+            target_btn.setChecked(False)
+            target_btn._update_text()
 
 
 class WindowSizeGroup(QGroupBox):
@@ -714,6 +997,7 @@ class ColorSettingsGroup(QGroupBox):
         if theme_name and theme_name != "自定义":
             # 获取主题颜色
             theme_colors = misc_func.CustomConfig.get_theme_colors(theme_name)
+            debug_logger.output("custom_page.py", LogLevel.INFO, f"Switching to theme: {theme_name}", fold_code="CUSTOM_THEME")
             
             # 应用主题颜色到颜色选择器
             self.background_color.set_color(theme_colors["background"])
@@ -748,11 +1032,13 @@ class ColorSettingsGroup(QGroupBox):
     
     def _apply_theme_to_app(self, theme_colors: dict):
         """应用主题到整个应用程序"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Applying theme to the entire application...", fold_code="CUSTOM_THEME")
         try:
             # 获取主窗口实例
             main_window = self.window()
             if main_window and hasattr(main_window, 'tab_manager'):
                 # 应用主题样式到主窗口
+                debug_logger.output("custom_page.py", LogLevel.INFO, "Applying colors to main window", fold_code="CUSTOM_THEME")
                 self._apply_colors_to_main_window(main_window, theme_colors)
                 
                 # 刷新主窗口主题显示
@@ -761,11 +1047,13 @@ class ColorSettingsGroup(QGroupBox):
                 
                 # 更新所有页面的样式
                 if hasattr(main_window.tab_manager, 'tabs'):
+                    debug_logger.output("custom_page.py", LogLevel.INFO, f"Updating styles for {len(main_window.tab_manager.tabs)} tabs", fold_code="CUSTOM_THEME")
                     for tab_name, tab_widget in main_window.tab_manager.tabs.items():
                         if hasattr(tab_widget, 'setStyleSheet'):
                             self._apply_theme_to_widget(tab_widget, theme_colors)
         except Exception as e:
             # 应用主题时出错，记录日志但不中断程序运行
+            debug_logger.output("custom_page.py", LogLevel.ERROR, f"Error applying theme: {str(e)}", fold_code="CUSTOM_THEME")
             pass
     
     def _apply_colors_to_main_window(self, main_window, theme_colors: dict):
@@ -842,6 +1130,7 @@ class ColorSettingsGroup(QGroupBox):
     
     def _on_color_changed(self, color_key: str, color: str):
         """颜色改变事件"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, f"Color changed: {color_key} -> {color}", fold_code="CUSTOM_THEME")
         # 保存颜色设置
         self.settings_manager.Custom.set_value(color_key, color)
         
@@ -858,6 +1147,7 @@ class ColorSettingsGroup(QGroupBox):
     
     def _load_settings(self):
         """加载颜色设置"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Loading color settings...", fold_code="CUSTOM_THEME")
         # 背景颜色
         bg_color = self.settings_manager.Custom.get_value(
             "background_color", 
@@ -949,7 +1239,7 @@ class FontSettingsGroup(QGroupBox):
         # 全局字体
         self.global_font = QFontComboBox()
         self.global_font.setFontFilters(QFontComboBox.ScalableFonts)  # 只显示可缩放字体
-        self.global_font.setMinimumWidth(200)  # 设置最小宽度
+        self.global_font.setMinimumWidth(150)  # 设置最小宽度
         self.global_font.currentFontChanged.connect(
             lambda font: self.settings_manager.Custom.set_value("global_font", font.family())
         )
@@ -1004,6 +1294,7 @@ class FontSettingsGroup(QGroupBox):
     
     def _load_settings(self):
         """加载设置"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Loading font settings...", fold_code="CUSTOM_FONT")
         # 全局字体
         global_font = self.settings_manager.Custom.get_value(
             "global_font",
@@ -1015,6 +1306,9 @@ class FontSettingsGroup(QGroupBox):
         if global_font in available_families:
             font = font_db.font(global_font, "", 12)
             self.global_font.setCurrentFont(font)
+            debug_logger.output("custom_page.py", LogLevel.INFO, f"Current font set to: {global_font}", fold_code="CUSTOM_FONT")
+        else:
+            debug_logger.output("custom_page.py", LogLevel.WARNING, f"Configured font '{global_font}' not found in system", fold_code="CUSTOM_FONT")
         
         # 最小字号
         min_size = int(self.settings_manager.Custom.get_value(
@@ -1032,6 +1326,7 @@ class FontSettingsGroup(QGroupBox):
     
     def _filter_chinese_fonts(self):
         """过滤并只显示支持中文的字体"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Filtering Chinese fonts...", fold_code="CUSTOM_FONT")
         # 常见的中文字体列表
         chinese_fonts = [
             "微软雅黑", "Microsoft YaHei",
@@ -1160,6 +1455,7 @@ class IndicatorSettingsGroup(QGroupBox):
     
     def _load_settings(self):
         """加载设置"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Loading indicator settings...", fold_code="CUSTOM_INDICATOR")
         # X轴偏移设置
         self.x_offset.setValue(int(self.settings_manager.Custom.get_value(
             "indicator_x_offset",
@@ -1278,6 +1574,7 @@ class AnimationSettingsGroup(QGroupBox):
     
     def _load_settings(self):
         """加载设置"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Loading animation settings...", fold_code="CUSTOM_ANIMATION")
         # 换页动画速度
         self.tab_switch_speed.setValue(int(self.settings_manager.Custom.get_value(
             "tab_switch_speed",
@@ -1575,9 +1872,9 @@ class CustomPage(QWidget):
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setSpacing(15)  # 增加组件间距
         
-        # 键盘控制方案设置（新增）
-        self.keyboard_group = KeyboardControlGroup(self)
-        self.content_layout.addWidget(self.keyboard_group)
+        # 自定义热键设置
+        self.hotkey_group = HotkeyControlWidget(self)
+        self.content_layout.addWidget(self.hotkey_group)
         
         # 窗口尺寸设置
         self.window_size_group = WindowSizeGroup(self)
@@ -1630,6 +1927,14 @@ class CustomPage(QWidget):
         
         self.setLayout(main_layout)
         
+        # 初始组件样式应用
+        groups = [self.hotkey_group, self.window_size_group, 
+                 self.color_group, self.font_group, 
+                 self.indicator_group, self.animation_group, 
+                 self.notification_group]
+        for group in groups:
+            self._update_group_text_styles(group)
+        
         # 初始字体更新
         self._update_fonts()
         
@@ -1647,7 +1952,7 @@ class CustomPage(QWidget):
                 
             if needs_full_update:
                 # 更新所有子分组的卡片样式
-                groups = [self.keyboard_group, self.window_size_group, 
+                groups = [self.hotkey_group, self.window_size_group, 
                          self.color_group, self.font_group, 
                          self.indicator_group, self.animation_group, 
                          self.notification_group]
@@ -1657,6 +1962,10 @@ class CustomPage(QWidget):
                         group._apply_card_style()
                     # 重新应用内部组件样式
                     self._update_group_text_styles(group)
+                
+                # 特别更新热键组按钮样式
+                if hasattr(self.hotkey_group, '_load_settings'):
+                    self.hotkey_group._load_settings()
                 
                 # 更新提示标签颜色
                 if 'text_color' in data:
@@ -1694,6 +2003,8 @@ class CustomPage(QWidget):
                 widget.setStyleSheet(unified_styles['input'])
             elif isinstance(widget, QComboBox):
                 widget.setStyleSheet(unified_styles['combo'])
+            elif isinstance(widget, QPushButton):
+                widget.setStyleSheet(unified_styles['button'])
             elif isinstance(widget, ColorPickerWidget):
                 # ColorPickerWidget 内部也有样式需要更新
                 widget.color_input.setStyleSheet(unified_styles['input'])
@@ -1778,10 +2089,11 @@ class CustomPage(QWidget):
         # 更新所有卡片组的样式
         global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
         card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
-        dynamic_style = CustomConfig.get_dynamic_card_style(title_font_size, card_bg)
+        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+        dynamic_style = CustomConfig.get_dynamic_card_style(title_font_size, card_bg, text_color)
         
         # 应用到各个设置组
-        self.keyboard_group.setStyleSheet(dynamic_style)
+        self.hotkey_group.setStyleSheet(dynamic_style)
         self.window_size_group.setStyleSheet(dynamic_style)
         self.color_group.setStyleSheet(dynamic_style)
         self.font_group.setStyleSheet(dynamic_style)
@@ -1794,10 +2106,12 @@ class CustomPage(QWidget):
         # 应用字体到提示标签
         self.hint_label.setFont(small_font)
         
-        # 应用字体到键盘控制组
-        self.keyboard_group.setFont(font)
-        self.keyboard_group.scheme_combo.setFont(font)
-        self.keyboard_group.scheme_description.setFont(small_font)
+        # 应用字体到热键设置组
+        self.hotkey_group.setFont(font)
+        for btn in self.hotkey_group.edit_buttons.values():
+            btn.setFont(font)
+        if hasattr(self.hotkey_group, 'reset_btn'):
+            self.hotkey_group.reset_btn.setFont(font)
         
         # 应用字体到窗口尺寸组
         self.window_size_group.setFont(font)
@@ -1901,8 +2215,13 @@ class CustomPage(QWidget):
         )
         
         if reply == QMessageBox.Yes:
-            # 重置键盘控制方案
-            self.settings_manager.Custom.set_value("keyboard_scheme", "1")
+            # 重置热键
+            self.hotkey_group.hotkey_manager.reset_to_defaults()
+            # 更新UI按钮
+            for action, btn in self.hotkey_group.edit_buttons.items():
+                key_code = self.hotkey_group.hotkey_manager.get_hotkey(action)
+                btn.key_code = key_code
+                btn._update_text()
             
             # 重置窗口尺寸
             self.settings_manager.Custom.set_value("window_size", "1024x768")
@@ -1929,7 +2248,6 @@ class CustomPage(QWidget):
             self.settings_manager.Custom.set_value("indicator_height_adjust", "0")
             
             # 重新加载设置
-            self.keyboard_group._load_settings()
             self.window_size_group._load_settings()
             self.color_group._load_settings()
             self.font_group._load_settings()
@@ -1946,23 +2264,78 @@ class CustomPage(QWidget):
         self._restart_app()
 
     def _restart_app(self):
-        """重启应用程序"""
+        """重启应用程序 - 修复 PyInstaller 环境下的重启问题"""
         # 获取当前可执行程序路径和参数
-        executable = sys.executable
-        args = sys.argv
+        import subprocess
         
-        # 退出当前应用并启动新进程
-        QCoreApplication.quit()
+        # 获取当前进程的环境变量副本
+        env = os.environ.copy()
         
-        # 使用 os.execv 重启进程
-        # 注意：在 Windows 上可能需要特殊处理，但 os.execv 通常有效
+        # 关键修复：清除 PyInstaller 设置的环境变量
+        # 如果不清除，新进程可能会尝试使用旧进程的临时目录，导致 "Failed to start embedded python interpreter!"
+        # 这是因为新进程继承了旧进程的环境变量（如 PYTHONPATH 和 PYTHONHOME），
+        # 但这些路径指向的是当前进程正在使用的临时目录，重启后的进程应使用自己的独立目录。
+        for var in ['PYTHONPATH', 'PYTHONHOME', '_MEIPASS']:
+            if var in env:
+                env.pop(var)
+        
+        # 针对 Unix/Linux 系统，也需要清理动态库路径
+        for var in ['LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH']:
+            if var in env:
+                env.pop(var)
+        
+        # 确定重启的可执行文件和参数
+        is_frozen = getattr(sys, 'frozen', False)
+        if is_frozen:
+            # 打包后的环境：sys.executable 是 exe 路径
+            executable = sys.executable
+            # 在打包环境下，sys.argv[0] 通常就是可执行文件本身，新进程作为 program 启动时不需要它
+            args = sys.argv[1:]
+        else:
+            # 源码运行环境：sys.executable 是 python.exe，sys.argv[0] 是脚本路径
+            executable = sys.executable
+            args = sys.argv
+            
+        debug_logger.output("custom_page.py", LogLevel.INFO, 
+                          f"正在尝试重启应用。Frozen: {is_frozen}, 可执行文件: {executable}, 参数: {args}")
+
         try:
-            os.execv(executable, [executable] + args)
+            # 使用 subprocess.Popen 启动新进程，并传入清理后的环境
+            if sys.platform == 'win32':
+                # Windows 下使用特定的标志来确保进程完全分离
+                # 0x00000008: DETACHED_PROCESS
+                # 0x00000200: CREATE_NEW_PROCESS_GROUP
+                subprocess.Popen(
+                    [executable] + args, 
+                    env=env,
+                    creationflags=0x00000008 | 0x00000200,
+                    close_fds=True
+                )
+            else:
+                # Unix/Linux 下使用 start_new_session 确保脱离终端会话
+                subprocess.Popen(
+                    [executable] + args, 
+                    env=env,
+                    start_new_session=True
+                )
+            
+            # 成功启动新进程后安全退出当前应用
+            QCoreApplication.quit()
+            sys.exit(0)
+            
         except Exception as e:
-            # 如果 execv 失败，尝试其他方法（例如在 Windows 上使用 subprocess）
-            import subprocess
-            subprocess.Popen([executable] + args)
-            sys.exit()
+            debug_logger.output("custom_page.py", LogLevel.ERROR, 
+                              f"subprocess 重启失败: {str(e)}，尝试 QProcess 备选方案")
+            
+            # 备选方案：使用 Qt 的 startDetached
+            # 注意：Qt 的 startDetached 在某些环境下可能不方便传递修改后的 env，但在 Popen 失败时可作为兜底
+            success = QProcess.startDetached(executable, args)
+            
+            if success:
+                QCoreApplication.quit()
+                sys.exit(0)
+            else:
+                QMessageBox.critical(self, "重启失败", f"无法自动重启程序，请手动重新启动。\n错误: {str(e)}")
     
     def _apply_settings_silently(self):
         """静默应用设置（不弹窗）"""
@@ -2007,7 +2380,15 @@ class CustomPage(QWidget):
             'global_font': self.settings_manager.Custom.get_value("global_font", "微软雅黑"),
             'min_font_size': self.settings_manager.Custom.get_value("min_font_size", "22"),
             'max_font_size': self.settings_manager.Custom.get_value("max_font_size", "42"),
-            'keyboard_scheme': self.settings_manager.Custom.get_value("keyboard_scheme", "1"),
+            'hotkeys': {
+                action: self.settings_manager.Custom.get_value(f"hk_{action}", "")
+                for action in [
+                    HotkeyAction.TOGGLE_PAUSE, HotkeyAction.SEEK_BACKWARD,
+                    HotkeyAction.SEEK_FORWARD, HotkeyAction.VOLUME_UP,
+                    HotkeyAction.VOLUME_DOWN, HotkeyAction.NEXT_SENTENCE,
+                    HotkeyAction.PREV_SENTENCE
+                ]
+            },
             'notification_colors': {
                 'info': self.settings_manager.Custom.get_value("info_color", CustomConfig.DEFAULT_COLORS["notification_info"]),
                 'warning': self.settings_manager.Custom.get_value("warning_color", CustomConfig.DEFAULT_COLORS["notification_warning"]),
@@ -2053,7 +2434,7 @@ class CustomPage(QWidget):
         """重新加载页面以应用最新设置"""
         try:
             # 重新加载所有设置
-            self.keyboard_group._load_settings()
+            # HotkeyControlWidget 自动处理热键加载，不需要手动调用 _load_settings
             self.window_size_group._load_settings()
             self.color_group._load_settings()
             self.font_group._load_settings()
@@ -2069,14 +2450,14 @@ class CustomPage(QWidget):
             pass
     
     def _get_button_style(self):
-        """获取按钮样式 - 使用用户设置的字体"""
-        # 获取用户设置的字体
+        """获取按钮样式 - 使用统一样式"""
+        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
+        unified_styles = CustomConfig.get_unified_styles(text_color, component_bg)
+        
+        # 获取全局字体设置并注入样式
         global_font_name = self.settings_manager.Custom.get_value("global_font", "微软雅黑")
-        return f"""
-            QPushButton {{
-                font-family: "{global_font_name}"; background-color: white; color: black;
-                border: 2px solid gray; border-radius: 5px; font-weight: bold;
-                padding: 8px 16px;
-            }}
-            QPushButton:hover {{ background-color: #f0f0f0; }}
-        """
+        style = unified_styles['button']
+        # 在 QPushButton { ... } 中添加字体设置
+        style = style.replace("QPushButton {", f'QPushButton {{ font-family: "{global_font_name}";')
+        return style

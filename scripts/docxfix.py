@@ -20,6 +20,7 @@ import os
 import zipfile
 from typing import List, Optional
 from lxml import etree
+from debug_logger import debug_logger, LogLevel
 
 
 class DocxNamespaceManager:
@@ -67,16 +68,22 @@ class DocxFileHandler:
             zipfile.BadZipFile: 不是有效的ZIP文件
             etree.XMLSyntaxError: XML解析错误
         """
+        debug_logger.output("docxfix.py", LogLevel.INFO, f"正在打开 DOCX 文件: {file_path}", fold_code="DOCX_OPEN")
         if not os.path.exists(file_path):
+            debug_logger.output("docxfix.py", LogLevel.ERROR, f"DOCX 文件不存在: {file_path}", fold_code="DOCX_OPEN")
             raise FileNotFoundError(f"文件不存在: {file_path}")
         
         try:
             with zipfile.ZipFile(file_path) as docx_zip:
                 xml_content = docx_zip.read('word/document.xml')
-                return etree.fromstring(xml_content)
+                tree = etree.fromstring(xml_content)
+                debug_logger.output("docxfix.py", LogLevel.INFO, "成功解析 document.xml", fold_code="DOCX_OPEN")
+                return tree
         except zipfile.BadZipFile as e:
+            debug_logger.output("docxfix.py", LogLevel.ERROR, f"无效的 DOCX 文件 (ZIP 错误): {file_path}", fold_code="DOCX_OPEN")
             raise zipfile.BadZipFile(f"不是有效的DOCX文件: {file_path}") from e
         except etree.XMLSyntaxError as e:
+            debug_logger.output("docxfix.py", LogLevel.ERROR, f"DOCX XML 解析错误: {file_path}", fold_code="DOCX_OPEN")
             raise etree.XMLSyntaxError(f"XML解析错误: {file_path}") from e
 
 
@@ -151,15 +158,19 @@ class Document:
     def _parse_paragraphs(self) -> None:
         """解析文档中的所有段落"""
         if self._document_element is None:
+            debug_logger.output("docxfix.py", LogLevel.WARNING, "无法解析段落: 文档元素为空", fold_code="DOCX_PARSE")
             return
         
         self._paragraphs = []
         paragraph_tag = DocxNamespaceManager.get_tag_with_namespace('w', 'p')
         
+        debug_logger.output("docxfix.py", LogLevel.INFO, "正在遍历解析 DOCX 段落...", fold_code="DOCX_PARSE")
         for element in self._document_element.iter():
             if element.tag == paragraph_tag:
                 paragraph = Paragraph(element)
                 self._paragraphs.append(paragraph)
+        
+        debug_logger.output("docxfix.py", LogLevel.INFO, f"段落解析完成, 共提取 {len(self._paragraphs)} 个段落", fold_code="DOCX_PARSE")
     
     @property
     def paragraphs(self) -> List[Paragraph]:
@@ -179,9 +190,12 @@ class Document:
             str: 文档的完整文本内容
         """
         if not self.paragraphs:
+            debug_logger.output("docxfix.py", LogLevel.WARNING, "提取文本为空: 无有效段落", fold_code="DOCX_EXTRACT")
             return ''
         
-        return separator.join(paragraph.text for paragraph in self.paragraphs)
+        full_text = separator.join(paragraph.text for paragraph in self.paragraphs)
+        debug_logger.output("docxfix.py", LogLevel.INFO, f"成功提取文档文本, 总长度: {len(full_text)} 字符", fold_code="DOCX_EXTRACT")
+        return full_text
     
     def __len__(self) -> int:
         """获取段落数量"""
