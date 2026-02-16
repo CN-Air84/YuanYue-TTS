@@ -2,14 +2,13 @@
 <img width="2560" height="1440" alt="icon_with_title_2k" src="https://github.com/user-attachments/assets/20e871bd-e9a5-456b-8d4b-3a6561a638c7" />
 <div align="center">
 
-给孩子点个Star吧球球你们了( ´•̥̥̥ω•̥̥̥` )
-
-[中文](#)|[English Lite-Version](docs/readme_En_without_pics.md)
 
 
-本文档还在持续更新中
+每周六/日更新|已持续更新约四个月|给孩子点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
-如果你觉得这个工具好用, 可以点一个Star或者分享给你的朋友!
+
+
+
 
 [基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
 
