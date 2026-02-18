@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# <image src="https://github.com/CN-Air84/CN-Air84.github.io/blob/main/YuanYue-TTS/ico/icon_with_title_1080p.png" height=256 width=256>
+# 源悦TTS
 	
 <img width="1536" height="512" alt="横幅" src="https://github.com/user-attachments/assets/36c770af-6fde-47ca-ac5d-9ac9e836873f" />
 
