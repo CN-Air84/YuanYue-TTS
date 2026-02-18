@@ -54,7 +54,7 @@
 有效 **利用起听觉** 这一原先空闲的感官， **节省了抬头看书所需的时间** 。
 
 <details>
-  <summary> **顺便还能把内容大致背下来。** </summary>
+  <summary>**顺便还能把内容大致背下来。**</summary>
   
   1. Kang, S., & Pyun, J. (2014). Dictation vs. copying: Effects on vocabulary retention. Journal of Language Teaching and Research, 5(3), 567–574.
 ​
