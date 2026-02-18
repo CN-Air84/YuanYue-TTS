@@ -4,33 +4,27 @@
 
 
 
--大标题
 
 # 源悦TTS
 	
 
 
 
--横幅
 
 <img width="1536" height="512" alt="横幅" src="https://github.com/user-attachments/assets/36c770af-6fde-47ca-ac5d-9ac9e836873f" />
 
 
 
--备注
 
 每周六/日更新|已持续更新约四个月|给孩子点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
 
-
--使用说明（堂吉诃德和汤汤看了都能懂的那种）
 
 [基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
 
 
 
 
--溶浴勋章
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
 [![下载量](https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total?style=social&label=下载量&logo=github)](https://github.com/CN-Air84/YuanYue-TTS/releases/latest)
