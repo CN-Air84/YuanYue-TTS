@@ -49,29 +49,49 @@
 
 ## 为什么选择源悦TTS
 
-市面上常见的传统TTS软件**大多是针对音视频内容创作者、视障与阅读障碍群体和有声内容消费者**所开发的，
-
-**几乎不会考虑学生群体的使用体验。**
-
-而我们发掘出“语音转文字”的新使用场景——
-
-**“抄写”**。
-
 **传统的抄写方式**，就是把课本立起来，下面放一张纸，手里拿一支笔。举头看课本，低头抄内容。
 
 **效率低下，耗时长，而且还需要再花时间背诵**。
 
-与此同时，源悦TTS通过研判学生群体使用TTS工具时的各种场景，
+基于此，我们发掘出传统“语音转文字”技术的船新使用场景——
+
+**“抄写”**。
+
+把需要抄写的内容转化为音频，**把“抄写”转化为“听写”，
+
+有效**利用起听觉**这一原先空闲的感官，**节省了抬头看书所需的时间**。
+
+<details>
+  <summary>**顺便还能把内容大致背下来。</summary>
+  
+  1. Kang, S., & Pyun, J. (2014). Dictation vs. copying: Effects on vocabulary retention. Journal of Language Teaching and Research, 5(3), 567–574.
+​
+2. Laufer, B., & Girsai, S. (2022). Learning multiword items through dictation and dictogloss. Language Teaching Research, 26(6), 1362–1388.
+​
+3. Ding, Y., Li, L. P., & Wu, X. C. (2025). The role of morphological awareness and rapid naming in Chinese character dictation and copying. Journal of Psychological Science, 48(4), 678–685.
+
+
+</details>
+
+与此同时，市面上常见的传统TTS软件**大多是针对音视频内容创作者、视障与阅读障碍群体和有声内容消费者**所开发的，
+
+**几乎不会考虑学生群体的使用体验。**
+
+因此，源悦TTS通过研判学生群体使用TTS工具时的各种场景，
 
 **推出了诸多[客制化功能](#核心亮点)，**
 
 并尝试通过**削减不必要的各类视觉元素**和**适当牺牲界面美观度**，
+
+**使程序界面一目了然，使程序功能便捷易用**
 
 **让程序适应用户，而不是让用户适应程序**，
 
 极大限度地缩短“磨合期”，提升人机交互效率，
 
 并以此 **助力学生快速完成抄写作业**，同时**辅助用户记忆知识点**，缩短背诵所需时间。
+
+
 
 </div>
 
