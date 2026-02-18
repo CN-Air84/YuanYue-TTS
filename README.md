@@ -58,9 +58,13 @@
   
   1. Kang, S., & Pyun, J. (2014). Dictation vs. copying: Effects on vocabulary retention. Journal of Language Teaching and Research, 5(3), 567–574.
 ​
+
 2. Laufer, B., & Girsai, S. (2022). Learning multiword items through dictation and dictogloss. Language Teaching Research, 26(6), 1362–1388.
 ​
+
 3. Ding, Y., Li, L. P., & Wu, X. C. (2025). The role of morphological awareness and rapid naming in Chinese character dictation and copying. Journal of Psychological Science, 48(4), 678–685.
+
+或许您觉得听音频能辅助背诵这件事有些“扯淡”，因而引用此三篇论文以佐证上文。
 
 
 </details>
