@@ -1,47 +1,43 @@
 
 <div align="center">
 
+
+
+
+-大标题
+
 # 源悦TTS
 	
+
+
+
+-横幅
+
 <img width="1536" height="512" alt="横幅" src="https://github.com/user-attachments/assets/36c770af-6fde-47ca-ac5d-9ac9e836873f" />
 
 
+
+-备注
 
 每周六/日更新|已持续更新约四个月|给孩子点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
 
 
-
+-使用说明（堂吉诃德和汤汤看了都能懂的那种）
 
 [基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
+
+
+
+
+-溶浴勋章
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
 [![下载量](https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total?style=social&label=下载量&logo=github)](https://github.com/CN-Air84/YuanYue-TTS/releases/latest)
 
-<div align="center">
-
-## 安全提示
-
-本程序不会要求你下载除
-[FFMPEG](https://ffmpeg.org/ "ffmpeg官网")
-以外的任何软件，
-
-且永不收费、永不 __主动__ 弹出广告 ¹ 。
-
-源悦TTS是一款免费开源程序，仅供学习交流使用，如果你在任何渠道付费购买了源悦TTS，请为您自身权益退款。
 
 
-## 💻 支持平台
 
-| 操作系统 | 技术支持 |
-|---|---|
-| Windows 10 或更高|✅ 经测试可运行 |
-| Windows 8.1 |  ✅ 理论可运行 |
-| Windows 7 SP1 7601 - Windows 8 | ❌ 暂不支持 |
-| WinVista 或更低 / 一切32位系统 / 一切Arm系统 / …… | ❌ 无法原生运行 |
-| macOS / Linux  | ⚠️ 理论无法原生运行 |
-
-</div>
 
 <div align="center">
 
@@ -151,6 +147,31 @@
 - ✅大面积使用Qt原生控件，简洁美观一目了然，人机交互效率更高，性能要求更低
 - ✅独立的AI图片转文字、电子书下载和多线程下载器入口，便于自主使用
 - and more...
+
+</div>
+
+<div align="center">
+
+## 安全提示
+
+本程序不会要求你下载除
+[FFMPEG](https://ffmpeg.org/ "ffmpeg官网")
+以外的任何软件，
+
+且永不收费、永不 __主动__ 弹出广告 ¹ 。
+
+源悦TTS是一款免费开源程序，仅供学习交流使用，如果你在任何渠道付费购买了源悦TTS，请为您自身权益退款。
+
+
+## 💻 支持平台
+
+| 操作系统 | 技术支持 |
+|---|---|
+| Windows 10 或更高|✅ 经测试可运行 |
+| Windows 8.1 |  ✅ 理论可运行 |
+| Windows 7 SP1 7601 - Windows 8 | ❌ 暂不支持 |
+| WinVista 或更低 / 一切32位系统 / 一切Arm系统 / …… | ❌ 无法原生运行 |
+| macOS / Linux  | ⚠️ 理论无法原生运行 |
 
 </div>
 
