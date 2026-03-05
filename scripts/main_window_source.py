@@ -37,9 +37,10 @@ class VersionInfos:
     def update_date(self):
         return self.this_update_date
 version_info = VersionInfos()
-debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
-debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
-debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
+if __name__ == '__main__':
+    debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
+    debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
+    debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
 
 # 在程序最开头添加编码设置
 def setup_encoding():

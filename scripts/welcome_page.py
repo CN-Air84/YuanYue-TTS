@@ -427,14 +427,17 @@ class WelcomePage(QWidget):
         """加载版本信息"""
         version = "未知"
         try:
-            from main_window_package import version_info
-            version = version_info.version()
-        except ImportError:
-            try:
-                from main_window import version_info
-                version = version_info.version()
-            except (ImportError, AttributeError):
-                pass
+            import sys
+            main_module = sys.modules.get('__main__')
+            if hasattr(main_module, 'version_info'):
+                version = main_module.version_info.version()
+            else:
+                try:
+                    from main_window_package import version_info
+                    version = version_info.version()
+                except ImportError:
+                    from main_window import version_info
+                    version = version_info.version()
         except Exception as e:
             debug_logger.output("welcome_page.py", LogLevel.ERROR, f"加载版本信息失败: {e}")
             

@@ -21,7 +21,12 @@ class VersionInfos:
     
     def __init__(self) -> None:
         self.this_version = '''0.12.0'''
-        self.this_update_content = '''添加流媒体选项卡，支持播放、搜索来自网易云的音乐以及导入网易云歌单等功能。'''
+        self.this_update_content = '''加流媒体选项卡
+支持播放音乐
+支持搜索音乐
+支持导入网易云歌单等功能。
+支持歌词显示
+配色方案可修改'''
         self.this_update_date = '''2026-03-06'''
         # self.this_version = '''0.0'''
         # self.this_update_content = '''版本自述文本框每行最多十六个汉字
@@ -37,9 +42,10 @@ class VersionInfos:
     def update_date(self):
         return self.this_update_date
 version_info = VersionInfos()
-debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
-debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
-debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
+if __name__ == '__main__':
+    debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
+    debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
+    debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
 
 # 在程序最开头添加编码设置
 def setup_encoding():

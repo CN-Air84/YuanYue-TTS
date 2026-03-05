@@ -301,21 +301,25 @@ class AboutDialog(QDialog):
         self.update_content = ""
         
         try:
-            from main_window_package import version_info
+            import sys
+            main_module = sys.modules.get('__main__')
+            if hasattr(main_module, 'version_info'):
+                version_info = main_module.version_info
+                print_source = "__main__"
+            else:
+                try:
+                    from main_window_package import version_info
+                    print_source = "main_window_package"
+                except ImportError:
+                    from main_window import version_info
+                    print_source = "main_window"
+            
             self.version = version_info.version()
             self.version_date = version_info.update_date()
             self.update_content = version_info.update_content()
-            debug_logger.output("mp_about.py", LogLevel.INFO, f"从 main_window_package 获取到版本: {self.version}", fold_code="ABOUT_VER")
-        except ImportError:
-            try:
-                from main_window import version_info
-                self.version = version_info.version()
-                self.version_date = version_info.update_date()
-                self.update_content = version_info.update_content()
-                debug_logger.output("mp_about.py", LogLevel.INFO, f"从 main_window 获取到版本: {self.version}", fold_code="ABOUT_VER")
-            except (ImportError, AttributeError):
-                debug_logger.output("mp_about.py", LogLevel.WARNING, "无法获取版本信息", fold_code="ABOUT_VER")
-                pass
+            debug_logger.output("mp_about.py", LogLevel.INFO, f"从 {print_source} 获取到版本: {self.version}", fold_code="ABOUT_VER")
+        except Exception as e:
+            debug_logger.output("mp_about.py", LogLevel.WARNING, f"无法获取版本信息: {e}", fold_code="ABOUT_VER")
     
     def _update_fonts(self):
         """更新界面字体大小"""
