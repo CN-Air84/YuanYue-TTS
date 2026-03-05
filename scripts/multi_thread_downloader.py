@@ -38,11 +38,21 @@ class DownloadWorker(QThread):
     file_info_updated = pyqtSignal(int)   # 文件大小信息信号
     def __init__(self, url: str, save_dir: str, filename: str, thread_num: int = 4,
                  user_agent: Optional[str] = None, verify_ssl: bool = True,
-                 proxy: Optional[dict] = None, speed_monitor=None):
+                 proxy: Optional[dict] = None, speed_monitor=None,
+                 referer: Optional[str] = None):
         """初始化工作线程"""
         debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "初始化下载工作线程", fold_code="MT_INIT")
         super().__init__()
         self.setTerminationEnabled(False)
+        # 对包含非ASCII字符的URL进行编码
+        if any(ord(c) > 127 for c in url):
+            from urllib.parse import quote, urlparse, urlunparse
+            parsed = urlparse(url)
+            path = quote(parsed.path)
+            query = quote(parsed.query, safe='=&')
+            url = urlunparse(parsed._replace(path=path, query=query))
+            debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"URL已编码: {url}", fold_code="MT_INIT")
+        
         self.url = url
         self.save_dir = save_dir
         self.filename = filename
@@ -51,6 +61,7 @@ class DownloadWorker(QThread):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+        self.referer = referer
         self.verify_ssl = verify_ssl
         self.proxy = proxy or {}
         self.speed_monitor = speed_monitor
@@ -79,6 +90,8 @@ class DownloadWorker(QThread):
         debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, "开始获取文件信息", fold_code="MT_INFO")
         try:
             headers = {'User-Agent': self.user_agent}
+            if self.referer:
+                headers['Referer'] = self.referer
             debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"发送HEAD请求到: {self.url}", fold_code="MT_INFO")
             debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"验证SSL: {self.verify_ssl}", fold_code="MT_INFO")
             debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"代理配置: {self.proxy}", fold_code="MT_INFO")
@@ -187,6 +200,8 @@ class DownloadWorker(QThread):
         self.temp_files.append(temp_file)
         
         headers = {'User-Agent': self.user_agent}
+        if self.referer:
+            headers['Referer'] = self.referer
         if end_pos is not None:
             headers['Range'] = f'bytes={start_pos}-{end_pos}'
             debug_logger.output("multi_thread_downloader.py", LogLevel.INFO, f"线程{thread_id}: 开始下载文件块 {start_pos}-{end_pos}", fold_code="MT_DL")
@@ -576,7 +591,7 @@ class MultiThreadDownloader:
     def __init__(self, url: str, save_dir: str, filename: str, thread_num: int = 4,
                  user_agent: Optional[str] = None, verify_ssl: bool = True,
                  progress_callback: Optional[Callable[[float], None]] = None,
-                 proxy: Optional[dict] = None):
+                 proxy: Optional[dict] = None, referer: Optional[str] = None):
         """
         初始化下载器
         
@@ -589,6 +604,7 @@ class MultiThreadDownloader:
             verify_ssl: SSL验证
             progress_callback: 进度回调函数
             proxy: 代理配置
+            referer: 自定义Referer
         """
         self.url = url
         self.save_dir = save_dir
@@ -598,6 +614,7 @@ class MultiThreadDownloader:
         self.verify_ssl = verify_ssl
         self.progress_callback = progress_callback
         self.proxy = proxy
+        self.referer = referer
         
         # Qt相关
         self.app = None
@@ -635,7 +652,8 @@ class MultiThreadDownloader:
             user_agent=self.user_agent,
             verify_ssl=self.verify_ssl,
             proxy=self.proxy,
-            speed_monitor=self.speed_monitor
+            speed_monitor=self.speed_monitor,
+            referer=self.referer
         )
         # 不设置父对象，由MultiThreadDownloader直接管理生命周期
         
@@ -823,7 +841,7 @@ class MultiThreadDownloader:
 def download(url: str, save_dir: str, filename: str, thread_num: int = 4,
              user_agent: Optional[str] = None, verify_ssl: bool = True,
              progress_callback: Optional[Callable[[float], None]] = None,
-             proxy: Optional[dict] = None) -> bool:
+             proxy: Optional[dict] = None, referer: Optional[str] = None) -> bool:
     """
     供外部程序导入调用的下载函数（保持与旧代码相同的接口）
     
@@ -836,6 +854,7 @@ def download(url: str, save_dir: str, filename: str, thread_num: int = 4,
         verify_ssl: 是否验证SSL证书
         progress_callback: 进度回调函数（参数为进度百分比）
         proxy: 代理配置，例: {"http":"http://127.0.0.1:7890", "https":"http://127.0.0.1:7890"}
+        referer: 自定义Referer
         
     Returns:
         bool: 下载是否成功
@@ -848,7 +867,8 @@ def download(url: str, save_dir: str, filename: str, thread_num: int = 4,
         user_agent=user_agent,
         verify_ssl=verify_ssl,
         progress_callback=progress_callback,
-        proxy=proxy
+        proxy=proxy,
+        referer=referer
     )
     return downloader.start()
     # # 自动选择模式：如果有回调函数则用CLI，否则用GUI

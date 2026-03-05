@@ -71,30 +71,98 @@ class AIOCRWorker(QThread):
             )
             
             def encode_image(image_path):
-                with open(image_path, "rb") as image_file:
-                    return base64.b64encode(image_file.read()).decode('utf-8')
+                # 优化：在编码前检查图像大小并进行必要的调整
+                try:
+                    from PIL import Image
+                    import io
+                    
+                    with Image.open(image_path) as img:
+                        # 智谱 GLM-4V 建议：
+                        # 1. 图像单边在 600-2000 像素之间
+                        # 2. 图像文件大小在 5MB 以内
+                        # 3. 总像素不超过 400w
+                        
+                        # 进一步缩小尺寸以确保稳定性
+                        # 400 (1210) 错误通常是因为图像数据过大或格式不被接受
+                        max_side = 1560  # 恢复至 1560 像素
+                        if img.width > max_side or img.height > max_side:
+                            img.thumbnail((max_side, max_side), Image.LANCZOS)
+                            
+                        # 确保是 RGB 格式
+                        if img.mode != "RGB":
+                            img = img.convert("RGB")
+                            
+                        buffer = io.BytesIO()
+                        # 使用 JPEG 格式，质量设为 80 以平衡清晰度和体积
+                        img.save(buffer, format="JPEG", quality=80, optimize=True)
+                        img_bytes = buffer.getvalue()
+                        mime_type = "image/jpeg"
+                        
+                        # 记录处理后的图片大小
+                        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"图像预处理完成: {img.width}x{img.height}, 大小: {len(img_bytes)/1024:.1f}KB", fold_code="OI_WORKER")
+                        
+                        return base64.b64encode(img_bytes).decode('utf-8'), mime_type
+                except Exception as e:
+                    debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"图像预处理失败，尝试直接读取: {e}", fold_code="OI_WORKER")
+                    with open(image_path, "rb") as image_file:
+                        data = image_file.read()
+                        ext = os.path.splitext(image_path)[1].lower().replace('.', '')
+                        if ext == 'jpg': ext = 'jpeg'
+                        return base64.b64encode(data).decode('utf-8'), f"image/{ext}"
             
-            base64_image = encode_image(self.image_path)
+            base64_image, mime_type = encode_image(self.image_path)
             
             #发送提示词
             self.debug_signal.emit("prompt", self.prompt)
             
-            response = client.chat.completions.create(
-                model="glm-4v-flash",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": self.prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                        ]
-                    }
-                ],
-                max_tokens=1000
-            )
-            result = response.choices[0].message.content
-            self.debug_signal.emit("response", result)
-            self.finished_signal.emit(result)
+            # 增加重试机制
+            max_retries = 2
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    if attempt > 0:
+                        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在进行第 {attempt} 次识别重试...", fold_code="OI_WORKER")
+                    
+                    response = client.chat.completions.create(
+                        model="glm-4v-flash",
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "image_url", 
+                                        "image_url": {
+                                            "url": f"data:{mime_type};base64,{base64_image}"
+                                        }
+                                    },
+                                    {"type": "text", "text": self.prompt}
+                                ]
+                            }
+                        ],
+                        max_tokens=1024,  # 改回 1024
+                        temperature=0.1,
+                        stream=False
+                    )
+                    
+                    if not response.choices:
+                        raise Exception("API 返回结果为空")
+                        
+                    result = response.choices[0].message.content
+                    self.debug_signal.emit("response", result)
+                    self.finished_signal.emit(result)
+                    return # 成功后退出重试循环
+                    
+                except Exception as e:
+                    last_exception = e
+                    # 如果是 400 错误（参数问题），通常重试无效，除非是临时抖动
+                    if "400" in str(e) and attempt == 0:
+                        debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"初次识别触发 400 错误: {e}", fold_code="OI_WORKER")
+                    
+                    if attempt < max_retries:
+                        import time
+                        time.sleep(1) # 等待 1 秒后重试
+                    else:
+                        raise last_exception
             
         except Exception as e:
             self.error_signal.emit(f"ChatGLM识别失败: {str(e)}")
@@ -112,6 +180,14 @@ class OnlineImportDialog(QDialog):
         self.debug_prompt = ""  #存储调试信息
         self.debug_response = ""  #也存储调试信息
         self.parent_window = parent
+        
+        # 批处理状态变量
+        self.is_batch_processing = False
+        self.batch_queue = []
+        self.batch_results = []
+        self.batch_pdf_path = ""
+        self.batch_extract_type = ""
+        self.total_batch_count = 0
         
         # 检查在线导入模式
         self.is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
@@ -495,14 +571,24 @@ class OnlineImportDialog(QDialog):
         debug_logger.output("iw_online_import.py", LogLevel.INFO, "开始处理 SEI 导入流程", fold_code="OI_SEI")
         # 首先检查页码输入
         page_str = self.page_input.text().strip()
-        if not page_str or not page_str.isdigit():
-            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"无效的页码输入: '{page_str}'", fold_code="OI_SEI")
-            QMessageBox.warning(self, "提示", "请输入有效页码")
-            return
         
-        page_number = int(page_str)
+        # 使用统一的解析函数
+        pages = self.parse_page_string(page_str)
+        
+        if not pages:
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"无效的页码输入: '{page_str}'", fold_code="OI_SEI")
+            QMessageBox.warning(self, "提示", "请输入有效页码\n支持格式：\n- 单页：5\n- 范围：1-3 或 1~3\n- 列表：1,3,5 或 1、3、5\n- 混合：1-3, 5, 7~9")
+            return
+            
+        # 检查页码数量，超过4页提示用户
+        if len(pages) > 4:
+            reply = QMessageBox.question(self, "确认", f"您选择了 {len(pages)} 页进行导入，这可能需要较长时间。\n确认要继续吗？",
+                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.No:
+                return
+        
         extract_type = self.extract_input.text().strip() or "所有文字"
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 导入参数: 页码={page_number}, 提取内容='{extract_type}'", fold_code="OI_SEI")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 导入参数: 页码={pages}, 提取内容='{extract_type}'", fold_code="OI_SEI")
         
         loading_dialog = LoadingDialog(self)
         loading_dialog.text_label.setText("正在读取链接信息...")
@@ -566,7 +652,7 @@ class OnlineImportDialog(QDialog):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, "检测到本地已存在同名 PDF，跳过下载", fold_code="OI_SEI")
                 loading_dialog.close()
                 self.status_label.setText(f"使用本地PDF文件: {saved_pdf_path}")
-                self.process_pdf_with_offset(saved_pdf_path, page_number, extract_type)
+                self.process_pdf_with_offset(saved_pdf_path, pages, extract_type)
                 return
             
             # 5. 使用multi_thread_downloader.download下载文件（使用用户设置的线程数）
@@ -578,12 +664,16 @@ class OnlineImportDialog(QDialog):
             thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 1
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"下载线程数: {thread_num}", fold_code="OI_SEI")
             
+            # 为国家中小学智慧教育平台增加 Referer 以解决 403 Forbidden 错误
+            referer = "https://ykt.cbern.com.cn/" if "ykt.cbern.com.cn" in download_url else None
+            
             download(
                 url=download_url,
                 save_dir=downloads_dir,
                 filename=filename,
                 thread_num=thread_num,
-                verify_ssl=False
+                verify_ssl=False,
+                referer=referer
             )
             
             loading_dialog.close()
@@ -594,7 +684,7 @@ class OnlineImportDialog(QDialog):
                 self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
                 
                 # 直接使用偏移量处理PDF
-                self.process_pdf_with_offset(saved_pdf_path, page_number, extract_type)
+                self.process_pdf_with_offset(saved_pdf_path, pages, extract_type)
             else:
                 debug_logger.output("iw_online_import.py", LogLevel.ERROR, "PDF 下载失败，未找到文件", fold_code="OI_SEI")
                 QMessageBox.critical(self, "错误", "PDF文件下载失败")
@@ -647,6 +737,44 @@ class OnlineImportDialog(QDialog):
             debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"从 URL 提取文件名失败: {e}", fold_code="OI_SEI")
         return None
 
+    def parse_page_string(self, page_str):
+        """解析页码字符串，支持 a-b, a~b, a,b, a、b"""
+        try:
+            # 统一分隔符
+            s = page_str.replace('，', ',').replace('、', ',')
+            # 统一范围符
+            s = s.replace('~', '-')
+            
+            parts = s.split(',')
+            pages = set()
+            
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+                    
+                if '-' in part:
+                    if part.count('-') > 1: # 处理类似 1-3-5 的非法格式，或者负数（虽然这里不太可能有负数页码）
+                        return None
+                    start_str, end_str = part.split('-')
+                    if not start_str.isdigit() or not end_str.isdigit():
+                        return None
+                    start, end = int(start_str), int(end_str)
+                    if start > end:
+                        start, end = end, start
+                    pages.update(range(start, end + 1))
+                else:
+                    if not part.isdigit():
+                        return None
+                    pages.add(int(part))
+            
+            if not pages:
+                return None
+                
+            return sorted(list(pages))
+        except Exception:
+            return None
+
     def process_selection(self):
         """处理选择的文件"""
         # 检查在线导入模式
@@ -664,23 +792,67 @@ class OnlineImportDialog(QDialog):
                 return
             
             page_str = self.page_input.text().strip()
-            if not page_str or not page_str.isdigit():
+            pages = self.parse_page_string(page_str)
+            
+            if not pages:
                 debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"GitHub 模式下无效页码: '{page_str}'", fold_code="OI_CONFIRM")
-                QMessageBox.warning(self, "提示", "请输入有效页码")
+                QMessageBox.warning(self, "提示", "请输入有效页码\n支持格式：\n- 单页：5\n- 范围：1-3 或 1~3\n- 列表：1,3,5 或 1、3、5\n- 混合：1-3, 5, 7~9")
                 return
             
-            page_number = int(page_str)  # 用户输入的页码
+            # 检查页码数量，超过4页提示用户
+            if len(pages) > 4:
+                reply = QMessageBox.question(self, "确认", f"您选择了 {len(pages)} 页进行导入，这可能需要较长时间。\n确认要继续吗？",
+                                           QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                if reply == QMessageBox.No:
+                    return
             
             # 获取提取内容
             extract_type = self.extract_input.text().strip() or "所有文字"
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"GitHub 模式参数: 文件='{self.selected_pdf_name}', 页码={page_number}, 提取内容='{extract_type}'", fold_code="OI_CONFIRM")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"GitHub 模式参数: 文件='{self.selected_pdf_name}', 页码={pages}, 提取内容='{extract_type}'", fold_code="OI_CONFIRM")
             
             # 使用AI OCR处理
-            self.process_with_ai_ocr(page_number, extract_type)
+            self.process_with_ai_ocr(pages, extract_type)
 
-    def process_with_ai_ocr(self, user_page, extract_type):
+    def start_batch_processing(self, pdf_path, actual_pages, extract_type):
+        """开始批处理多个页面"""
+        self.batch_queue = list(actual_pages) # 复制一份
+        self.batch_results = []
+        self.batch_pdf_path = pdf_path
+        self.batch_extract_type = extract_type
+        self.is_batch_processing = True
+        self.total_batch_count = len(actual_pages)
+        
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"启动批处理，共 {len(actual_pages)} 页", fold_code="OI_BATCH")
+        
+        # 启动处理
+        self.process_next_batch_item()
+
+    def process_next_batch_item(self):
+        """处理批次中的下一项"""
+        if not self.batch_queue:
+            # 全部完成
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"批处理完成，共 {len(self.batch_results)} 页", fold_code="OI_BATCH")
+            self.is_batch_processing = False
+            
+            if self.batch_results:
+                final_text = "\n\n".join(self.batch_results)
+                self.result_text = final_text
+                self.accept()
+            else:
+                QMessageBox.warning(self, "提示", "未能识别到任何文字")
+            return
+
+        current_page = self.batch_queue.pop(0)
+        current_index = self.total_batch_count - len(self.batch_queue)
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"批处理进度: {current_index}/{self.total_batch_count}, 处理页码索引: {current_page}", fold_code="OI_BATCH")
+        
+        # 调用 process_single_page
+        # 注意：process_single_page 会创建 LoadingDialog。
+        self.process_single_page(self.batch_pdf_path, current_page, self.batch_extract_type)
+
+    def process_with_ai_ocr(self, user_pages, extract_type):
         """AI处理PDF"""
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始 AI OCR 处理流程: 页码={user_page}", fold_code="OI_CONFIRM")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始 AI OCR 处理流程: 页码={user_pages}", fold_code="OI_CONFIRM")
         loading_dialog = LoadingDialog(self)
         text_per_line=int((len(self.selected_pdf_name)-8)/2)
         loading_dialog.text_label.setText(f"正在处理 ……\n{self.selected_pdf_name[8:8+text_per_line]}\n{self.selected_pdf_name[8+text_per_line:9+2*text_per_line]}")  # 显示处理中的PDF名称
@@ -694,10 +866,10 @@ class OnlineImportDialog(QDialog):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用本地缓存 PDF: {local_pdf_path}", fold_code="OI_CONFIRM")
                 self.status_label.setText(f"使用本地PDF: {local_pdf_path}")
                 loading_dialog.close()
-                self.process_pdf_with_offset(local_pdf_path, user_page, extract_type)
+                self.process_pdf_with_offset(local_pdf_path, user_pages, extract_type)
             else:
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, "本地无缓存，准备下载 PDF", fold_code="OI_CONFIRM")
-                self._download_pdf_and_process(user_page, extract_type, loading_dialog)
+                self._download_pdf_and_process(user_pages, extract_type, loading_dialog)
                 
         except Exception as e:
             debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"AI OCR 处理失败: {e}", fold_code="OI_CONFIRM")
@@ -763,7 +935,7 @@ class OnlineImportDialog(QDialog):
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"转换后文件名: {converted}", fold_code="OI_FILE")
         return converted
     
-    def _download_pdf_and_process(self, user_page, extract_type, loading_dialog):
+    def _download_pdf_and_process(self, user_pages, extract_type, loading_dialog):
         """下载PDF并处理"""
         debug_logger.output("iw_online_import.py", LogLevel.INFO, "开始 GitHub 模式下载流程", fold_code="OI_FILE")
         try:
@@ -778,7 +950,7 @@ class OnlineImportDialog(QDialog):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, f"检测到本地已存在 PDF: {local_pdf_path}", fold_code="OI_FILE")
                 loading_dialog.close()
                 self.status_label.setText(f"使用本地PDF文件: {local_pdf_path}")
-                self.ask_for_page_offset(local_pdf_path, user_page, extract_type)
+                self.ask_for_page_offset(local_pdf_path, user_pages, extract_type)
                 return
             
             #获取下载URL
@@ -806,7 +978,7 @@ class OnlineImportDialog(QDialog):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, f"PDF 下载成功: {saved_pdf_path}", fold_code="OI_FILE")
                 self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
                 #询问实际页码
-                self.ask_for_page_offset(saved_pdf_path, user_page, extract_type)
+                self.ask_for_page_offset(saved_pdf_path, user_pages, extract_type)
             else:
                 debug_logger.output("iw_online_import.py", LogLevel.ERROR, "PDF 下载后未找到文件", fold_code="OI_FILE")
                 QMessageBox.critical(self, "错误", "PDF文件保存失败")
@@ -816,19 +988,23 @@ class OnlineImportDialog(QDialog):
             loading_dialog.close()
             QMessageBox.critical(self, "错误", f"下载失败: {str(e)}")
 
-    def ask_for_page_offset(self, pdf_path, user_page, extract_type):
+    def ask_for_page_offset(self, pdf_path, user_pages, extract_type):
         """询问用户页码偏移量"""
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"弹出页码偏移对话框: {os.path.basename(pdf_path)}", fold_code="OI_FILE")
-        dialog = PageOffsetDialog(self, os.path.basename(pdf_path), str(user_page), pdf_path)
+        
+        # 使用第一个页码作为参考
+        first_page = user_pages[0]
+        
+        dialog = PageOffsetDialog(self, os.path.basename(pdf_path), str(first_page), pdf_path)
         if dialog.exec_() == QDialog.Accepted and dialog.actual_page:
             actual_page = int(dialog.actual_page)
             #计算偏移量
-            offset = actual_page - user_page
+            offset = actual_page - first_page
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"用户设置实际页码: {actual_page}, 偏移量: {offset}", fold_code="OI_FILE")
             #保存偏移量
             self._save_page_offset(os.path.basename(pdf_path), offset)
             #使用实际页码处理PDF
-            self.process_single_page(pdf_path, actual_page - 1, extract_type)
+            self.process_pdf_with_offset(pdf_path, user_pages, extract_type)
         else:
             debug_logger.output("iw_online_import.py", LogLevel.INFO, "用户取消了页码偏移设置", fold_code="OI_FILE")
 
@@ -857,21 +1033,23 @@ class OnlineImportDialog(QDialog):
             debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"获取偏移量失败: {e}", fold_code="OI_FILE")
             return None
 
-    def process_pdf_with_offset(self, pdf_path, user_page, extract_type):
+    def process_pdf_with_offset(self, pdf_path, user_pages, extract_type):
         """使用偏移量处理PDF"""
         pdf_name = os.path.basename(pdf_path)
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用偏移量处理 PDF: {pdf_name}, 用户输入页码: {user_page}", fold_code="OI_FILE")
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用偏移量处理 PDF: {pdf_name}, 用户输入页码: {user_pages}", fold_code="OI_FILE")
         offset = self._get_page_offset(pdf_name)
         
         if offset is not None:
             #有偏移量，直接算页码
-            actual_page = user_page + offset
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"应用偏移量 {offset}，实际页码: {actual_page}", fold_code="OI_FILE")
-            self.process_single_page(pdf_path, actual_page - 1, extract_type)#0-based索引
+            actual_pages = [p + offset - 1 for p in user_pages] # 0-based索引
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"应用偏移量 {offset}，实际页码列表: {actual_pages}", fold_code="OI_FILE")
+            
+            # 启动批处理
+            self.start_batch_processing(pdf_path, actual_pages, extract_type)
         else:
             #没有偏移量，显示对话框让用户确认页码
             debug_logger.output("iw_online_import.py", LogLevel.INFO, "未找到保存的偏移量，需要询问用户", fold_code="OI_FILE")
-            self.ask_for_page_offset(pdf_path, user_page, extract_type)
+            self.ask_for_page_offset(pdf_path, user_pages, extract_type)
 
     def _open_pdf_file(self, pdf_path):
         """使用系统默认方式打开PDF文件"""
@@ -891,6 +1069,13 @@ class OnlineImportDialog(QDialog):
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始处理单页 PDF: {os.path.basename(pdf_path)}, 索引={page_number}", fold_code="OI_FILE")
         loading_dialog = LoadingDialog(self)
         loading_dialog.text_label.setText(f"正在转换第{page_number+1}页为图片...")
+        
+        if self.is_batch_processing and self.total_batch_count > 1:
+            # 计算已完成的数量：总数 - (队列中剩余 + 当前正在处理的1个)
+            completed_count = self.total_batch_count - len(self.batch_queue) - 1
+            # 更新进度条，显示当前批处理进度
+            loading_dialog.update_progress(completed_count, self.total_batch_count)
+            
         loading_dialog.show()
         QApplication.processEvents()
         try:
@@ -1007,6 +1192,12 @@ class OnlineImportDialog(QDialog):
         
         loading_dialog = LoadingDialog(self)
         loading_dialog.text_label.setText(f"AI正在识别图片中的{extract_type}...")
+        
+        if self.is_batch_processing and self.total_batch_count > 1:
+            # 计算已完成的数量
+            completed_count = self.total_batch_count - len(self.batch_queue) - 1
+            loading_dialog.update_progress(completed_count, self.total_batch_count)
+            
         loading_dialog.show()
         QApplication.processEvents()
         
@@ -1031,11 +1222,19 @@ class OnlineImportDialog(QDialog):
         
         if text:
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"成功获取识别文本，长度: {len(text)}", fold_code="OI_AI")
-            self.result_text = text
-            self.accept()
+            if self.is_batch_processing:
+                self.batch_results.append(text)
+                self.process_next_batch_item()
+            else:
+                self.result_text = text
+                self.accept()
         else:
             debug_logger.output("iw_online_import.py", LogLevel.WARNING, "AI 未能识别到任何文字", fold_code="OI_AI")
-            QMessageBox.warning(self, "提示", "未能识别到文字")
+            if self.is_batch_processing:
+                self.batch_results.append(f"[第 {self.total_batch_count - len(self.batch_queue)} 页识别为空]")
+                self.process_next_batch_item()
+            else:
+                QMessageBox.warning(self, "提示", "未能识别到文字")
 
     def on_ai_error(self, error_message, loading_dialog, image_path):
         """AI处理错误"""
@@ -1050,4 +1249,10 @@ class OnlineImportDialog(QDialog):
             except Exception as e:
                 debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"清理临时图片失败: {e}", fold_code="OI_AI")
         
-        QMessageBox.critical(self, "错误", error_message)
+        if self.is_batch_processing:
+            error_text = f"[第 {self.total_batch_count - len(self.batch_queue)} 页识别失败: {error_message}]"
+            self.batch_results.append(error_text)
+            QMessageBox.warning(self, "处理出错", f"当前页面处理失败: {error_message}\n将继续处理下一页。")
+            self.process_next_batch_item()
+        else:
+            QMessageBox.critical(self, "错误", error_message)

@@ -135,6 +135,10 @@ class ResourceDownloadDialog(QDialog):
         base_font_size = (self.min_font_size +
                          (self.max_font_size - self.min_font_size) * (ratio - 1))
         base_font_size = max(self.min_font_size, min(self.max_font_size, base_font_size))
+        
+        # 调整为原先的75%
+        base_font_size = base_font_size * 0.75
+        
         base_font_size = int(base_font_size)
         header_font_size = int(base_font_size * 0.8 * (2/3))
         return base_font_size, header_font_size
@@ -153,9 +157,9 @@ class ResourceDownloadDialog(QDialog):
                 for col in range(1, 3):
                     item = self.table_widget.item(row, col)
                     if item:
-                        item.setFont(QFont(self.global_font, base_font_size * 0.7))
+                        item.setFont(QFont(self.global_font, int(base_font_size * 0.7)))
 
-            self.deploy_button.setFont(QFont(self.global_font, base_font_size * 0.8))
+            self.deploy_button.setFont(QFont(self.global_font, int(base_font_size * 0.8)))
 
         except Exception as e:
             debug_logger.output("mp_resource_download.py", LogLevel.ERROR, f"更新资源下载对话框字体时出错: {e}", fold_code="MP_RD_INIT")

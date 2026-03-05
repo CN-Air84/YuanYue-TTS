@@ -20,28 +20,14 @@ class VersionInfos:
     """版本信息"""
     
     def __init__(self) -> None:
-        self.this_version = '''0.11.0'''
-        self.this_update_content = '''键控音频播放添加的高级监听模式
-键控音频播放支持自定义热键
-使用更稳健的自重启方式
-使用更稳健的相对路径获取方式
-修复无法生成音频问题
-缩短播放器初始化等待时间
-修复更新失败问题
-（详见Github页）'''
-        self.this_update_date = '''2026-02-13'''
+        self.this_version = '''0.12.0'''
+        self.this_update_content = '''添加流媒体选项卡，支持播放、搜索来自网易云的音乐以及导入网易云歌单等功能。'''
+        self.this_update_date = '''2026-03-06'''
         # self.this_version = '''0.0'''
         # self.this_update_content = '''版本自述文本框每行最多十六个汉字
         # ABCDEFGHABCDEFGHABCDEFGA
         # 1234567890123245678901234567\n'''
-        #使用更稳健的相对路径获取方式
-        #尝试修复更新失败问题
-        #广泛添加调试输出
-        #键控音频播放支持自定义热键而非原先的预设方案三选一
-        #键控音频播放添加基于SDL2的高级监听模式 理论支持任何设备
-        #使用更稳健的自重启方式
-        #修复无法生成音频问题
-        #修改异步初始化逻辑，大幅缩短播放器初始化等待时间
+        #添加流媒选项卡
     def version(self):
         return self.this_version
     
@@ -51,9 +37,9 @@ class VersionInfos:
     def update_date(self):
         return self.this_update_date
 version_info = VersionInfos()
-debug_logger.output("main_window.py", LogLevel.INFO, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
-debug_logger.output("main_window.py", LogLevel.INFO, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
-debug_logger.output("main_window.py", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
+debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
+debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
+debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
 
 # 在程序最开头添加编码设置
 def setup_encoding():
@@ -527,13 +513,14 @@ class MainWindow(QWidget):
             ('dictation', '听写', self._get_generation_page_neo_class),
             ('settings', '设置', self._get_settings_page_class),
             ('personalization', '个性化', self._get_custom_page_class),
-            ('misc', '杂项', self._get_misc_page_class)
+            ('misc', '杂项', self._get_misc_page_class),
+            ('streaming', '流媒体', self._get_streaming_page_class)
         ]
         
         # 从设置中获取配置
-        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc")
+        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming")
         debug_logger.output("main_window.py", LogLevel.INFO, f"读取选项卡排序配置: {tab_order_str}", fold_code="MAIN_TABS")
-        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc")
+        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming")
         initial_tab_name = self.settings_manager.get_Custom_value("initial_tab", "welcome")
         
         tab_order = [t.strip() for t in tab_order_str.split(',') if t.strip()]
@@ -544,6 +531,12 @@ class MainWindow(QWidget):
             debug_logger.output("main_window.py", LogLevel.WARNING, "检测到设置页面被隐藏，已强制开启显示", fold_code="MAIN_TABS")
             tab_visibility.append('settings')
             
+        # 针对新功能 'streaming'：如果它不在可见列表也不在排序列表中（可能是旧配置），则默认将其添加到最后
+        if 'streaming' not in tab_visibility and 'streaming' not in tab_order:
+            debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '流媒体' 未在配置中，正在自动注册", fold_code="MAIN_TABS")
+            tab_visibility.append('streaming')
+            tab_order.append('streaming')
+
         # 1. 过滤掉不显示的选项卡
         visible_tabs = [t for t in all_available_tabs if t[0] in tab_visibility]
         
@@ -1080,6 +1073,11 @@ class MainWindow(QWidget):
         """获取杂项页面类"""
         from misc_page import MiscPage
         return MiscPage
+
+    def _get_streaming_page_class(self):
+        """获取流媒体页面类"""
+        from streaming_page import StreamingPage
+        return StreamingPage
 
     def refresh_theme(self):
         """刷新主题显示"""

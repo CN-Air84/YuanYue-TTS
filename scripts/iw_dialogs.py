@@ -6,7 +6,7 @@ from typing import Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, 
     QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
-     QLineEdit, QFormLayout, QSpinBox, QCheckBox, QScrollArea, QTextEdit
+     QLineEdit, QFormLayout, QSpinBox, QCheckBox, QScrollArea, QTextEdit, QProgressBar
 )
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QPixmap, QImage
@@ -158,8 +158,16 @@ class LoadingDialog(QDialog):
         self.text_label = QLabel("正在处理，请稍候...")
         self.text_label.setAlignment(Qt.AlignCenter)
         
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setAlignment(Qt.AlignCenter)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        
         layout.addWidget(self.animation_widget, 0, Qt.AlignCenter)
         layout.addWidget(self.text_label)
+        layout.addWidget(self.progress_bar)
         self.setLayout(layout)
         
         self._setup_animation_timer()
@@ -189,6 +197,7 @@ class LoadingDialog(QDialog):
         
         font = QFont(global_font, int(font_size))
         self.text_label.setFont(font)
+        self.progress_bar.setFont(font)
     
     def resizeEvent(self, event) -> None:
         """处理窗口大小变化事件"""
@@ -219,6 +228,21 @@ class LoadingDialog(QDialog):
     def set_message(self, message: str) -> None:
         """设置加载对话框的提示信息"""
         self.text_label.setText(message)
+
+    def update_progress(self, current: float = None, total: float = None) -> None:
+        """更新进度条
+        
+        Args:
+            current (float, optional): 当前进度. Defaults to None.
+            total (float, optional): 总进度. Defaults to None.
+        """
+        if current is not None and total is not None and total > 0:
+            percentage = int((current / total) * 100)
+            percentage = max(0, min(100, percentage))
+            self.progress_bar.setValue(percentage)
+            self.progress_bar.setVisible(True)
+        else:
+            self.progress_bar.setVisible(False)
 
 
 class PageOffsetDialog(QDialog):

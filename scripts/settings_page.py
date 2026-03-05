@@ -749,7 +749,8 @@ class TabSettingsGroup(QGroupBox):
             'dictation': '听写',
             'settings': '设置',
             'personalization': '个性化',
-            'misc': '杂项'
+            'misc': '杂项',
+            'streaming': '流媒体'
         }
         self.tab_order = []
         self.tab_visibility = []
@@ -838,7 +839,7 @@ class TabSettingsGroup(QGroupBox):
         """加载设置"""
         try:
             # 加载排序
-            order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc")
+            order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming")
             self.tab_order = [t.strip() for t in order_str.split(',') if t.strip() and t.strip() in self.available_tabs]
             # 补全缺失的选项卡
             for name in self.available_tabs:
@@ -846,7 +847,7 @@ class TabSettingsGroup(QGroupBox):
                     self.tab_order.append(name)
             
             # 加载可见性
-            visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc")
+            visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming")
             self.tab_visibility = [t.strip() for t in visibility_str.split(',') if t.strip() and t.strip() in self.available_tabs]
             
             # 加载初始页

@@ -247,6 +247,9 @@ class ImportButtonHandler:
         
         if self.loading_dialog:
             self.loading_dialog.set_message(f"正在处理图片: {os.path.basename(file_path)}...")
+            # 如果是多张图片批量处理，更新进度条显示当前进度
+            if self.total_images_to_process > 1:
+                self.loading_dialog.update_progress(self.processed_count, self.total_images_to_process)
         
         debug_logger.output("iw_text_import.py", LogLevel.INFO, f"开始OCR处理图片: {file_path}", fold_code="TI_OCR_PROC")
 

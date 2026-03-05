@@ -1786,8 +1786,85 @@ class NotificationSettingsGroup(QGroupBox):
             "auto_close_time",
             CustomConfig.DEFAULT_NOTIFICATIONS["auto_close_time"]
         )))
-    
 
+
+class StreamingUISettingsGroup(QGroupBox):
+    """流媒体外观设置组 - 卡片式设计"""
+    
+    def __init__(self, parent=None):
+        super().__init__("流媒体外观设置", parent)
+        self.settings_manager = SettingsManager()
+        self.wheel_filter = WheelEventFilter()
+        self._init_ui()
+        self._load_settings()
+        self._apply_card_style()
+    
+    def _init_ui(self):
+        layout = QGridLayout()
+        layout.setHorizontalSpacing(CustomConfig.SPACING_SYSTEM['lg'])
+        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
+        
+        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+        
+        # 颜色选择器
+        self.left_bg_color = ColorPickerWidget()
+        self.right_bg_color = ColorPickerWidget()
+        self.bottom_bg_color = ColorPickerWidget()
+        self.lyrics_bg_color = ColorPickerWidget()
+        
+        # 信号连接
+        self.left_bg_color.color_changed.connect(
+            lambda color: self._on_color_changed("stream_left_bg_color", color)
+        )
+        self.right_bg_color.color_changed.connect(
+            lambda color: self._on_color_changed("stream_right_bg_color", color)
+        )
+        self.bottom_bg_color.color_changed.connect(
+            lambda color: self._on_color_changed("stream_bottom_bg_color", color)
+        )
+        self.lyrics_bg_color.color_changed.connect(
+            lambda color: self._on_color_changed("stream_lyrics_bg_color", color)
+        )
+        
+        layout.addWidget(QLabel("左侧面板背景颜色:"), 0, 0)
+        layout.addWidget(self.left_bg_color, 0, 1)
+        layout.addWidget(QLabel("右侧歌曲列表背景:"), 1, 0)
+        layout.addWidget(self.right_bg_color, 1, 1)
+        layout.addWidget(QLabel("底部播放控制栏背景:"), 2, 0)
+        layout.addWidget(self.bottom_bg_color, 2, 1)
+        layout.addWidget(QLabel("歌词展示区背景:"), 3, 0)
+        layout.addWidget(self.lyrics_bg_color, 3, 1)
+        
+        layout.setColumnStretch(1, 1)
+        self.setLayout(layout)
+        
+    def _apply_card_style(self):
+        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
+        self.setStyleSheet(CustomConfig.get_card_style(text_color))
+        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'],
+                              CustomConfig.SPACING_SYSTEM['lg'], 
+                              CustomConfig.SPACING_SYSTEM['lg'])
+                              
+    def _load_settings(self):
+        left_bg = self.settings_manager.Custom.get_value("stream_left_bg_color", "#A0A0A0")
+        self.left_bg_color.set_color(left_bg)
+        
+        right_bg = self.settings_manager.Custom.get_value("stream_right_bg_color", "#A0A0A0")
+        self.right_bg_color.set_color(right_bg)
+        
+        bottom_bg = self.settings_manager.Custom.get_value("stream_bottom_bg_color", "#B0B0B0")
+        self.bottom_bg_color.set_color(bottom_bg)
+        
+        lyrics_bg = self.settings_manager.Custom.get_value("stream_lyrics_bg_color", "#9E9E9E")
+        self.lyrics_bg_color.set_color(lyrics_bg)
+        self.bottom_bg_color.set_color(bottom_bg)
+
+    def _on_color_changed(self, color_key: str, color: str):
+        self.settings_manager.Custom.set_value(color_key, color)
+        from shared_memory_manager import get_shared_memory_manager
+        shared_manager = get_shared_memory_manager()
+        shared_manager.broadcast_settings_change("custom", {color_key: color})
 
 
 class CustomPage(QWidget):
@@ -1900,6 +1977,10 @@ class CustomPage(QWidget):
         self.notification_group = NotificationSettingsGroup(self)
         self.content_layout.addWidget(self.notification_group)
         
+        # 流媒体外观设置
+        self.streaming_ui_group = StreamingUISettingsGroup(self)
+        self.content_layout.addWidget(self.streaming_ui_group)
+        
         # 添加拉伸，使内容顶部对齐
         self.content_layout.addStretch(1)
         
@@ -1931,7 +2012,7 @@ class CustomPage(QWidget):
         groups = [self.hotkey_group, self.window_size_group, 
                  self.color_group, self.font_group, 
                  self.indicator_group, self.animation_group, 
-                 self.notification_group]
+                 self.notification_group, self.streaming_ui_group]
         for group in groups:
             self._update_group_text_styles(group)
         
@@ -1955,7 +2036,7 @@ class CustomPage(QWidget):
                 groups = [self.hotkey_group, self.window_size_group, 
                          self.color_group, self.font_group, 
                          self.indicator_group, self.animation_group, 
-                         self.notification_group]
+                         self.notification_group, self.streaming_ui_group]
                 
                 for group in groups:
                     if hasattr(group, '_apply_card_style'):
@@ -2100,6 +2181,7 @@ class CustomPage(QWidget):
         self.indicator_group.setStyleSheet(dynamic_style)
         self.animation_group.setStyleSheet(dynamic_style)
         self.notification_group.setStyleSheet(dynamic_style)
+        self.streaming_ui_group.setStyleSheet(dynamic_style)
     
     def _apply_fonts_to_widgets(self, font, small_font):
         """应用字体到所有控件"""
@@ -2123,6 +2205,14 @@ class CustomPage(QWidget):
                             self.color_group.info_color,
                             self.color_group.warning_color,
                             self.color_group.error_color]:
+            color_picker.color_input.setFont(font)
+            
+        # 应用字体到流媒体外观设置组
+        self.streaming_ui_group.setFont(font)
+        for color_picker in [self.streaming_ui_group.left_bg_color,
+                             self.streaming_ui_group.right_bg_color,
+                             self.streaming_ui_group.bottom_bg_color,
+                             self.streaming_ui_group.lyrics_bg_color]:
             color_picker.color_input.setFont(font)
         
         # 应用字体到字体设置组（注意：全局字体输入框不应用字体）
@@ -2247,11 +2337,18 @@ class CustomPage(QWidget):
             self.settings_manager.Custom.set_value("indicator_width_adjust", "0")
             self.settings_manager.Custom.set_value("indicator_height_adjust", "0")
             
+            # 重置流媒体外观设置
+            self.settings_manager.Custom.set_value("stream_left_bg_color", "#A0A0A0")
+            self.settings_manager.Custom.set_value("stream_right_bg_color", "#A0A0A0")
+            self.settings_manager.Custom.set_value("stream_bottom_bg_color", "#B0B0B0")
+            self.settings_manager.Custom.set_value("stream_lyrics_bg_color", "#9E9E9E")
+            
             # 重新加载设置
             self.window_size_group._load_settings()
             self.color_group._load_settings()
             self.font_group._load_settings()
             self.notification_group._load_settings()
+            self.streaming_ui_group._load_settings()
             
             # 更新字体
             self._update_fonts()
@@ -2259,9 +2356,9 @@ class CustomPage(QWidget):
             QMessageBox.information(self, "重置成功", "个性化设置已重置为默认值")
     
     def _apply_settings(self):
-        """应用设置并强制重启"""
+        """应用设置"""
         self._apply_settings_silently()
-        self._restart_app()
+        QMessageBox.information(self, "应用成功", "个性化设置已应用，部分设置可能需要重启程序才能生效")
 
     def _restart_app(self):
         """重启应用程序 - 修复 PyInstaller 环境下的重启问题"""
