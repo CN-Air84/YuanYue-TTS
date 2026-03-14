@@ -10,6 +10,17 @@ from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
 from debug_logger import debug_logger, LogLevel
 
+'''
+本段代码在SimeonTest Re1时使用 DeepSeek 重构，
+地破细可 vs 差特计屁蹄，拟盟知道吗？
+'''
+try:
+    import miniaudio
+    MINIAUDIO_AVAILABLE = True
+except ImportError:
+    MINIAUDIO_AVAILABLE = False
+    debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, "miniaudio 库未安装，MP3转WAV将继续尝试使用 FFmpeg (如有)")
+
 try:
     from misc_func import get_app_base_path
 except ImportError:
@@ -512,9 +523,8 @@ class AudioGenerator:
             debug_logger.output("edge_audio_generator.py", LogLevel.INFO, "Result already at final path.", fold_code="AUDIO_GEN")
 
     def _convert_mp3_to_wav(self, mp3_path: str) -> str:
-        """将MP3文件转换为WAV格式"""
+        """将MP3文件转换为WAV格式 (使用 miniaudio，零依赖)"""
         try:
-            import subprocess
             import os
             import time
             
@@ -531,63 +541,47 @@ class AudioGenerator:
             if mp3_size == 0:
                 debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"MP3转换终止: 源文件为空 (0字节) at {mp3_path}", fold_code="AUDIO_CONV")
                 return None
+
+            # 优先使用 miniaudio 进行转换
+            if MINIAUDIO_AVAILABLE:
+                try:
+                    debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"正在使用 miniaudio 将 MP3 转换为 WAV...", fold_code="AUDIO_CONV")
+                    # 读取 MP3
+                    audio = miniaudio.decode_file(mp3_path)
+                    # 写入 WAV
+                    miniaudio.wav_write_file(wav_path, audio)
+                    
+                    if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                        debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"miniaudio 转换成功: {os.path.basename(wav_path)}", fold_code="AUDIO_CONV")
+                        return wav_path
+                except Exception as mae:
+                    debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, f"miniaudio 转换失败，尝试回退到 FFmpeg: {mae}", fold_code="AUDIO_CONV")
             
-            debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"准备将 MP3 转换为 WAV. 源文件: {os.path.basename(mp3_path)}, 大小: {mp3_size} 字节", fold_code="AUDIO_CONV")
+            # 如果 miniaudio 不可用或转换失败，回退到 FFmpeg (作为兜底)
+            debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"准备使用 FFmpeg 将 MP3 转换为 WAV...", fold_code="AUDIO_CONV")
             
             # 重试机制 - 最多重试3次
             max_retries = 3
             for retry in range(max_retries):
                 try:
-                    # 如果是重试，等待一下让文件完全写入
                     if retry > 0:
-                        wait_time = 0.5 * retry  # 递增等待时间
-                        debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, f"转换失败，执行第 {retry}/{max_retries-1} 次重试，等待 {wait_time}s 以确保文件句柄释放", fold_code="AUDIO_CONV")
-                        time.sleep(wait_time)
+                        time.sleep(0.5 * retry)
                     
                     # 使用FFmpeg转换格式
                     cmd = [
                         'ffmpeg', '-i', mp3_path, 
-                        '-acodec', 'pcm_s16le',  # 16位PCM编码
-                        '-ar', '44100',           # 采样率44.1kHz
-                        '-ac', '2',               # 立体声
-                        '-y',                     # 覆盖已存在文件
+                        '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2', '-y',
                         wav_path
                     ]
                     
-                    debug_logger.output("edge_audio_generator.py", LogLevel.DEBUG, f"执行 FFmpeg 命令: {' '.join(cmd)}", fold_code="AUDIO_CONV")
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                     
                     if result.returncode == 0 and os.path.exists(wav_path):
-                        wav_size = os.path.getsize(wav_path)
-                        if wav_size > 0:
-                            debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"MP3转WAV成功! 目标文件: {os.path.basename(wav_path)}, 大小: {wav_size} 字节", fold_code="AUDIO_CONV")
+                        if os.path.getsize(wav_path) > 0:
                             return wav_path
-                        else:
-                            debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, f"FFmpeg 输出了空文件 (0字节), 尝试次数: {retry + 1}", fold_code="AUDIO_CONV")
-                            if retry < max_retries - 1:
-                                continue
-                            else:
-                                return None
-                    else:
-                        error_detail = result.stderr if result.stderr else "未知错误"
-                        debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"FFmpeg 转换失败 (尝试 {retry + 1}/{max_retries}): {error_detail}", fold_code="AUDIO_CONV")
-                        if retry < max_retries - 1:
-                            continue
-                        else:
-                            return None
                             
-                except subprocess.TimeoutExpired:
-                    debug_logger.output("edge_audio_generator.py", LogLevel.WARNING, f"MP3转WAV超时 (尝试 {retry + 1}/{max_retries})", fold_code="AUDIO_CONV")
-                    if retry < max_retries - 1:
-                        continue
-                    else:
-                        return None
-                except Exception as inner_e:
-                    debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"MP3转WAV异常 (尝试 {retry + 1}/{max_retries}): {inner_e}", fold_code="AUDIO_CONV")
-                    if retry < max_retries - 1:
-                        continue
-                    else:
-                        return None
+                except Exception:
+                    continue
             
             return None
                 

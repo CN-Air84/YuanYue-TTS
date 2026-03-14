@@ -22,7 +22,10 @@ except ImportError:
             return os.path.dirname(sys.executable)
         return os.path.dirname(os.path.abspath(__file__))
 
-
+'''
+本段代码在SimeonTest Re1时使用 DeepSeek 重构，
+懒得看小鲸鱼怎么改的了，能用就行。
+'''
 @dataclass
 class AudioState:
     is_playing: bool = False
@@ -38,17 +41,17 @@ class AudioState:
 class PygameManager:
     """
     pygame mixer 引擎管理器，负责底层音频播放控制。
-    封装了 pygame.mixer.music 的常用操作，并提供异常处理和状态跟踪。
+    内含 pygame.mixer.music 的常用操作。
     """
     def __init__(self):
-        """初始化 PygameManager 实例"""
+        """初始化 PygameManager"""
         self.pygame_initialized = False
         self._init_lock = threading.Lock()
         self._init_thread = None
         debug_logger.output("audio_preview.py", LogLevel.INFO, "PygameManager 实例已创建", fold_code="AUDIO_INIT")
         
     def _init_pygame_task(self):
-        """实际执行 pygame 初始化的任务函数，设计为可在线程中运行"""
+        """实际执行 pygame 初始化的任务函数"""
         with self._init_lock:
             if self.pygame_initialized:
                 return
@@ -57,8 +60,9 @@ class PygameManager:
                 debug_logger.output("audio_preview.py", LogLevel.INFO, "正在执行 pygame mixer 引擎底层初始化...", fold_code="AUDIO_INIT")
                 import pygame
                 
-                # 性能优化：通过 pre_init 预设参数，减少 init 时的自动探测开销
-                # 使用 44100Hz, 16位有符号, 双声道, 1024字节缓冲区 (平衡性能与延迟)
+                # 性能优化：通过 pre_init 预设参数，减少 init 时的自动探测开销。
+                # 使用 44100Hz, 16位有符号, 双声道, 1024字节缓冲区 (平衡性能与延迟)。应该是兼容性最好的。
+                # 希望能跑。
                 if not pygame.mixer.get_init():
                     pygame.mixer.pre_init(44100, -16, 2, 1024)
                     pygame.mixer.init()
@@ -89,8 +93,8 @@ class PygameManager:
                 self._init_thread.start()
             return True
         else:
-            # 优化：即使是同步调用，如果初始化正在进行中，也应等待锁而不是重复触发
-            # 注意：在 UI 线程同步调用此方法仍可能导致阻塞，但在播放前这是必须的
+            # 即使是同步调用，如果初始化正在进行中，也应等待锁而不是重复触发
+            # UI 线程同步调用此方法仍可能导致阻塞，但在播放前这是必须的。pygame现在挪到程序运行时初始化了。记得改
             self._init_pygame_task()
             return self.pygame_initialized
     
@@ -104,8 +108,6 @@ class PygameManager:
         Returns:
             bool: 是否加载成功
         """
-        # 优化：不再在每个操作前同步调用 _init_pygame
-        # 如果尚未初始化，load_audio 应该失败或等待
         if not self.pygame_initialized:
             debug_logger.output("audio_preview.py", LogLevel.WARNING, "pygame 尚未初始化，尝试同步加载", fold_code="AUDIO_PLAY")
             if not self._init_pygame():
@@ -285,7 +287,7 @@ class PygameManager:
 class PlaybackMonitor(threading.Thread):
     """
     音频播放监控线程，负责检测播放结束并触发回调。
-    独立于 UI 线程运行，通过轮询播放器状态来判断是否播放完成。
+    独立线程运行，轮询播放器判断是否播放完成。
     """
     def __init__(self, pygame_manager: PygameManager, state: AudioState, 
                  playback_finished_callback: Callable):
@@ -514,9 +516,6 @@ class AudioPreview:
         
         self.is_paused = False
         self.is_seeking = False
-        
-        # 异步加载优化：程序运行 500ms 后启动音频子系统初始化
-        # 相比原先的 2000ms 显著提前，且采用非阻塞线程初始化，不影响 UI 响应
         self.init_timer = QTimer()
         self.init_timer.setSingleShot(True)
         self.init_timer.timeout.connect(self._async_audio_subsystem_init)

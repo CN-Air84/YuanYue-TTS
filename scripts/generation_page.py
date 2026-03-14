@@ -22,9 +22,21 @@ it looks neat, though.
 本段代码负责“生成”选项卡。
 若想修改“听写”选项卡请移步generation_page_neo。
 '''
+
 '''
-生成选项卡已在SimeonTest 0.9被隐藏。
+生成选项卡已在SimeonTest 0.9.0被隐藏。
+
+ ______,----、、_____
+/—————/——**——\ \————\\
+ |        奠         ||
+ |                   ||
+ |Generation__Page.py||
+ |                   ||
+ |                   ||
+ | 永 · 垂 · 不 · 朽 ||
+ ———————————————————|/
 '''
+
 class GenerationSignals(QObject):
     """生成页面信号类"""
     

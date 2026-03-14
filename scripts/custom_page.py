@@ -17,6 +17,11 @@ from hotkey_manager import HotkeyManager, HotkeyAction
 from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
 
+'''
+由于某种玄学问题引起的调试输出无法正确传递，
+本段代码在SimeonTest 0.14.1由Minimax-2.5重构。
+正好算是“入职”评测了。希望能跑。
+'''
 class HotkeyEditButton(QPushButton):
     """专门用于录制热键的按钮"""
     hotkey_changed = pyqtSignal(int)
@@ -579,7 +584,6 @@ class HotkeyControlWidget(QGroupBox):
         self.reset_btn = QPushButton("重置")
         self.reset_btn.clicked.connect(self._reset_to_defaults)
         
-        # 动态设置宽度为热键按钮最小宽度的 1.25 倍 (80 * 1.25 = 100)
         self.reset_btn.setMinimumWidth(100)
         self.reset_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
@@ -643,7 +647,6 @@ class HotkeyControlWidget(QGroupBox):
         self.hotkey_manager.set_hotkey(action, key_code)
         
         # 如果设置了键盘热键，则在 SDL 模式下清除对应的 SDL 绑定（避免一个动作对应多个设备造成混乱）
-        # 或者可以选择保留，但为了 UI 逻辑清晰，我们这里选择清除
         if key_code != 0:
             self.hotkey_manager.set_sdl_binding(action, "", 0)
             self.edit_buttons[action].set_sdl_binding(None)

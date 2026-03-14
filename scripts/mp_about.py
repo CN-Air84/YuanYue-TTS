@@ -5,9 +5,10 @@ import requests
 import time
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QHBoxLayout, QWidget, 
-    QPushButton, QGridLayout, QMessageBox, QApplication
+    QPushButton, QGridLayout, QMessageBox, QApplication,
+    QGraphicsOpacityEffect, QScrollArea
 )
-from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtCore import Qt, QTimer, QUrl, QPropertyAnimation
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices
 from debug_logger import debug_logger, LogLevel
 
@@ -53,12 +54,13 @@ class AboutDialog(QDialog):
         debug_logger.output("mp_about.py", LogLevel.INFO, "正在初始化关于对话框", fold_code="ABOUT_INIT")
         self.parent_window = parent
         self.setWindowTitle("关于")
-        self.resize(1080, 1200)
-        self.setFixedSize(1080, 1080)
+        self.resize(1080, 800)
+        self.setFixedSize(1080, 800)
         
         # 初始化缓存相关属性
         self._cached_release_info = None
         self._cache_timeout = 300  # 5分钟缓存
+        self.fade_timer = None
         
         self._get_version_info()
         
@@ -88,49 +90,52 @@ class AboutDialog(QDialog):
         os.makedirs(self.cache_dir, exist_ok=True)
         self.image_path = os.path.join(self.cache_dir, "icon_full_1080.png")
         
-        layout = QVBoxLayout()
-        layout.setSpacing(10)
-        layout.setContentsMargins(30, 30, 30, 30)
+        main_layout = QVBoxLayout()
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(30, 30, 30, 30)
         
-        # 移除了标题，直接显示图片和内容
-        
-        # 图片显示区域
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setFixedHeight(300)
-        layout.addWidget(self.image_label)
-        
-        # 图片和正文之间的间距 - 原来的1/3
-        image_content_spacer = QWidget()
-        image_content_spacer.setFixedHeight(0)  # 原来是弹性的，现在用固定小间距
-        layout.addWidget(image_content_spacer)
+        # 使用一个容器来容纳重叠的模块
+        self.overlay_container = QWidget()
+        self.overlay_container.setFixedHeight(500)
+        container_layout = QVBoxLayout(self.overlay_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
         
         # 正文区域 - 左右布局
-        content_layout = QHBoxLayout()
+        self.content_widget = QWidget()
+        content_layout = QHBoxLayout(self.content_widget)
         content_layout.setSpacing(20)
+        content_layout.setContentsMargins(0, 0, 0, 0)
         
         # 左侧主要介绍
         left_content_text = (
-            "源悦TTS，\n"
-            "一款以学生为本、由学生研发、为学生而生的文本转语音程序。\n"
+            "以学生为本、由学生研发、为学生而生。\n"
+            "源悦TTS，与你共鸣。\n"
             '——————————————————\n'
             '大部分外围设施（尤其是官网）还未准备好，望各位谅解。\n'
-            '此版本为测试版，仍有部分功能未适配/实现，望各位谅解。\n'
+            '此版本为公开测试版，仍有部分功能不完善，望各位谅解。\n'
             '——————————————————\n'
             '我们接受但不推荐您以金钱赞助本程序。\n点个Star或者Fork来支持我们吧！\n'
             '——————————————————\n'
-            #'您可以查看\ngithub.com/CN-Air84/CN-Air84/blob/main/README.md\n以加入我们的开发组或内测用户团。\n'
-            #'目前开发组或用户团不计划扩招。\n'
-            #'——————————————————\n'
-            '本程序修改了并使用知名开源项目tchMaterial_parser，\n也即国家中小学智慧教育平台电子课本下载工具的相关代码。\n感谢原作者happycola233的贡献。\n'
-            '——————————————————\n'
             '您可以在项目主页找到本程序的所有相关信息，\n包括使用说明、更新日志、源代码等。\n'
             '本项目基于Apache2.0协议开源，\n您可在遵守协议前提下自由使用、修改和分发本程序及源码。'
+            '——————————————————\n'
+            '程序文字转语音部分基于知名项目Edge-TTS。\n感谢服务提供商微软公司。感谢Edge-TTS项目作者rany2大佬。\n'
+            '——————\n'
+            '程序对知名开源项目tchMaterial_parser进行了修改，\n并用于智慧教育平台导入模式下在线导入电子书获取部分。\n感谢原作者happycola233大佬。\n'
+            '——————\n'
+            '程序中各类AI相关的服务使用智谱清言GLM-4.5-Flash和GLM-4V-Flash两款完全免费的模型。感谢。\n'
+            '——————\n'
+            '以及程序引用的其他项目\n（包括但不限于：\n①由TapXWorld和keminshu二位大佬维护的中国电子教科书库ChinaTextbook\n②由scanny等十一位大佬维护的python-docx\n③以及其他各类项目，如国家中小学智慧教育平台）\n在此一并感谢。\n'
+            
         )
+        self.left_scroll = QScrollArea()
+        self.left_scroll.setWidgetResizable(True)
+        self.left_scroll.setFrameShape(QScrollArea.NoFrame)
         self.left_content_label = QLabel(left_content_text)
         self.left_content_label.setAlignment(Qt.AlignCenter)
         self.left_content_label.setWordWrap(True)
-        content_layout.addWidget(self.left_content_label)
+        self.left_scroll.setWidget(self.left_content_label)
+        content_layout.addWidget(self.left_scroll)
         
         # 右侧版本信息
         right_content_text = (
@@ -140,16 +145,21 @@ class AboutDialog(QDialog):
             f"更新内容:\n{self.update_content}"
         )
         
+        self.right_scroll = QScrollArea()
+        self.right_scroll.setWidgetResizable(True)
+        self.right_scroll.setFrameShape(QScrollArea.NoFrame)
         self.right_content_label = QLabel(right_content_text)
         self.right_content_label.setAlignment(Qt.AlignCenter)
         self.right_content_label.setWordWrap(True)
         self.right_content_label.setMaximumWidth(int(self.width() / 3))
-        content_layout.addWidget(self.right_content_label)
+        self.right_scroll.setWidget(self.right_content_label)
+        content_layout.addWidget(self.right_scroll)
         
-        layout.addLayout(content_layout)
+        container_layout.addWidget(self.content_widget)
+        main_layout.addWidget(self.overlay_container)
         
         # 下方弹簧，让按钮在底部
-        layout.addStretch(1)
+        main_layout.addStretch(1)
 
         # 按钮区域
         button_layout = QGridLayout()
@@ -175,16 +185,73 @@ class AboutDialog(QDialog):
             elif i == 5:
                 button.clicked.connect(self.on_button_5_clicked)
         
-        layout.addLayout(button_layout)
+        main_layout.addLayout(button_layout)
         
         # 关闭按钮
         close_button = QPushButton("关闭")
         close_button.clicked.connect(self.accept)
-        layout.addWidget(close_button)
+        main_layout.addWidget(close_button)
         # 将关闭按钮添加到 self.buttons 以便统一更新样式
         self.buttons.append(close_button)
         
-        self.setLayout(layout)
+        self.setLayout(main_layout)
+
+        # 正文渐显效果设置
+        self.content_opacity_effect = QGraphicsOpacityEffect(self.content_widget)
+        self.content_opacity_effect.setOpacity(0.0) # 初始不可见
+        self.content_widget.setGraphicsEffect(self.content_opacity_effect)
+        
+        self.content_fade_animation = QPropertyAnimation(self.content_opacity_effect, b"opacity")
+        self.content_fade_animation.setDuration(500)
+        self.content_fade_animation.setStartValue(0.0)
+        self.content_fade_animation.setEndValue(1.0)
+        
+        # 2.3s 后正文渐显
+        self.content_fade_timer = QTimer(self)
+        self.content_fade_timer.setSingleShot(True)
+        self.content_fade_timer.timeout.connect(self.start_content_fade)
+        self.content_fade_timer.start(2300)
+
+        # 图片显示区域 - 作为对话框的直接子部件，方便绝对定位重叠
+        self.image_label = QLabel(self)
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setFixedHeight(500)
+        self.image_label.setFixedWidth(1020) # 1080 - 60 (margins)
+        # 考虑到 main_layout 有 30,30,30,30 的 margins
+        self.image_label.move(30, 30)
+        
+        # 设置渐显/渐隐动画
+        self.opacity_effect = QGraphicsOpacityEffect(self.image_label)
+        self.opacity_effect.setOpacity(0.0) # 初始设置为不可见，用于渐显
+        self.image_label.setGraphicsEffect(self.opacity_effect)
+        
+        # 渐显动画
+        self.in_fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.in_fade_animation.setDuration(500)
+        self.in_fade_animation.setStartValue(0.0)
+        self.in_fade_animation.setEndValue(1.0)
+        
+        # 渐隐动画
+        self.fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_animation.setDuration(500)
+        self.fade_animation.setStartValue(1.0)
+        self.fade_animation.setEndValue(0.0)
+        self.fade_animation.finished.connect(self.image_label.hide)
+        
+        # 点击触发渐隐
+        self.image_label.mousePressEvent = lambda event: self.start_fade()
+        
+        # 2s后触发渐隐
+        self.fade_timer = QTimer(self)
+        self.fade_timer.setSingleShot(True)
+        self.fade_timer.timeout.connect(self.start_fade)
+        self.fade_timer.start(2000)
+
+        self.image_label.show()
+        self.image_label.raise_()
+        
+        # 启动渐显动画
+        self.in_fade_animation.start()
         
         # 应用动态样式
         self._apply_dynamic_styles()
@@ -220,6 +287,10 @@ class AboutDialog(QDialog):
         if hasattr(self, 'image_label'):
             self.image_label.setStyleSheet(f"background-color: {self.left_background_color}; border-radius: 15px;")
             
+        if hasattr(self, 'left_scroll'):
+            self.left_scroll.setStyleSheet(f"QScrollArea {{background-color: {self.left_background_color}; border-radius: 15px;}}")
+            self.left_scroll.viewport().setStyleSheet(f"background-color: {self.left_background_color};")
+            
         if hasattr(self, 'left_content_label'):
             self.left_content_label.setStyleSheet(f"""
                 QLabel {{
@@ -230,6 +301,10 @@ class AboutDialog(QDialog):
                 }}
             """)
             
+        if hasattr(self, 'right_scroll'):
+            self.right_scroll.setStyleSheet(f"QScrollArea {{background-color: {self.left_background_color}; border-radius: 15px;}}")
+            self.right_scroll.viewport().setStyleSheet(f"background-color: {self.left_background_color};")
+
         if hasattr(self, 'right_content_label'):
             self.right_content_label.setStyleSheet(f"""
                 QLabel {{
@@ -285,7 +360,7 @@ class AboutDialog(QDialog):
         if os.path.exists(self.image_path):
             pixmap = QPixmap(self.image_path)
             if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(1080, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                scaled_pixmap = pixmap.scaled(1020, 450, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 self.image_label.setPixmap(scaled_pixmap)
                 debug_logger.output("mp_about.py", LogLevel.INFO, "图片显示成功", fold_code="ABOUT_IMG")
             else:
@@ -355,6 +430,26 @@ class AboutDialog(QDialog):
         
         for button in self.buttons:
             button.setFont(button_font)
+
+    def start_fade(self):
+        """开始渐隐动画"""
+        if self.fade_timer:
+            self.fade_timer.stop()
+        if hasattr(self, 'fade_animation') and self.fade_animation.state() != QPropertyAnimation.Running:
+            debug_logger.output("mp_about.py", LogLevel.INFO, "触发渐隐动画", fold_code="ABOUT_UI")
+            self.fade_animation.start()
+        
+        # 如果点击了 logo，也立即开始正文渐显
+        self.start_content_fade()
+
+    def start_content_fade(self):
+        """开始正文渐显动画"""
+        if hasattr(self, 'content_fade_timer') and self.content_fade_timer:
+            self.content_fade_timer.stop()
+        if hasattr(self, 'content_fade_animation') and self.content_fade_animation.state() != QPropertyAnimation.Running:
+            if self.content_opacity_effect.opacity() < 1.0:
+                debug_logger.output("mp_about.py", LogLevel.INFO, "触发正文渐显动画", fold_code="ABOUT_UI")
+                self.content_fade_animation.start()
     
     def open_url(self, index):
         """

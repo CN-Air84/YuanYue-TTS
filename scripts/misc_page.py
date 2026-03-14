@@ -364,13 +364,13 @@ class MiscPage(QWidget):
         github_acceleration = mirror_mapping.get(github_mirror, 0)
 
         if 'github.com' in original_url and github_acceleration > 0:
-            if github_acceleration == 1:  # ghfast镜像
+            if github_acceleration == 1:  # ghfast镜像地址
                 return f"https://ghfast.top/{original_url}"
-            elif github_acceleration == 2:  # ghproxy主站
+            elif github_acceleration == 2:  # ghproxy主站节点
                 return f"https://gh-proxy.org/{original_url}"
-            elif github_acceleration == 3:  # ghproxy HK
+            elif github_acceleration == 3:  # ghproxy香港节点
                 return f"https://hk.gh-proxy.org/{original_url}"
-            elif github_acceleration == 4:  # ghproxy edgeone
+            elif github_acceleration == 4:  # ghproxy edgeone节点
                 return f"https://edgeone.gh-proxy.org/{original_url}"
 
         return original_url

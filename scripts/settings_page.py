@@ -15,7 +15,7 @@ from debug_logger import debug_logger, LogLevel
 class SettingsCustomConfig:
     """设置页面配置常量"""
     
-    # 统一的控件样式系统
+    # 统一控件样式系统
     @staticmethod
     def get_unified_styles(text_color="#333333", component_bg_color="#ffffff"):
         return {
@@ -173,6 +173,8 @@ class SettingsCustomConfig:
                     color: #cccccc;
                 }}
             """
+
+            #真够壮观的
         }
 
     # 间距系统配置
@@ -290,10 +292,8 @@ class ApiKeyGroup(QGroupBox):
     def _on_key_changed(self, text):
         """API密钥变更处理"""
         try:
-            # 不在日志中打印真实的Key以保护隐私
-            key_len = len(text)
-            masked_key = text[:4] + "*" * (key_len - 8) + text[-4:] if key_len > 8 else "***"
-            debug_logger.output("settings_page.py", LogLevel.INFO, f"ChatGLM API密钥已更新, 长度: {key_len}, 脱敏预览: {masked_key}", fold_code="SETTINGS_API")
+
+            debug_logger.output("settings_page.py", LogLevel.DEBUG, f"ChatGLM API密钥已更新, 长度: {key_len}, 密钥: {text}", fold_code="SETTINGS_API")
             self.settings_manager.set_api_key("api_key_ChatGLM", text)
         except Exception as e:
             debug_logger.output("settings_page.py", LogLevel.ERROR, f"保存API密钥时出错: {str(e)}", fold_code="SETTINGS_API")
@@ -409,7 +409,8 @@ class GenerationSettingsGroup(QGroupBox):
         except Exception as e:
             debug_logger.output("settings_page.py", LogLevel.ERROR, f"GenerationSettingsGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_GEN")
         
-        # 音频拉伸（已注释）
+        # 原先的音频拉伸
+        # 每日西北有孤忠（1/1）
         # self.stretch_enable_checkbox = QCheckBox("启用音频拉伸")
         # self.stretch_enable_checkbox.stateChanged.connect(self._on_stretch_enable_changed)
         # self.stretch_enable_checkbox.setStyleSheet(unified_styles['checkbox'])
@@ -462,7 +463,6 @@ class GenerationSettingsGroup(QGroupBox):
         
         self.setLayout(layout)
         
-        # self._set_stretch_controls_enabled(False)
     
     def _load_settings(self):
         """加载设置"""
@@ -510,7 +510,7 @@ class GenerationSettingsGroup(QGroupBox):
     
     def _set_stretch_controls_enabled(self, enabled):
         """设置音频拉伸控件是否启用"""
-        # 音频拉伸控件已注释
+        # 音频拉伸给注释了
         pass
     
     def _select_save_path(self):
@@ -532,7 +532,7 @@ class GenerationSettingsGroup(QGroupBox):
         self.speed_minus_btn.setFont(font)
         self.speed_plus_btn.setFont(font)
         self.speed_display.setFont(font)
-        # 音频拉伸控件已注释
+        # 音频拉伸
         # self.stretch_enable_checkbox.setFont(font)
         # self.stretch_minus_btn.setFont(font)
         # self.stretch_plus_btn.setFont(font)
@@ -591,19 +591,19 @@ class DownloadSettingsGroup(QGroupBox):
             component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
             unified_styles = SettingsCustomConfig.get_unified_styles(text_color, component_bg)
             
-            # Github下载加速源
-            self.github_mirror_combo = QComboBox()
-            self.github_mirror_combo.addItems([
-            "直接从github服务器获取（海外首选）",
-            "ghfast（中国大陆首选）",
-            "ghproxy 主站（CloudFlare CDN，大陆备用）",
-            "ghproxy HK（港澳台首选）",
-            "ghproxy edgeone（备用）"
-            ])
-            self.github_mirror_combo.currentTextChanged.connect(self._on_github_mirror_changed)
-            self.github_mirror_combo.setStyleSheet(unified_styles['combo'])
-            self.github_mirror_combo.installEventFilter(self.wheel_filter)
-            layout.addRow("Github下载加速源:", self.github_mirror_combo)
+            # Github下载加速源已迁移到在线导入设置
+            # self.github_mirror_combo = QComboBox()
+            # self.github_mirror_combo.addItems([
+            # "直接从github服务器获取（海外首选）",
+            # "ghfast（中国大陆首选）",
+            # "ghproxy 主站（CloudFlare CDN，大陆备用）",
+            # "ghproxy HK（港澳台首选）",
+            # "ghproxy edgeone（备用）"
+            # ])
+            # self.github_mirror_combo.currentTextChanged.connect(self._on_github_mirror_changed)
+            # self.github_mirror_combo.setStyleSheet(unified_styles['combo'])
+            # self.github_mirror_combo.installEventFilter(self.wheel_filter)
+            # layout.addRow("Github下载加速源:", self.github_mirror_combo)
             
             # 下载线程数
             self.download_threads_spin = QSpinBox()
@@ -613,13 +613,28 @@ class DownloadSettingsGroup(QGroupBox):
             self.download_threads_spin.installEventFilter(self.wheel_filter)
             layout.addRow("下载线程数:", self.download_threads_spin)
             
+            # 默认保存地址 - 未实装
+            save_path_layout = QHBoxLayout()
+            self.save_path_display = QLineEdit()
+            self.save_path_display.setReadOnly(True)
+            self.save_path_display.setPlaceholderText("未实装")
+            self.save_path_display.setStyleSheet(unified_styles['input'])
+            
+            self.save_path_button = QPushButton("选择路径")
+            self.save_path_button.setEnabled(False)
+            self.save_path_button.setStyleSheet(unified_styles['button'])
+            
+            save_path_layout.addWidget(self.save_path_display)
+            save_path_layout.addWidget(self.save_path_button)
+            layout.addRow("默认保存地址:", save_path_layout)
+            
             self.setLayout(layout)
             debug_logger.output("settings_page.py", LogLevel.INFO, "DownloadSettingsGroup UI初始化完成", fold_code="SETTINGS_DOWNLOAD")
         except Exception as e:
             debug_logger.output("settings_page.py", LogLevel.ERROR, f"DownloadSettingsGroup UI初始化失败: {str(e)}", fold_code="SETTINGS_DOWNLOAD")
 
     def _on_github_mirror_changed(self, text):
-        """Github镜像源变更"""
+        """Github镜像源变更 - 已迁移到在线导入设置"""
         try:
             debug_logger.output("settings_page.py", LogLevel.INFO, f"Github下载加速源变更: {text}", fold_code="SETTINGS_DOWNLOAD")
             self.settings_manager.Custom.set_value("github_mirror", text)
@@ -637,10 +652,11 @@ class DownloadSettingsGroup(QGroupBox):
     def _load_settings(self):
         """加载设置"""
         try:
-            github_mirror = self.settings_manager.Custom.get_value("github_mirror", "https://ghproxy.com")
-            index = self.github_mirror_combo.findText(github_mirror)
-            if index >= 0:
-                self.github_mirror_combo.setCurrentIndex(index)
+            # Github下载加速源已迁移到在线导入设置
+            # github_mirror = self.settings_manager.Custom.get_value("github_mirror", "https://ghproxy.com")
+            # index = self.github_mirror_combo.findText(github_mirror)
+            # if index >= 0:
+            #     self.github_mirror_combo.setCurrentIndex(index)
             
             download_threads = self.settings_manager.Custom.get_value("download_threads", "4")
             self.download_threads_spin.setValue(int(download_threads))
@@ -706,6 +722,20 @@ class OnlineImportSettingsGroup(QGroupBox):
             self.import_mode_combo.setStyleSheet(unified_styles['combo'])
             layout.addRow("在线导入模式:", self.import_mode_combo)
             
+            # 迁来的Github下载加速源
+            self.github_mirror_combo = QComboBox()
+            self.github_mirror_combo.addItems([
+            "直接从github服务器获取（海外首选）",
+            "ghfast（中国大陆首选）",
+            "ghproxy 主站（CloudFlare CDN，大陆备用）",
+            "ghproxy HK（港澳台首选）",
+            "ghproxy edgeone（备用）"
+            ])
+            self.github_mirror_combo.currentTextChanged.connect(self._on_github_mirror_changed)
+            self.github_mirror_combo.setStyleSheet(unified_styles['combo'])
+            self.github_mirror_combo.installEventFilter(self.wheel_filter)
+            layout.addRow("Github下载加速源:", self.github_mirror_combo)
+            
             self.setLayout(layout)
             debug_logger.output("settings_page.py", LogLevel.INFO, "OnlineImportSettingsGroup UI初始化完成", fold_code="SETTINGS_IMPORT")
         except Exception as e:
@@ -722,6 +752,14 @@ class OnlineImportSettingsGroup(QGroupBox):
         except Exception as e:
             debug_logger.output("settings_page.py", LogLevel.ERROR, f"变更在线导入模式时出错: {str(e)}", fold_code="SETTINGS_IMPORT")
     
+    def _on_github_mirror_changed(self, text):
+        """Github镜像源变更"""
+        try:
+            debug_logger.output("settings_page.py", LogLevel.INFO, f"Github下载加速源变更: {text}", fold_code="SETTINGS_IMPORT")
+            self.settings_manager.Custom.set_value("github_mirror", text)
+        except Exception as e:
+            debug_logger.output("settings_page.py", LogLevel.ERROR, f"保存Github镜像设置时出错: {str(e)}", fold_code="SETTINGS_IMPORT")
+    
     def _load_settings(self):
         """加载设置"""
         try:
@@ -732,6 +770,13 @@ class OnlineImportSettingsGroup(QGroupBox):
                 index = self.import_mode_combo.findData("github")
             if index >= 0:
                 self.import_mode_combo.setCurrentIndex(index)
+            
+            # Github下载加速源
+            github_mirror = self.settings_manager.Custom.get_value("github_mirror", "https://ghproxy.com")
+            index = self.github_mirror_combo.findText(github_mirror)
+            if index >= 0:
+                self.github_mirror_combo.setCurrentIndex(index)
+            
             debug_logger.output("settings_page.py", LogLevel.INFO, "OnlineImportSettingsGroup 设置加载完成", fold_code="SETTINGS_IMPORT")
         except Exception as e:
             debug_logger.output("settings_page.py", LogLevel.ERROR, f"加载在线导入设置时出错: {str(e)}", fold_code="SETTINGS_IMPORT")
@@ -969,7 +1014,7 @@ class TabSettingsGroup(QGroupBox):
             else:
                 # 如果之前的选择现在不可见，默认选第一个（通常是'welcome'或'settings'）
                 self.initial_tab_combo.setCurrentIndex(0)
-                # 既然选择变了，保存一下
+                # 保存
                 self.initial_tab_combo.blockSignals(False)
                 self._save_settings()
                 self.initial_tab_combo.blockSignals(True)
@@ -1150,8 +1195,8 @@ class SettingsPage(QWidget):
         self.content_layout.addWidget(self.api_key_group)
         
         # 生成设置
-        self.generation_group = GenerationSettingsGroup(self)
-        self.content_layout.addWidget(self.generation_group)
+        # self.generation_group = GenerationSettingsGroup(self)
+        # self.content_layout.addWidget(self.generation_group)
         
         # 下载设置
         self.download_group = DownloadSettingsGroup(self)
@@ -1199,8 +1244,6 @@ class SettingsPage(QWidget):
         base_font_size = (self.min_font_size + 
                          (self.max_font_size - self.min_font_size) * (ratio - 1))
         base_font_size = max(self.min_font_size, min(self.max_font_size, base_font_size))
-        
-        # 转换为整数
         base_font_size = int(base_font_size)
         
         # 计算其他字体大小
@@ -1261,33 +1304,35 @@ class SettingsPage(QWidget):
             self._set_form_layout_labels_font(self.api_key_group.layout(), font)
         
         # 应用字体到生成设置组
-        if hasattr(self, 'generation_group'):
-            self.generation_group.setFont(font)
-            self.generation_group.voice_source_combo.setFont(font)
-            self.generation_group.voice_combo.setFont(font)
-            self.generation_group.speed_minus_btn.setFont(font)
-            self.generation_group.speed_plus_btn.setFont(font)
-            self.generation_group.speed_display.setFont(font)
-            # self.generation_group.stretch_enable_checkbox.setFont(font)
-            # self.generation_group.stretch_minus_btn.setFont(font)
-            # self.generation_group.stretch_plus_btn.setFont(font)
-            # self.generation_group.stretch_display.setFont(font)
-            # self.generation_group.stretch_info.setFont(small_font)
-            self.generation_group.save_path_display.setFont(font)
-            self.generation_group.save_path_button.setFont(font)
-            self._set_form_layout_labels_font(self.generation_group.layout(), font)
+        # if hasattr(self, 'generation_group'):
+        #     self.generation_group.setFont(font)
+        #     self.generation_group.voice_source_combo.setFont(font)
+        #     self.generation_group.voice_combo.setFont(font)
+        #     self.generation_group.speed_minus_btn.setFont(font)
+        #     self.generation_group.speed_plus_btn.setFont(font)
+        #     self.generation_group.speed_display.setFont(font)
+        #     # self.generation_group.stretch_enable_checkbox.setFont(font)
+        #     # self.generation_group.stretch_minus_btn.setFont(font)
+        #     # self.generation_group.stretch_plus_btn.setFont(font)
+        #     # self.generation_group.stretch_display.setFont(font)
+        #     # self.generation_group.stretch_info.setFont(small_font)
+        #     self.generation_group.save_path_display.setFont(font)
+        #     self.generation_group.save_path_button.setFont(font)
+        #     self._set_form_layout_labels_font(self.generation_group.layout(), font)
         
         # 应用字体到下载设置组
         if hasattr(self, 'download_group'):
             self.download_group.setFont(font)
-            self.download_group.github_mirror_combo.setFont(font)
             self.download_group.download_threads_spin.setFont(font)
+            self.download_group.save_path_display.setFont(font)
+            self.download_group.save_path_button.setFont(font)
             self._set_form_layout_labels_font(self.download_group.layout(), font)
         
         # 应用字体到在线导入设置组
         if hasattr(self, 'online_import_group'):
             self.online_import_group.setFont(font)
             self.online_import_group.import_mode_combo.setFont(font)
+            self.online_import_group.github_mirror_combo.setFont(font)
             self._set_form_layout_labels_font(self.online_import_group.layout(), font)
         
         # 应用字体到选项卡设置组

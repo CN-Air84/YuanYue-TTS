@@ -4,7 +4,7 @@ import os
 import ctypes
 from typing import Dict, Tuple, Optional, List
 
-# 尝试导入 sdl2，如果失败则静默处理（避免影响主程序启动，虽然理应已安装）
+# 试着导入 sdl2，失败也不报错
 try:
     import sdl2
     import sdl2.ext

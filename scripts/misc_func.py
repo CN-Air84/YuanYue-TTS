@@ -342,7 +342,7 @@ class StringConfigSection(ConfigSection):
             self.settings_manager._load_config()
             if self.section_name in self.settings_manager.config:
                 val = self.settings_manager.config[self.section_name].get(key, default)
-                debug_logger.output("misc_func.py", LogLevel.INFO, f"获取配置值: [{self.section_name}] {key} = {val}", fold_code="CFG_GET")
+                #debug_logger.output("misc_func.py", LogLevel.DEBUG, f"获取配置值: [{self.section_name}] {key} = {val}", fold_code="CFG_GET")
                 return val
             return default
         except Exception as e:
@@ -406,7 +406,14 @@ class BoolConfigSection(ConfigSection):
         """设置布尔值配置值"""
         return StringConfigSection(self.settings_manager, self.section_name).set_value(key, str(value))
 class SettingsManager:
-    """设置管理器 - 使用ini文件保存配置"""
+    """设置管理器 - 使用ini文件保存配置 (单例模式)"""
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     
     # 配置常量
     CONFIG_FILE = "settings.ini"
@@ -420,14 +427,16 @@ class SettingsManager:
     SECTION_Custom = 'Custom'  # 新增个性化设置段落
     
     def __init__(self):
-        self.config_file = os.path.join(get_app_base_path(), self.CONFIG_FILE)
-        self.config = configparser.ConfigParser()
-        
-        # 初始化配置段落管理器
-        self._init_config_sections()
-        
-        # 确保配置文件存在
-        self._ensure_config_file()
+        if not hasattr(self, '_initialized'): # Ensure __init__ runs only once for singleton
+            self.config_file = os.path.join(get_app_base_path(), self.CONFIG_FILE)
+            self.config = configparser.ConfigParser()
+            
+            # 初始化配置段落管理器
+            self._init_config_sections()
+            
+            # 确保配置文件存在
+            self._ensure_config_file()
+            self._initialized = True
     
     def _init_config_sections(self):
         """初始化配置段落管理器"""
@@ -516,7 +525,8 @@ class SettingsManager:
             'hk_volume_up': '87',         # W
             'hk_volume_down': '83',       # S
             'hk_next_sentence': '16777236',  # Right
-            'hk_prev_sentence': '16777234'   # Left
+            'hk_prev_sentence': '16777234',   # Left
+            'is_first_run': 'True'
         }
         
         self._save_config()
@@ -524,7 +534,7 @@ class SettingsManager:
     def _load_config(self):
         """从文件加载配置"""
         try:
-            debug_logger.output("misc_func.py", LogLevel.INFO, f"正在从文件加载配置: {self.config_file}", fold_code="CFG_LOAD")
+            #debug_logger.output("misc_func.py", LogLevel.DEBUG, f"正在从文件加载配置: {self.config_file}", fold_code="CFG_LOAD")
             self.config.read(self.config_file, encoding='utf-8')
         except Exception as e:
             debug_logger.output("misc_func.py", LogLevel.ERROR, f"读取配置文件失败: {e}", fold_code="CFG_ERR")
@@ -595,6 +605,18 @@ class SettingsManager:
         debug_logger.output("misc_func.py", LogLevel.INFO, f"设置默认语速: {value}", fold_code="CFG_PARAM")
         return self.default_parameters.set_value('default_speed', str(value))
     
+    # 首次运行相关方法
+    def get_is_first_run(self) -> bool:
+        """获取是否首次运行"""
+        val = self.Custom.get_value('is_first_run', 'True')
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取是否首次运行: {val}", fold_code="CFG_FIRSTRUN")
+        return val.lower() == 'true'
+
+    def set_is_first_run(self, value: bool) -> bool:
+        """设置是否首次运行"""
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置是否首次运行: {value}", fold_code="CFG_FIRSTRUN")
+        return self.Custom.set_value('is_first_run', str(value))
+
     def get_stretch_factor(self) -> float:
         """获取音频拉伸倍数"""
         stretch_str = self.default_parameters.get_value('stretch_factor', '1.0')

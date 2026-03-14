@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any
 from debug_logger import debug_logger, LogLevel
 
+
+#deepseek上下文窗口太小，感觉不如GLM-5
 # 尝试导入 pyncm，这是网易云音乐的核心库
 try:
     import pyncm
@@ -195,17 +197,26 @@ class MusicPlayer:
     def _start_backend(self):
         """启动后台播放进程"""
         try:
-            # 使用项目内置的 venv python 运行后台脚本
-            python_exe = os.path.join(os.path.dirname(sys.executable), "python.exe")
-            if not os.path.exists(python_exe):
-                # 如果没找到，尝试相对于当前运行环境查找 (针对开发环境)
-                python_exe = sys.executable
-                
-            script_path = os.path.join(os.path.dirname(__file__), "music_backend.py")
+            # 判断是否处于打包状态
+            is_frozen = getattr(sys, 'frozen', False)
             
-            debug_logger.info("MusicPlayer", f"正在启动独立播放后台: {python_exe}")
+            if is_frozen:
+                # 打包环境下，sys.executable 就是主程序 EXE
+                # 我们通过传递特殊命令行参数来让主程序启动进入后台模式
+                python_exe = sys.executable
+                args = [python_exe, "--music-backend"]
+            else:
+                # 开发环境下，寻找 python.exe
+                python_exe = os.path.join(os.path.dirname(sys.executable), "python.exe")
+                if not os.path.exists(python_exe):
+                    python_exe = sys.executable
+                
+                script_path = os.path.join(os.path.dirname(__file__), "music_backend.py")
+                args = [python_exe, script_path]
+            
+            debug_logger.info("MusicPlayer", f"正在启动独立播放后台 (Frozen={is_frozen}): {python_exe}")
             self.backend_proc = subprocess.Popen(
-                [python_exe, script_path],
+                args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -370,9 +381,16 @@ class MusicSubsystem:
         self.play_mode = mode
         if mode == 2: # 随机播放
             self._regenerate_shuffle()
+        else:
+            # 切换回顺序模式时，清空随机索引
+            self.shuffled_indices = []
+            self.shuffled_ptr = -1
 
-    def _regenerate_shuffle(self):
-        """生成一个新的随机播放序列"""
+    def _regenerate_shuffle(self, exclude_current=False):
+        """
+        生成一个新的随机播放序列。
+        exclude_current: 如果为 True，则确保第一首歌不是当前正在播放的。
+        """
         if not self.current_list:
             self.shuffled_indices = []
             self.shuffled_ptr = -1
@@ -382,14 +400,20 @@ class MusicSubsystem:
         self.shuffled_indices = list(range(count))
         random.shuffle(self.shuffled_indices)
         
-        # 如果当前正在播放，尝试把当前歌曲放在序列开头或从当前位置继续
         if 0 <= self.current_index < count:
-            try:
-                # 把当前正在播放的歌曲移到随机序列的第一位（如果存在）
-                self.shuffled_indices.remove(self.current_index)
-                self.shuffled_indices.insert(0, self.current_index)
-                self.shuffled_ptr = 0
-            except ValueError:
+            if not exclude_current:
+                # 把当前正在播放的歌曲移到随机序列的第一位
+                try:
+                    self.shuffled_indices.remove(self.current_index)
+                    self.shuffled_indices.insert(0, self.current_index)
+                    self.shuffled_ptr = 0
+                except ValueError:
+                    self.shuffled_ptr = -1
+            else:
+                # 确保第一首歌不是当前这首（通常用于播放完毕后的二次打乱）
+                if self.shuffled_indices[0] == self.current_index and count > 1:
+                    # 随便跟后面一个换一下
+                    self.shuffled_indices[0], self.shuffled_indices[1] = self.shuffled_indices[1], self.shuffled_indices[0]
                 self.shuffled_ptr = -1
         else:
             self.shuffled_ptr = -1
@@ -541,6 +565,21 @@ class MusicSubsystem:
             self.current_track.parsed_lyrics = self._parse_lrc(lyrics)
         return lyrics
 
+    def play_all(self):
+        """一键播放逻辑：根据当前模式从头开始播放"""
+        if not self.current_list:
+            return
+            
+        if self.play_mode == 2: # 随机模式
+            # 重新生成一个随机序列，不一定要求保持当前歌曲在首位，因为是“点了一键播放”
+            self._regenerate_shuffle(exclude_current=False)
+            if self.shuffled_indices:
+                self.shuffled_ptr = 0
+                idx = self.shuffled_indices[0]
+                self.play_by_index(idx + 1)
+        else: # 顺序/列表循环/单曲循环 (一键播放通常指从第一首开始顺序播放)
+            self.play_by_index(1)
+
     def next_song(self):
         """播放下一曲 (根据播放模式)"""
         if not self.current_list: return
@@ -556,7 +595,13 @@ class MusicSubsystem:
             
             if not self.shuffled_indices: return
             
-            self.shuffled_ptr = (self.shuffled_ptr + 1) % len(self.shuffled_indices)
+            self.shuffled_ptr += 1
+            if self.shuffled_ptr >= len(self.shuffled_indices):
+                # 隐藏歌单播放完毕，再次打乱
+                debug_logger.info("MusicSubsystem", "随机序列播放完毕，重新打乱")
+                self._regenerate_shuffle(exclude_current=True)
+                self.shuffled_ptr = 0
+                
             idx = self.shuffled_indices[self.shuffled_ptr]
             
         self.play_by_index(idx + 1)
