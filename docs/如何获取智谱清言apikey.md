@@ -1,6 +1,15 @@
 第一步：注册/登录智谱 AI 开放平台
 
-访问官网：打开浏览器，访问智谱 AI 开放平台地址：https://open.bigmodel.cn/
+访问官网：打开浏览器，访问智谱 AI 开放平台地址。
+
+新用户注册送2000万tokens，但程序调用的两款免费模型完全免费，不消耗Tokens。您可以拿去另做他用。
+
+
+这里是我的邀请链接：https://www.bigmodel.cn/invite?icode=%2FveqUy%2BfLWQAs9oUDFwAmZmwcr074zMJTpgMb8zZZvg%3D
+
+这个邀请链接是作者唯一的间接获利途径，且无法提现。望各位支持一下，感谢！
+
+或者直接访问官网：https://www.bigmodel.cn/
 
 登录/注册：
 
