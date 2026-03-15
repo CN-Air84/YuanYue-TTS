@@ -164,10 +164,6 @@ class Notification(QWidget):
         # 显示消息
         self.show()
         
-        # 确保主窗口保持焦点
-        if self.parent_window:
-            self.parent_window.activateWindow()
-        
         # 启动出现动画
         self._start_appear_animation()
         
@@ -273,8 +269,7 @@ class Notification(QWidget):
             finish_callback (callable): 动画完成回调函数
         """
         debug_logger.output("notification.py", LogLevel.INFO, f"启动透明度动画: {start_opacity} -> {end_opacity}, 耗时: {duration}ms", fold_code="NOTIFICATION_ANIM")
-        # 用 QPropertyAnimation 做透明度动画
-        # 这名字怎么这么长
+        # 使用QPropertyAnimation进行透明度动画
         self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
         self.opacity_animation.setDuration(duration)
         self.opacity_animation.setStartValue(start_opacity)
@@ -348,7 +343,7 @@ class Notification(QWidget):
         try:
             preview_button = self.parent_window.generation_page.preview_control.preview_button
         except AttributeError:
-            # 找不到preview_button就换招
+            # 如果找不到preview_button，尝试其他路径
             try:
                 # 尝试直接通过当前页面获取
                 current_page = self.parent_window.stacked_widget.currentWidget()
@@ -500,8 +495,6 @@ class Notification(QWidget):
         
         Args:
             event (QCloseEvent): 关闭事件对象
-        
-        这函数注释格式是真够麻烦的 
         """
         debug_logger.output("notification.py", LogLevel.INFO, "Notification 窗口正在关闭", fold_code="NOTIFICATION_EVENT")
         self.close_timer.stop()
@@ -516,9 +509,6 @@ class Notification(QWidget):
         if self.is_moving:
             self.move_position_animation.stop()
         self.closed.emit()
-        if self.parent_window:
-            self.parent_window.activateWindow()
-            self.parent_window.setFocus()
         event.accept()
     
     # ===== 点击穿透和手势滑动功能 =====

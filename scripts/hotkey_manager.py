@@ -24,9 +24,9 @@ class HotkeyManager(QObject):
     支持 Qt 键盘事件和 SDL2 输入设备
     """
     # 当热键被触发时发出的信号
-    hotkey_triggered = pyqtSignal(str)  # 参数是动作名称
+    hotkey_triggered = pyqtSignal(str)  # 参数为动作名称
     
-    # SDL2 事件信号（用于录制）
+    # SDL2 事件信号 (用于录制)
     # 参数: (device_guid, button_id, device_name)
     sdl_button_pressed = pyqtSignal(str, int, str)
     
@@ -36,15 +36,15 @@ class HotkeyManager(QObject):
     def __init__(self, settings_manager=None):
         super().__init__()
         self.settings_manager = settings_manager
-        # 动作到按键的映射 {action: key_code}（Qt模式）
+        # 动作到按键的映射 {action: key_code} (Qt Mode)
         self.hotkeys: Dict[str, int] = {}
-        # 动作到 SDL 绑定的映射 {action: (device_guid, button_id)}（SDL模式）
+        # 动作到 SDL 绑定的映射 {action: (device_guid, button_id)} (SDL Mode)
         self.sdl_bindings: Dict[str, Tuple[str, int]] = {}
         
         # 动作到辅助键的映射 {action: modifiers}
         self.modifiers: Dict[str, Qt.KeyboardModifiers] = {}
         
-        # 默认热键配置
+        # 默认热键配置 (参考原方案1)
         self.default_hotkeys = {
             HotkeyAction.TOGGLE_PAUSE: Qt.Key_Space,
             HotkeyAction.SEEK_BACKWARD: Qt.Key_A,
@@ -58,13 +58,13 @@ class HotkeyManager(QObject):
         # SDL2 管理器
         self.sdl_manager = SDLInputManager()
         self.use_sdl_mode = False
-        self.target_sdl_device_guid: Optional[str] = None  # 目标 SDL 设备 GUID（None 表示响应所有）
+        self.target_sdl_device_guid: Optional[str] = None # 目标 SDL 设备 GUID (None 表示响应所有)
         
-        # SDL 轮询定时器（16毫秒 ~= 60帧）
+        # SDL 轮询定时器 (16ms ~= 60fps)
         self.sdl_timer = QTimer(self)
         self.sdl_timer.timeout.connect(self._poll_sdl_inputs)
         
-        # 按钮状态缓存，防止重复触发
+        # 按钮状态缓存，防止重复触发 (Key Repeat)
         # {action: is_pressed}
         self.sdl_button_states: Dict[str, bool] = {}
         
@@ -78,7 +78,7 @@ class HotkeyManager(QObject):
         try:
             events = self.sdl_manager.poll_events()
             
-            # 有设备变化就通知 UI 更新列表
+            # 如果事件中包含设备变更，通知 UI 更新设备列表
             for event in events:
                 if event.get('type') in ('device_added', 'device_removed'):
                     device_info = event.get('device_name', 'Unknown Device')
@@ -87,7 +87,8 @@ class HotkeyManager(QObject):
 
             for event in events:
                 if event['type'] == 'button_down':
-                    # 配置了特定设备就只响应那个设备，录制时随便按啥都行
+                    # 如果指定了目标设备且不匹配，则忽略（除非正在录制，录制时允许接收所有以便选择）
+                    # 录制逻辑在 UI 层处理，这里我们只负责过滤触发信号
                     
                     # 发出信号供录制使用 (录制时不应过滤)
                     self.sdl_button_pressed.emit(
@@ -169,14 +170,16 @@ class HotkeyManager(QObject):
         use_sdl = str(use_sdl_raw).lower() == 'true'
         debug_logger.output("hotkey_manager.py", LogLevel.INFO, f"读取到 SDL 模式偏好: {use_sdl}", fold_code="HOTKEY_CFG")
         
-        # 不立即调用 set_sdl_mode，防止初始化阻塞或依赖未就绪
+        # 注意：这里不立即调用 set_sdl_mode，避免初始化时阻塞或依赖未就绪，
+        # 但为了保持状态一致，可以在 UI 加载时读取此值
         if use_sdl:
+             # 可以在这里延迟初始化，或者等待 UI 显式调用
              pass
 
         # 加载 Qt 热键
         loaded_count = 0
         for action in self.default_hotkeys.keys():
-            # 从 Custom 段落读取，格式是 "hotkey_action_name"
+            # 从 Custom 段落读取，格式为 "hotkey_action_name"
             key_val = self.settings_manager.Custom.get_value(f"hk_{action}", "")
             if key_val:
                 try:
@@ -208,17 +211,17 @@ class HotkeyManager(QObject):
             return
         
         debug_logger.output("hotkey_manager.py", LogLevel.INFO, "正在将热键配置保存至设置文件...", fold_code="HOTKEY_CFG")
-        # 保存 Qt 热键配置
+        # 保存 Qt 热键
         for action, key_code in self.hotkeys.items():
             self.settings_manager.Custom.set_value(f"hk_{action}", str(key_code))
             
-        # 保存 SDL 绑定配置
+        # 保存 SDL 绑定
         for action, binding in self.sdl_bindings.items():
             if binding:
                 val = f"{binding[0]}|{binding[1]}"
                 self.settings_manager.Custom.set_value(f"sdl_hk_{action}", val)
             else:
-                 # 清除无效的绑定
+                 # 清除不存在的绑定
                  self.settings_manager.Custom.set_value(f"sdl_hk_{action}", "")
         
         debug_logger.output("hotkey_manager.py", LogLevel.INFO, "热键配置已成功持久化", fold_code="HOTKEY_CFG")

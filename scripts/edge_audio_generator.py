@@ -10,10 +10,6 @@ from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
 from debug_logger import debug_logger, LogLevel
 
-'''
-本段代码在SimeonTest Re1时使用 DeepSeek 重构，
-地破细可 vs 差特计屁蹄，拟盟知道吗？
-'''
 try:
     import miniaudio
     MINIAUDIO_AVAILABLE = True

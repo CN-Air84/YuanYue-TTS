@@ -1,18 +1,4 @@
 # coding=utf-8
-
-'''
-此子程序全部于使用Gemini生成。
-写的比deepseek好看多了。果然deepseek只适合写硬核后端。
-但这算法还是略差着点。
-'''
-
-'''
-多线程下载器有毛病，下载的文件有错位，
-三月七号那天找了一晚上的bug连自有服务器都架好了就是没法播放视频，
-结果是下载到的文件数据有错位opencv解不动，
-您了可别忘了，趁早改。
-'''
-
 import os
 import sys
 import math
@@ -95,33 +81,36 @@ class DownloadWorker(QThread):
         self.save_path = save_path
         self.file_type = file_type
         self.filename = filename
+        self.is_stopped = False
     
     def run(self):
         try:
-            if os.path.exists(self.save_path):
-                debug_logger.output("onboarding_page.py", LogLevel.INFO, f"文件 {self.filename} 已存在，跳过下载", fold_code="ONBOARD_DL")
-                self.download_finished.emit(True, self.file_type, self.filename)
-                return
-
             debug_logger.output("onboarding_page.py", LogLevel.INFO, f"开始下载: {self.url}", fold_code="ONBOARD_DL")
             response = requests.get(self.url, timeout=60, stream=True)
             response.raise_for_status()
             
             with open(self.save_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
+                    if self.is_stopped:
+                        debug_logger.output("onboarding_page.py", LogLevel.INFO, f"下载 {self.filename} 已被停止", fold_code="ONBOARD_DL")
+                        return
                     if chunk:
                         f.write(chunk)
             
             debug_logger.output("onboarding_page.py", LogLevel.INFO, f"文件 {self.filename} 下载完成", fold_code="ONBOARD_DL")
             self.download_finished.emit(True, self.file_type, self.filename)
         except Exception as e:
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"文件 {self.filename} 下载失败: {e}", fold_code="ONBOARD_DL")
-            self.download_finished.emit(False, self.file_type, self.filename)
+            if not self.is_stopped:
+                debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"文件 {self.filename} 下载失败: {e}", fold_code="ONBOARD_DL")
+                self.download_finished.emit(False, self.file_type, self.filename)
+
+    def stop(self):
+        self.is_stopped = True
 
 class LoadingScene(QWidget):
     finished = pyqtSignal()
-    skip_to_logo = pyqtSignal()
-
+    skip_requested = pyqtSignal(int) # New signal to request skipping to a specific scene
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.download_queue = []
@@ -130,46 +119,65 @@ class LoadingScene(QWidget):
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        
         self.spinner = LoadingSpinner()
+        layout.addWidget(self.spinner, 0, Qt.AlignCenter)
+        
         self.label = QLabel("Loading...")
         self.label.setFont(QFont("Segoe UI", 12))
         self.label.setStyleSheet("color: #666;")
-
-        center_layout = QVBoxLayout()
-        center_layout.setSpacing(15)
-        center_layout.setAlignment(Qt.AlignCenter)
-        center_layout.addWidget(self.spinner)
-        center_layout.addWidget(self.label)
-
-        self.skip_button = QPushButton("»")
-        self.skip_button.setCursor(Qt.PointingHandCursor)
+        layout.addWidget(self.label, 0, Qt.AlignCenter)
+        
+        # Skip Button
+        self.skip_button = QPushButton("»", self)
         self.skip_button.setFixedSize(60, 60)
-        font = QFont("HarmonyOS Sans SC", 16, QFont.Bold)
+        self.skip_button.setCursor(Qt.PointingHandCursor)
+        
+        font = QFont("HarmonyOS Sans SC", 24, QFont.Bold)
         if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
-            font = QFont("Segoe UI", 16, QFont.Bold)
+            font = QFont("微软雅黑", 24, QFont.Bold)
+            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
         self.skip_button.setFont(font)
+        
         self.skip_button.setStyleSheet("""
             QPushButton {
-                background-color: green;
+                background-color: #4CAF50; /* Green */
                 color: white;
-                border-radius: 30px; /* half of size */
+                border-radius: 30px; /* Circular */
+                font-weight: bold;
                 border: none;
             }
             QPushButton:hover {
-                background-color: #009900; /* Darker green */
+                background-color: #66BB6A;
             }
         """)
-        self.skip_button.clicked.connect(self.skip_downloads)
-
-        layout.addStretch(1)
-        layout.addLayout(center_layout)
-        layout.addStretch(1)
+        self.skip_button.clicked.connect(self.on_skip_button_clicked)
         
-        button_layout = QHBoxLayout()
-        button_layout.addStretch(1)
-        button_layout.addWidget(self.skip_button)
-        button_layout.setContentsMargins(0, 0, 20, 20)
-        layout.addLayout(button_layout)
+        # Position the skip button at the bottom right
+        # This needs to be done after the layout is set up or in resizeEvent
+        self.skip_button.move(self.width() - self.skip_button.width() - 20, 
+                              self.height() - self.skip_button.height() - 20)
+        
+    def resizeEvent(self, event):
+        # Reposition the skip button on resize
+        self.skip_button.move(self.width() - self.skip_button.width() - 20, 
+                              self.height() - self.skip_button.height() - 20)
+        super().resizeEvent(event)
+
+    def on_skip_button_clicked(self):
+        debug_logger.output("onboarding_page.py", LogLevel.INFO, "跳过按钮被点击，停止所有下载任务", fold_code="ONBOARD_DL")
+        
+        # Stop current download if any
+        if self.current_download and self.current_download.isRunning():
+            self.current_download.stop()
+            self.current_download.wait() # Wait for the thread to finish its current operation
+            
+        # Clear the download queue
+        self.download_queue.clear()
+        
+        # Emit signal to skip to LogoScene (index 2)
+        self.skip_requested.emit(2) # Assuming LogoScene is at index 2
         
     def start_download(self):
         """开始后台下载"""
@@ -228,14 +236,6 @@ class LoadingScene(QWidget):
             return
 
         self.process_queue()
-
-    def skip_downloads(self):
-        debug_logger.output("onboarding_page.py", LogLevel.INFO, "跳过下载...", fold_code="ONBOARD_DL")
-        if self.current_download and self.current_download.isRunning():
-            self.current_download.terminate() # 强制停止线程
-            self.current_download.wait() # 等待线程结束
-        self.download_queue.clear()
-        self.skip_to_logo.emit()
         
     def is_font_installed(self, font_name):
         """检查系统是否已安装指定字体"""
@@ -639,7 +639,7 @@ class LogoScene(QWidget):
         
         # Version Info (Bottom Right)
         # Try to get version info from main module
-        version_text = "Ver 0.14.6|2026-03-13"
+        version_text = "版本号|发布日期"
         try:
             # Attempt to import only if needed to avoid circular import issues
             import main_window
@@ -1037,7 +1037,8 @@ class FifthScene(QWidget):
         text_layout1.addWidget(desc1)
         
         self.combo_initial = QComboBox()
-        self.combo_initial.addItems(["欢迎", "听写", "设置", "个性化", "杂项", "流媒体"])
+        self.combo_initial.addItems(["欢迎", "听写", "设置", "个性化", "杂项" #, "流媒体"
+        ])
         self.combo_initial.setFixedWidth(120)
         self.combo_initial.setFont(desc1_font)
         self.combo_initial.setStyleSheet("""
@@ -1104,8 +1105,8 @@ class FifthScene(QWidget):
         self.buttons_layout.setSpacing(10)
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)
         
-        # tabs = ["欢迎", "听写", "设置", "个性化", "杂项", "流媒体"]
-        tabs = ["欢迎", "听写", "设置", "个性化", "杂项"]
+        tabs = ["欢迎", "听写", "设置", "个性化", "杂项" #, "流媒体"
+        ]
         self.drag_buttons = []
         for tab_name in tabs:
             btn = DraggableButton(tab_name)
@@ -1229,7 +1230,7 @@ class FifthScene(QWidget):
             "设置": "settings",
             "个性化": "personalization",
             "杂项": "misc",
-            "流媒体": "streaming" # Assuming streaming tab exists or will exist
+            #"流媒体": "streaming" # Commented out
         }
         selected_text = self.combo_initial.currentText()
         initial_tab = initial_tab_map.get(selected_text, "welcome")
@@ -1242,7 +1243,7 @@ class FifthScene(QWidget):
             "设置": "settings",
             "个性化": "personalization",
             "杂项": "misc",
-            # "流媒体": "streaming"
+            #"流媒体": "streaming" # Commented out
         }
         
         ordered_tabs = []
@@ -1573,7 +1574,7 @@ class OnboardingPage(QWidget):
         # 1. Loading Scene
         self.loading_scene = LoadingScene(self)
         self.loading_scene.finished.connect(self.next_scene)
-        self.loading_scene.skip_to_logo.connect(self.skip_to_logo_scene)
+        self.loading_scene.skip_requested.connect(self.jump_to_scene) # Connect skip signal
         self.scenes.append(self.loading_scene)
         
         # 2. Video Scene
@@ -1638,9 +1639,19 @@ class OnboardingPage(QWidget):
             
         self.transition_to(prev_idx, direction="backward")
 
-    def skip_to_logo_scene(self):
+    def jump_to_scene(self, target_index):
         if self.is_animating: return
-        self.transition_to(2, direction="forward")
+        if target_index < 0 or target_index >= len(self.scenes):
+            debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"尝试跳转到无效场景索引: {target_index}", fold_code="ONBOARD_SKIP")
+            return
+        
+        debug_logger.output("onboarding_page.py", LogLevel.INFO, f"跳过至场景索引: {target_index}", fold_code="ONBOARD_SKIP")
+        
+        # Stop video if currently in video scene
+        if isinstance(self.scenes[self.current_index], VideoScene):
+            self.scenes[self.current_index].skip_video()
+            
+        self.transition_to(target_index, direction="forward")
 
     def transition_to(self, next_idx, direction="forward"):
         self.is_animating = True

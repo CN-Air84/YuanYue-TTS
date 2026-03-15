@@ -1,7 +1,6 @@
 # coding=utf-8
 from abc import update_abstractmethods
 import sys
-import time
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QStackedWidget, QGraphicsOpacityEffect
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QPainter, QColor, QPainterPath
@@ -26,6 +25,16 @@ class VersionInfos:
         self.this_version = '''☺packager-replace-version☺'''
         self.this_update_content = '''☺packager-replace-version-infos☺'''
         self.this_update_date = '''☺packager-replace-update-date☺'''
+        # self.this_version = '''0.0'''
+        # self.this_update_content = '''版本自述文本框每行最多十六个汉字
+        # ABCDEFGHABCDEFGHABCDEFGA
+        # 1234567890123245678901234567\n'''
+        # 添加特别好看的新用户引导页
+        # 不再需要FFmpeg
+        # 隐藏 设置 选项卡 - 生成设置 卡片、
+        # 原 下载设置 卡片 - Github下载加速源 设置项 迁移进 在线导入设置 卡片
+        # 修改 杂项 选项卡 - 关于 页面布局，使其支持分辨率为1080p或更低的显示器
+        # 修改 杂项-关于 页面中的程序简介。
     def version(self):
         return self.this_version
     
@@ -568,15 +577,18 @@ class MainWindow(QWidget):
         all_available_tabs = [
             ('welcome', '欢迎', self._get_welcome_page_class),
             ('dictation', '听写', self._get_generation_page_neo_class),
+            # ('streaming', '流媒体', self._get_streaming_page_class), # 注释掉流媒体页
             ('settings', '设置', self._get_settings_page_class),
             ('personalization', '个性化', self._get_custom_page_class),
             ('misc', '杂项', self._get_misc_page_class)
         ]
         
         # 从设置中获取配置
-        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,streaming,settings,personalization,misc")
+        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc" #,streaming
+        )
         debug_logger.output("main_window.py", LogLevel.INFO, f"读取选项卡排序配置: {tab_order_str}", fold_code="MAIN_TABS")
-        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,streaming,settings,personalization,misc")
+        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc" #,streaming
+        )
         initial_tab_name = self.settings_manager.get_Custom_value("initial_tab", "welcome")
         
         tab_order = [t.strip() for t in tab_order_str.split(',') if t.strip()]
@@ -787,50 +799,10 @@ class MainWindow(QWidget):
         self.shared_manager.broadcast_window_size_change(width, height)
         super().resizeEvent(event)
 
-    def _launch_debug_monitor(self):
-        """启动调试监控面板"""
-        try:
-            import os
-            import subprocess
-            if getattr(sys, 'frozen', False):
-                # Production
-                base_path = os.path.dirname(sys.executable)
-                exe_path = os.path.join(base_path, "YyGM4TTS.exe")
-                if os.path.exists(exe_path):
-                     subprocess.Popen([exe_path])
-            else:
-                # Development
-                base_path = os.path.dirname(os.path.abspath(__file__))
-                script_path = os.path.join(base_path, "debug_monitor.py")
-                if os.path.exists(script_path):
-                    subprocess.Popen([sys.executable, script_path])
-        except Exception as e:
-            debug_logger.output("main_window.py", LogLevel.ERROR, f"启动调试监控失败: {e}", fold_code="MAIN_DEBUG")
-
     def keyPressEvent(self, event):
         """处理键盘按键事件"""
         # 仅在调试级别较低时才记录所有按键
         # debug_logger.output("main_window.py", LogLevel.DEBUG, f"收到键盘事件: {event.key()}", fold_code="MAIN_EVENT")
-        
-        # Triple Alt Check (Dev Only)
-        if not getattr(sys, 'frozen', False):
-            if event.key() == Qt.Key_Alt:
-                now = time.time()
-                if not hasattr(self, '_alt_press_count'):
-                    self._alt_press_count = 0
-                    self._last_alt_press_time = 0
-                
-                if now - self._last_alt_press_time < 0.5:
-                    self._alt_press_count += 1
-                else:
-                    self._alt_press_count = 1
-                
-                self._last_alt_press_time = now
-                
-                if self._alt_press_count >= 3:
-                    self._launch_debug_monitor()
-                    self._alt_press_count = 0
-
         self.audio_preview.handle_key_event(event)
         super().keyPressEvent(event)
 
@@ -1170,7 +1142,10 @@ class MainWindow(QWidget):
         from generation_page_neo import GenerationPage
         return GenerationPage
 
-
+    # def _get_streaming_page_class(self):
+    #     """获取流媒体页面类"""
+    #     from streaming_page import StreamingPage
+    #     return StreamingPage
 
     def _get_settings_page_class(self):
         """获取设置页面类"""

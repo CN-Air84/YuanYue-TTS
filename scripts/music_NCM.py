@@ -12,8 +12,6 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any
 from debug_logger import debug_logger, LogLevel
 
-
-#deepseek上下文窗口太小，感觉不如GLM-5
 # 尝试导入 pyncm，这是网易云音乐的核心库
 try:
     import pyncm

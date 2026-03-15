@@ -49,7 +49,7 @@ class SongItemWidget(QFrame):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(10)
 
-        # 基础样式
+        # 1.5倍缩放的基础样式
         SONG_BTN_STYLE = """
             QPushButton {
                 background-color: rgb(255,255,255);
@@ -83,7 +83,7 @@ class SongItemWidget(QFrame):
         
         layout.addWidget(self.action_btn)
 
-        # 2. 歌曲名称按钮
+        # 2. 歌曲名称按钮 (2倍: 14*2=28px)
         name_frame = QFrame()
         name_frame.setFixedHeight(50)
         name_frame.setStyleSheet("background-color: white; border-radius: 8px; border: 1px solid gray;")
@@ -98,7 +98,7 @@ class SongItemWidget(QFrame):
         name_frame.mousePressEvent = lambda e: self.play_clicked.emit(self.index)
         layout.addWidget(name_frame, 4)
 
-        # 3. 歌曲作者按钮
+        # 3. 歌曲作者按钮 (2倍: 13*2=26px)
         artist_frame = QFrame()
         artist_frame.setFixedHeight(50)
         artist_frame.setStyleSheet("background-color: white; border-radius: 8px; border: 1px solid gray;")
@@ -154,7 +154,7 @@ class VolumePopup(QFrame):
         self.font_family = settings_manager.get_Custom_value("global_font", "微软雅黑")
         
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-        self.setFixedSize(50, 250)
+        self.setFixedSize(50, 250) # 拉长高度，提供更精准的控制体验
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: #F0F0F0;
@@ -165,7 +165,7 @@ class VolumePopup(QFrame):
         """)
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 10)
+        layout.setContentsMargins(5, 5, 5, 10) # 减小边距，给滑动条更多空间
         layout.setSpacing(5)
 
         # 百分比显示
@@ -249,7 +249,7 @@ class ScrollingLabel(QLabel):
         self.original_text = ""
         self.current_offset = 0
         self.scroll_timer = QTimer(self)
-        self.scroll_timer.setInterval(400) 
+        self.scroll_timer.setInterval(400) # 减慢到原先的 0.25 倍 (100 -> 400)
         self.scroll_timer.timeout.connect(self._scroll_text)
         self.font_metrics = None
 
@@ -296,9 +296,10 @@ class ScrollingLabel(QLabel):
             return
 
         self.current_offset += 1
+        
         # 判定循环条件：
         # 如果剩余文本极短（比如只剩最后 3-5 个字还没完全消失），就重置回开头。
-        # 这里用文本长度 (len) 来粗略判断，比直接算像素更省事点。
+        # 这里用文本长度 (len) 来粗略判断，比直接计算像素更符合字符切片逻辑。
         if self.current_offset >= len(text_text) - 1:
             self.current_offset = 0 # 回到开头
         
@@ -449,7 +450,7 @@ class StreamingPage(QWidget):
         
         # 搜索按钮：白底，蓝图标，带边框
         self.search_btn = QPushButton("🔍")
-        self.search_btn.setFixedSize(65, 65) 
+        self.search_btn.setFixedSize(65, 65) # 45 * 1.5
         self.search_btn.setCursor(Qt.PointingHandCursor)
         self.search_btn.setStyleSheet(f"""
             QPushButton {{
@@ -472,7 +473,7 @@ class StreamingPage(QWidget):
         content_layout.setSpacing(10)
 
         # === 左侧歌单栏 — 全部包在一个大圆角灰色容器里 ===
-        PLAYLIST_BTN_H = 60
+        PLAYLIST_BTN_H = 60 # 从40增加
         PLAYLIST_SPACING = 8
         PLAYLIST_PADDING = 10
         VISIBLE_COUNT = 4
@@ -497,6 +498,7 @@ class StreamingPage(QWidget):
 
         self.playlist_scroll = QScrollArea()
         self.playlist_scroll.setWidgetResizable(True)
+        # self.playlist_scroll.setFixedHeight(scroll_h) # 不固定高度，允许拉伸
         self.playlist_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.playlist_scroll.setStyleSheet("""
             QScrollArea { border: none; background-color: transparent; }
@@ -509,7 +511,7 @@ class StreamingPage(QWidget):
 
         left_outer_layout.addWidget(self.playlist_scroll)
 
-        # 将底部按钮压到容器最下方，确保整体对齐
+        # 弹簧，将底部按钮压到容器最下方，确保整体对齐
         left_outer_layout.addStretch(1)
 
         # 分隔线
@@ -518,7 +520,7 @@ class StreamingPage(QWidget):
         sep_line.setStyleSheet("color: #999999;")
         left_outer_layout.addWidget(sep_line)
 
-        # 底部：歌单管理 + 添加歌单 
+        # 底部：歌单管理 + 添加歌单 (1.5倍字体)
         BOTTOM_BTN_STYLE = f"""
             QPushButton {{
                 background-color: white;
@@ -620,10 +622,13 @@ class StreamingPage(QWidget):
         main_layout.addLayout(content_layout, 1)
 
         # --- 底部播放控制栏 ---
+        # 布局：
+        #   上行：[歌词区] | [分隔] | [歌名/作者] | [⏮ ▶ ⏭] | [🔊]
+        #   下行：[————————————————进度条————————————————]
         bottom_bg = self.settings_manager.Custom.get_value("stream_bottom_bg_color", "#B0B0B0")
         
         self.player_bar = QFrame()
-        self.player_bar.setFixedHeight(120) 
+        self.player_bar.setFixedHeight(120) # 稍微增加高度 (110 -> 120)
         self.player_bar.setStyleSheet(f"""
             QFrame {{
                 background-color: {bottom_bg};
@@ -632,7 +637,7 @@ class StreamingPage(QWidget):
         """)
         # 外层竖向布局
         player_outer = QVBoxLayout(self.player_bar)
-        player_outer.setContentsMargins(15, 8, 15, 12) 
+        player_outer.setContentsMargins(15, 8, 15, 12) # 增加底边距 (8 -> 12)，抬高底部元素
         player_outer.setSpacing(4)
 
         # 上行
@@ -655,14 +660,14 @@ class StreamingPage(QWidget):
         self.lyrics_label.setAlignment(Qt.AlignCenter)
         player_layout.addWidget(self.lyrics_label)
 
-        # 分隔
+        # 分隔 (重新补上被误删的垂直分割线)
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
         sep.setFixedWidth(2)
         sep.setStyleSheet("color: #999999; margin: 10px 0;")
         player_layout.addWidget(sep)
 
-        # 歌曲信息
+        # 歌曲信息 (恢复 ScrollingLabel 并限制最大宽度，防止侵占左侧歌词区)
         info_layout = QVBoxLayout()
         info_layout.setSpacing(4)
         info_layout.setContentsMargins(5, 0, 5, 0)
@@ -683,7 +688,7 @@ class StreamingPage(QWidget):
         info_layout.addWidget(self.cur_artist_label)
         player_layout.addLayout(info_layout) # 移除 stretch，使其紧贴左侧
 
-        # 控制按钮 ⏮ ▶ ⏭
+        # 控制按钮 ⏮ ▶ ⏭ (图标保持原本设定的 54x54，但字体字号放大点)
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(12)
         self.prev_btn = QPushButton("prev")
@@ -701,7 +706,7 @@ class StreamingPage(QWidget):
             QPushButton:hover { background-color: #f0f0f0; }
             QPushButton:pressed { background-color: #e0e0e0; }
         """
-        # 使用纯字符并将颜色设为蓝色，加 \uFE0E 强制系统以文本模式渲染
+        # 使用纯字符并将颜色设为蓝色，并附加 \uFE0E 强制系统以文本模式（非 Emoji）渲染
         self.prev_btn.setText("\u23EE\uFE0E")
         self.play_pause_btn.setText("\u25B6\uFE0E")
         self.next_btn.setText("\u23ED\uFE0E")
@@ -729,7 +734,7 @@ class StreamingPage(QWidget):
 
         player_outer.addLayout(player_layout)
 
-        # 下行：
+        # 下行：[进度条(拉长)] [🔊 音量按钮]
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(8)
         bottom_row.setAlignment(Qt.AlignVCenter) # 确保子控件（音量按钮与进度条）垂直居中对齐
@@ -763,7 +768,7 @@ class StreamingPage(QWidget):
         self.progress_slider.sliderMoved.connect(self.handle_seek)
         bottom_row.addWidget(self.progress_slider, 1)
 
-        # 音量控制按钮
+        # 音量控制按钮（底行右侧，与控制按钮相同样式 54x54）
         self.volume_btn = VolumeButton("🔊")
         self.volume_btn.setFixedSize(54, 54)
         self.volume_btn.setCursor(Qt.PointingHandCursor)
@@ -999,14 +1004,14 @@ class StreamingPage(QWidget):
         # 检查数量以应用居中逻辑
         playlist_count = len(self.playlists)
         
-        # 歌单列表始终靠上对齐
+        # 歌单列表始终靠上对齐，由 QScrollArea 提供滚动
         self.playlist_layout.setAlignment(Qt.AlignTop)
         
         for i, p in enumerate(self.playlists):
             btn = self._create_playlist_button(i, p['name'])
             self.playlist_layout.addWidget(btn)
         
-        # 添加一个弹簧，确保内容靠上
+        # 添加一个伸缩器，确保内容靠上
         self.playlist_layout.addStretch(1)
 
     def _create_playlist_button(self, index, name):
@@ -1073,6 +1078,8 @@ class StreamingPage(QWidget):
         debug_logger.info("StreamingPage", f"切换至歌单: {playlist['name']}")
         
         self.current_keyword = "" # 歌单模式下清除搜索关键词
+        
+        # 特殊处理内部播放列表
         if playlist['url'] == "internal://queue":
             self.subsystem.current_list = self.queue_tracks
             self.display_songs(self.queue_tracks, clear=True)
@@ -1106,10 +1113,10 @@ class StreamingPage(QWidget):
         if not self.subsystem.current_list:
             return
             
-        # 确认删除
+        # 确认删除 (可选，为了流畅性可以不加，这里加上确认)
         track = self.subsystem.current_list[index-1]
         
-        # 从子系统中移除
+        # 从子系统中移除 (会自动处理 index 和 随机序列)
         self.subsystem.remove_track_by_index(index)
         
         # 如果当前是“播放列表”模式，同步更新持久化数据
@@ -1129,7 +1136,7 @@ class StreamingPage(QWidget):
             # 找到当前歌单的名称
             current_playlist_name = "未知歌单"
             for p in self.playlists:
-                if self.subsystem.current_list == self.subsystem.import_playlist(p['url']): # it just work (?
+                if self.subsystem.current_list == self.subsystem.import_playlist(p['url']): # 这种比较方式不严谨，但目前可用
                     current_playlist_name = p['name']
                     break
             self.list_title_label.setText(f"歌单——{current_playlist_name}")
@@ -1159,7 +1166,7 @@ class StreamingPage(QWidget):
             widget.play_clicked.connect(self.subsystem.play_by_index)
             widget.artist_clicked.connect(self.handle_artist_search)
             widget.add_to_queue_requested.connect(self.handle_add_to_queue) # 连接右键菜单/按钮的添加信号
-            widget.delete_requested.connect(self.handle_delete_song) # 这个是删除信号
+            widget.delete_requested.connect(self.handle_delete_song) # 连接右键菜单/按钮的删除信号
             self.song_layout.addWidget(widget)
 
         # 如果是搜索模式且有结果，添加“下一页”按钮

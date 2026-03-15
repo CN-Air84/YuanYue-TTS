@@ -6,7 +6,7 @@ import time
 import json
 import tempfile
 import requests
-#来来来一人一句GLM-5牛B嗷
+
 # 屏蔽 pygame 的欢迎信息
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 try:

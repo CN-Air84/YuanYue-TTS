@@ -26,7 +26,7 @@ from debug_logger import debug_logger, LogLevel
 class DocxNamespaceManager:
     """DOCX命名空间管理器"""
     
-    # word文档xml里用到的命名空间前缀
+    # All Word prefixes / namespace matches used in document.xml & core.xml.
     NAMESPACE_PREFIXES = {
         'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
         'cp': 'http://schemas.openxmlformats.org/package/2006/metadata/core-properties',

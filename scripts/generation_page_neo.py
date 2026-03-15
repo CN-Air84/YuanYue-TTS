@@ -16,11 +16,7 @@ from iw_text_import import show_text_import_dialog
 from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
 
-'''
-由于和custom_page相同的玄学问题，
-本段代码在SimeonTest0.14.1由Minimax重构。
-好东西机器人做的好
-'''
+
 '''
 本段代码负责“听写”选项卡。
 若想修改“生成”选项卡请移步generation_page_。
