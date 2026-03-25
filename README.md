@@ -270,19 +270,11 @@ __看不清就对了！__
 
 感谢tchMaterial_parser作者happycola233大佬。
 
-③程序中各类AI相关的服务
-
-使用智谱清言GLM-4.5-FIash和GLM-4V-Flash
-
-两款完全免费的模型。
-
-感谢智谱AI（北京智谱华章科技股份有限公司）。
-
-④本程序流媒体页面基于PyNCM实现。
+③本程序流媒体页面基于PyNCM实现。
 
 感谢其维护者mos9527等十一位大佬。
 
-⑤程序修改并使用了python-docx。
+④程序修改并使用了python-docx。
 
 感谢其维护者scanny等十一位大佬。
 
@@ -296,13 +288,13 @@ __看不清就对了！__
 
 ②本程序开发时应用HarmonyOS Sans SC字体进行检查，
 
-渲染各类预览图时页使用Harmony OS Sans SC系列字体。
+渲染各类预览图时亦使用Harmony OS Sans SC系列字体。
 
 感谢华为。
 
 ##### 在线服务部分：
 
-①顾名思义，本程序依赖的Edge-TTS又依赖于Microsoft Edge 的在线文本转语音服务。
+①顾名思义，本程序依赖的Edge-TTS又依赖于Microsoft提供的在线文本转语音服务。
 
 感谢微软。
 
