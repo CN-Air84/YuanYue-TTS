@@ -427,14 +427,8 @@ class WelcomePage(QWidget):
         """加载版本信息"""
         version = "未知"
         try:
-            from main_window_package import version_info
-            version = version_info.version()
-        except ImportError:
-            try:
-                from main_window import version_info
-                version = version_info.version()
-            except (ImportError, AttributeError):
-                pass
+            if self.parent_window and hasattr(self.parent_window, "version_info"):
+                version = self.parent_window.version_info.version()
         except Exception as e:
             debug_logger.output("welcome_page.py", LogLevel.ERROR, f"加载版本信息失败: {e}")
             
@@ -622,4 +616,3 @@ class WelcomePage(QWidget):
         if page_name in ["custom", "custom_page"] or any(k in settings_data for k in ["background_color", "card_background_color", "text_color"]):
             debug_logger.output("welcome_page.py", LogLevel.INFO, f"Settings change received from shared memory (source: {page_name})", fold_code="WELCOME_RELOAD")
             self._reload_page(settings_data)
-

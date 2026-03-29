@@ -4,16 +4,22 @@ import os
 import ctypes
 from typing import Dict, Tuple, Optional, List
 
+# 设置 PySDL2 DLL 路径（优先使用 pygame 包中的 SDL2 库）
+if 'PYSDL2_DLL_PATH' not in os.environ:
+    pygame_sdl_path = os.path.join(os.path.dirname(__file__), '.venv', 'Lib', 'site-packages', 'pygame')
+    if os.path.exists(pygame_sdl_path):
+        os.environ['PYSDL2_DLL_PATH'] = pygame_sdl_path
+
 # 尝试导入 sdl2，如果失败则静默处理（避免影响主程序启动，虽然理应已安装）
 try:
     import sdl2
     import sdl2.ext
     from debug_logger import debug_logger, LogLevel
     SDL_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     SDL_AVAILABLE = False
     # 这里可能还无法使用 debug_logger，因为可能还没初始化好
-    print("Warning: PySDL2 not found. SDL input mode will be disabled.")
+    print(f"Warning: PySDL2 not found. SDL input mode will be disabled. Error: {e}")
 
 class SDLInputManager:
     """

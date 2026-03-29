@@ -190,14 +190,17 @@ class MiscPage(QWidget):
     
     def _on_ai_image_ocr(self):
         """处理AI图片OCR功能"""
-        if not SETTINGS_AVAILABLE:
-            QMessageBox.warning(self, "错误", "设置管理器不可用")
-            return
+        from ai_manager import get_ai_manager, AIScene
         
-        settings_manager = SettingsManager()
-        api_key = settings_manager.get_api_key("api_key_ChatGLM")
-        if not api_key:
-            QMessageBox.warning(self, "提示", "请先在设置中配置ChatGLM API Key")
+        ai_manager = get_ai_manager()
+        default_model = ai_manager.get_default_model(AIScene.VISION)
+        
+        if not default_model:
+            configured = ai_manager.get_configured_providers(AIScene.VISION)
+            if configured:
+                QMessageBox.warning(self, "提示", f"请先在设置中配置{configured[0]} API Key")
+            else:
+                QMessageBox.warning(self, "提示", "请先在设置中配置 AI API Key")
             return
         
         file_path, _ = QFileDialog.getOpenFileName(
@@ -213,7 +216,7 @@ class MiscPage(QWidget):
             loading_dialog.show()
             QApplication.processEvents()
         
-        self.ai_worker = AIOCRWorker(api_key, file_path)
+        self.ai_worker = AIOCRWorker(file_path)
         self.ai_worker.finished_signal.connect(
             lambda text: self._on_ai_ocr_finished(text, loading_dialog)
         )

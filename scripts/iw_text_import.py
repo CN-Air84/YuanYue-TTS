@@ -1,23 +1,86 @@
 # coding=utf-8
 import sys
 import os
+import io
+import base64
 from typing import Optional
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QTextEdit, QFileDialog, 
     QMessageBox, QVBoxLayout, QHBoxLayout, QDialog
 )
-from PyQt5.QtCore import  QRect
+from PyQt5.QtCore import QRect, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 
 from docxfix import Document
 from iw_dialogs import MultiImageImportDialog, LoadingDialog, ClearConfirmationDialog
-from iw_online_import import OnlineImportDialog, AIOCRWorker
+from iw_online_import import OnlineImportDialog
 from debug_logger import debug_logger, LogLevel
+from ai_manager import get_ai_manager, AIRequest, AIScene
+
 try:
     from misc_func import SettingsManager
     SETTINGS_AVAILABLE = True
 except ImportError:
     SETTINGS_AVAILABLE = False
+
+
+class TextImportOCRWorker(QThread):
+    """文本导入OCR工作线程 - 使用AIManager"""
+    finished_signal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+    
+    def __init__(self, image_path: str, prompt: str):
+        super().__init__()
+        self.image_path = image_path
+        self.prompt = prompt
+    
+    def run(self):
+        try:
+            debug_logger.output("iw_text_import.py", LogLevel.INFO, f"TextImportOCRWorker: 开始处理 {self.image_path}", fold_code="TI_OCR")
+            
+            from PIL import Image
+            ai_manager = get_ai_manager()
+            
+            def encode_image(image_path):
+                try:
+                    with Image.open(image_path) as img:
+                        max_side = 1560
+                        if img.width > max_side or img.height > max_side:
+                            img.thumbnail((max_side, max_side), Image.LANCZOS)
+                        
+                        if img.mode != "RGB":
+                            img = img.convert("RGB")
+                        
+                        buffer = io.BytesIO()
+                        img.save(buffer, format="JPEG", quality=80, optimize=True)
+                        img_bytes = buffer.getvalue()
+                        
+                        debug_logger.output("iw_text_import.py", LogLevel.INFO, f"图像预处理完成: {img.width}x{img.height}, 大小: {len(img_bytes)/1024:.1f}KB", fold_code="TI_OCR")
+                        return base64.b64encode(img_bytes).decode('utf-8')
+                except Exception as e:
+                    debug_logger.output("iw_text_import.py", LogLevel.WARNING, f"图像预处理失败: {e}", fold_code="TI_OCR")
+                    with open(image_path, "rb") as f:
+                        return base64.b64encode(f.read()).decode('utf-8')
+            
+            base64_image = encode_image(self.image_path)
+            
+            request = AIRequest(
+                prompt=self.prompt,
+                scene=AIScene.VISION,
+                image_base64=base64_image
+            )
+            
+            response = ai_manager.chat(request)
+            
+            if response.success:
+                self.finished_signal.emit(response.text)
+                debug_logger.output("iw_text_import.py", LogLevel.INFO, f"OCR 成功: {self.image_path}", fold_code="TI_OCR")
+            else:
+                raise Exception(response.error or "识别失败")
+                
+        except Exception as e:
+            self.error_signal.emit(str(e))
+            debug_logger.output("iw_text_import.py", LogLevel.ERROR, f"OCR 失败: {e}", fold_code="TI_OCR")
 
 
 class TextImportConfig:
@@ -95,17 +158,9 @@ class TextImportManager:
             QMessageBox.critical(parent_dialog, "错误", f"读取失败: {str(e)}")
             return None
     
-    def import_from_image(self, parent_dialog: QDialog) -> Optional[tuple[list[str], str]]:
+    def import_from_image(self, parent_dialog: QDialog) -> Optional[list[str]]:
         """从图片导入文本"""
         debug_logger.output("iw_text_import.py", LogLevel.INFO, "开始从图片导入文本", fold_code="TI_IMG")
-        if not self.settings_manager:
-            QMessageBox.warning(parent_dialog, "提示", "设置管理器不可用")
-            return None
-        
-        api_key = self.settings_manager.get_api_key("api_key_ChatGLM")
-        if not api_key:
-            QMessageBox.warning(parent_dialog, "提示", "请配置ChatGLM API Key")
-            return None
         
         file_paths, _ = QFileDialog.getOpenFileNames(
             parent_dialog, "选择图片", "", TextImportConfig.SUPPORTED_IMAGE_FORMATS
@@ -117,8 +172,19 @@ class TextImportManager:
         if len(file_paths) > 5:
             QMessageBox.warning(parent_dialog, "提示", "最多只能选择5张图片")
             return None
+        
+        from ai_manager import get_ai_manager, AIScene
+        ai_manager = get_ai_manager()
+        default_model = ai_manager.get_default_model(AIScene.VISION)
+        if not default_model:
+            configured = ai_manager.get_configured_providers(AIScene.VISION)
+            if configured:
+                QMessageBox.warning(parent_dialog, "提示", f"请在设置中配置 {configured[0]} API Key")
+            else:
+                QMessageBox.warning(parent_dialog, "提示", "请在设置中配置 AI API Key")
+            return None
             
-        return file_paths, api_key
+        return file_paths
 
 
 class TextEditController:
@@ -199,10 +265,9 @@ class ImportButtonHandler:
             debug_logger.output("iw_text_import.py", LogLevel.INFO, "图片导入流程已中止（未选择图片或 API Key 缺失）", fold_code="TI_IMG")
             return
             
-        initial_file_paths, api_key = result
+        initial_file_paths = result
         debug_logger.output("iw_text_import.py", LogLevel.INFO, f"选择了 {len(initial_file_paths)} 张图片，打开多图导入对话框", fold_code="TI_IMG")
         
-        # 显示多图片导入对话框
         multi_image_dialog = MultiImageImportDialog(self.parent_dialog, initial_file_paths)
         if multi_image_dialog.exec_() == QDialog.Accepted:
             sorted_image_paths = multi_image_dialog.result_image_paths
@@ -215,17 +280,14 @@ class ImportButtonHandler:
             debug_logger.output("iw_text_import.py", LogLevel.INFO, f"准备 OCR 处理 {len(sorted_image_paths)} 张图片", fold_code="TI_OCR_PROC")
             self.current_ocr_queue = list(sorted_image_paths)
             self.current_ocr_remarks = list(sorted_image_remarks)
-            self.api_key = api_key # 存储api_key供后续OCR使用
-            self.processed_count = 0 # 初始化计数器
-            self.failed_count = 0 # 初始化计数器
-            self.total_images_to_process = len(sorted_image_paths) # 设置总数
+            self.processed_count = 0
+            self.failed_count = 0
+            self.total_images_to_process = len(sorted_image_paths)
             self.loading_dialog = LoadingDialog(self.parent_dialog)
             self.loading_dialog.show()
             self._process_next_ocr_image()
         else:
             debug_logger.output("iw_text_import.py", LogLevel.INFO, "用户取消了多图片导入对话框", fold_code="TI_IMG")
-            # 用户取消了多图片导入对话框
-            pass
     
     def _process_next_ocr_image(self) -> None:
         """处理OCR队列中的下一张图片"""
@@ -257,12 +319,12 @@ class ImportButtonHandler:
             "请提取这张图片中的文字内容，"
             "将₁②⑶⒋Ⅴ❻㈦之类特殊数字符号转为普通数字，"
             "忽略所有注释角标，输出纯文字格式。"
-            "严禁输出任何与图片无关的提示语（如：“这张图片中包含以下文字：”等）。"
+            '严禁输出任何与图片无关的提示语（如："这张图片中包含以下文字："等）。'
         )
         if remark:
             prompt += f"\n\n用户想要提取图片中的：{remark}。忽略所有其他文字。"
         
-        self.ai_worker = AIOCRWorker(self.api_key, file_path, prompt)
+        self.ai_worker = TextImportOCRWorker(file_path, prompt)
         self.ai_worker.finished_signal.connect(self._on_ai_ocr_finished_multi)
         self.ai_worker.error_signal.connect(self._on_ai_ocr_error_multi)
         self.ai_worker.start()

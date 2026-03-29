@@ -192,34 +192,48 @@ class MusicPlayer:
         self.backend_proc = None
         self._start_backend()
 
+    def _is_music_backend_mode(self):
+        if "--music-backend" in sys.argv:
+            return True
+        if os.environ.get("YUANYUE_TTS_ROLE") == "music-backend":
+            return True
+        for arg in sys.argv[1:]:
+            if os.path.basename(str(arg)).lower() == "music_backend.py":
+                return True
+        return False
+
     def _start_backend(self):
         """启动后台播放进程"""
         try:
-            # 判断是否处于打包状态
-            is_frozen = getattr(sys, 'frozen', False)
-            
-            if is_frozen:
-                # 打包环境下，sys.executable 就是主程序 EXE
-                # 我们通过传递特殊命令行参数来让主程序启动进入后台模式
+            if self._is_music_backend_mode():
+                debug_logger.info("MusicPlayer", "当前进程是音乐后台模式，跳过再次拉起后台进程")
+                return
+
+            executable_name = os.path.basename(sys.executable).lower()
+            script_path = os.path.join(os.path.dirname(__file__), "music_backend.py")
+            backend_env = None
+            use_script_backend = (executable_name.startswith("python") or executable_name.startswith("pypy")) and os.path.exists(script_path)
+
+            if use_script_backend:
+                python_exe = sys.executable
+                args = [python_exe, script_path]
+                start_mode = "script"
+            else:
                 python_exe = sys.executable
                 args = [python_exe, "--music-backend"]
-            else:
-                # 开发环境下，寻找 python.exe
-                python_exe = os.path.join(os.path.dirname(sys.executable), "python.exe")
-                if not os.path.exists(python_exe):
-                    python_exe = sys.executable
-                
-                script_path = os.path.join(os.path.dirname(__file__), "music_backend.py")
-                args = [python_exe, script_path]
-            
-            debug_logger.info("MusicPlayer", f"正在启动独立播放后台 (Frozen={is_frozen}): {python_exe}")
+                backend_env = os.environ.copy()
+                backend_env["YUANYUE_TTS_ROLE"] = "music-backend"
+                start_mode = "exe-arg"
+
+            debug_logger.info("MusicPlayer", f"正在启动独立播放后台 (mode={start_mode}): {python_exe}")
             self.backend_proc = subprocess.Popen(
                 args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                bufsize=1
+                bufsize=1,
+                env=backend_env
             )
             
             # 启动线程读取后台状态报告

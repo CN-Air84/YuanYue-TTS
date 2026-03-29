@@ -7,6 +7,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
+from ai_manager import get_ai_manager, AIRequest, AIScene
 
 # 界面字体大小和窗口尺寸常量
 MIN_FONT_SIZE = 22
@@ -21,61 +22,44 @@ except ImportError:
     SETTINGS_AVAILABLE = False
 
 class AIOCRWorker(QThread):
-    """AI OCR工作线程类 - 使用ChatGLM进行图片文字识别"""
+    """AI OCR工作线程类 - 使用AIManager进行图片文字识别"""
     
     finished_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
     
-    def __init__(self, api_key, image_path):
+    def __init__(self, image_path):
         """
         初始化AI OCR工作线程
         
         Args:
-            api_key (str): ChatGLM API密钥
             image_path (str): 图片文件路径
         """
         super().__init__()
-        self.api_key = api_key
         self.image_path = image_path
     
     def run(self):
         """执行AI OCR识别任务"""
         debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"开始 AI OCR 识别任务, 图片路径: {self.image_path}", fold_code="AI_OCR_RUN")
         try:
-            from openai import OpenAI
+            ai_manager = get_ai_manager()
             
-            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "正在初始化 OpenAI 客户端", fold_code="AI_OCR_RUN")
-            client = OpenAI(
-                api_key=self.api_key,
-                base_url="https://open.bigmodel.cn/api/paas/v4/"
-            )
-            
-            def encode_image(image_path):
-                """将图片编码为base64格式"""
-                debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"正在对图片进行 base64 编码: {image_path}", fold_code="AI_OCR_RUN")
-                with open(image_path, "rb") as image_file:
-                    return base64.b64encode(image_file.read()).decode('utf-8')
-            
-            base64_image = encode_image(self.image_path)
+            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "正在通过 AIManager 发送 OCR 请求", fold_code="AI_OCR_RUN")
             
             prompt = "请提取这张图片中的所有文字内容，输出纯文字格式。"
             
-            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, "正在发送 AI OCR 请求到 ChatGLM API", fold_code="AI_OCR_RUN")
-            response = client.chat.completions.create(
-                model="glm-4v-flash",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                        ]
-                    }
-                ],
-                max_tokens=1000
+            request = AIRequest(
+                prompt=prompt,
+                scene=AIScene.VISION,
+                image_path=self.image_path
             )
-            result = response.choices[0].message.content
-            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, f"AI OCR 识别成功, 提取文字长度: {len(result)}", fold_code="AI_OCR_RUN")
+            
+            response = ai_manager.chat(request)
+            result = response.text
+            
+            debug_logger.output("mp_ai_ocr.py", LogLevel.INFO, 
+                f"AI OCR 识别成功, 提取文字长度: {len(result)}, "
+                f"使用模型: {response.model_used} ({response.provider_used})", 
+                fold_code="AI_OCR_RUN")
             self.finished_signal.emit(result)
             
         except Exception as e:

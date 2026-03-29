@@ -3,8 +3,22 @@ import os
 import sys
 import math
 import subprocess
-import cv2
-import pygame
+import contextlib
+import importlib
+import io
+
+def _optional_import(module_name: str, silence: bool = False):
+    try:
+        if silence:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return importlib.import_module(module_name)
+        return importlib.import_module(module_name)
+    except Exception:
+        return None
+
+
+cv2 = None
+pygame = None
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QGraphicsOpacityEffect, 
                              QApplication, QFrame, QPushButton, QScrollArea, 
                              QDialog, QHBoxLayout, QSizePolicy, QLineEdit, QGraphicsDropShadowEffect,
@@ -186,7 +200,7 @@ class LoadingScene(QWidget):
             os.makedirs(cache_dir)
             
         # 视频链接
-        video_url = "https://gh-proxy.org/https://github.com/CN-Air84/CN-Air84.github.io/releases/download/intro.mov/intro_1.mov"
+        video_url = "https://github.tbedu.top/https://github.com/CN-Air84/CN-Air84.github.io/releases/download/intro.mov/intro_1.mov"
         # 图标链接
         icon_url = "https://cn-air84.github.io/YuanYue-TTS/ico/icon.png"
         
@@ -382,11 +396,11 @@ class VideoScene(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background-color: black;")
+        self.setStyleSheet("background-color: #e5e8ef;")
         
         self.video_label = QLabel(self)
         self.video_label.setAlignment(Qt.AlignCenter)
-        self.video_label.setStyleSheet("background-color: black;")
+        self.video_label.setStyleSheet("background-color: #e5e8ef;")
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -415,6 +429,19 @@ class VideoScene(QWidget):
 
     def load_video(self):
         try:
+            global cv2
+            global pygame
+
+            if cv2 is None:
+                cv2 = _optional_import("cv2", silence=True)
+            if pygame is None:
+                pygame = _optional_import("pygame")
+
+            if cv2 is None:
+                debug_logger.output("onboarding_page.py", LogLevel.WARNING, "CV2 不可用，跳过开场视频", fold_code="ONBOARD_VIDEO")
+                self.finished.emit()
+                return
+
             video_path = os.path.join(get_app_base_path(), "cache", "intro_1.mov")
             video_path = os.path.abspath(video_path)
             
@@ -423,10 +450,11 @@ class VideoScene(QWidget):
                 
                 # Audio (Pygame)
                 try:
-                    pygame.mixer.init()
-                    pygame.mixer.music.load(video_path)
-                    pygame.mixer.music.play()
-                    debug_logger.output("onboarding_page.py", LogLevel.INFO, "Audio started with Pygame", fold_code="ONBOARD_AUDIO")
+                    if pygame is not None:
+                        pygame.mixer.init()
+                        pygame.mixer.music.load(video_path)
+                        pygame.mixer.music.play()
+                        debug_logger.output("onboarding_page.py", LogLevel.INFO, "Audio started with Pygame", fold_code="ONBOARD_AUDIO")
                 except Exception as e:
                     debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"Pygame audio failed: {e}", fold_code="ONBOARD_AUDIO")
                 
@@ -468,8 +496,9 @@ class VideoScene(QWidget):
                 self.cap.release()
                 self.timer.stop()
                 try:
-                    pygame.mixer.music.stop()
-                    pygame.mixer.quit()
+                    if pygame is not None:
+                        pygame.mixer.music.stop()
+                        pygame.mixer.quit()
                 except:
                     pass
                 self.finished.emit()
@@ -488,10 +517,10 @@ class VideoScene(QWidget):
         # Pygame mixer music doesn't support speed change well. 
         # We might need to stop audio if speed is not 1.0 to avoid desync annoyance
         if rate != 1.0:
-            if pygame.mixer.get_init():
-                pygame.mixer.music.pause() # Or stop?
+            if pygame is not None and pygame.mixer.get_init():
+                pygame.mixer.music.pause()
         else:
-            if pygame.mixer.get_init():
+            if pygame is not None and pygame.mixer.get_init():
                 pygame.mixer.music.unpause()
 
     def skip_video(self):
@@ -499,8 +528,9 @@ class VideoScene(QWidget):
         if self.cap:
             self.cap.release()
         try:
-            pygame.mixer.music.stop()
-            pygame.mixer.quit()
+            if pygame is not None:
+                pygame.mixer.music.stop()
+                pygame.mixer.quit()
         except:
             pass
         self.finished.emit()
@@ -508,7 +538,7 @@ class VideoScene(QWidget):
     def on_long_press(self):
         if self.is_pressing:
             self.is_paused = True
-            if pygame.mixer.get_init():
+            if pygame is not None and pygame.mixer.get_init():
                 pygame.mixer.music.pause()
                 
             x = (self.width() - self.overlay.width()) // 2
@@ -526,7 +556,7 @@ class VideoScene(QWidget):
             if self.overlay.isVisible() and not self.overlay.geometry().contains(event.pos()):
                 self.overlay.hide()
                 self.is_paused = False
-                if pygame.mixer.get_init():
+                if pygame is not None and pygame.mixer.get_init():
                     if self.playback_rate == 1.0: # Only unpause audio if normal speed
                         pygame.mixer.music.unpause()
                     # If 2x, audio remains paused/muted
@@ -638,13 +668,11 @@ class LogoScene(QWidget):
         layout.addStretch(1)
         
         # Version Info (Bottom Right)
-        # Try to get version info from main module
         version_text = "版本号|发布日期"
         try:
-            # Attempt to import only if needed to avoid circular import issues
-            import main_window
-            if hasattr(main_window, 'version_info'):
-                v = main_window.version_info
+            root_widget = self.window()
+            if root_widget and hasattr(root_widget, "version_info"):
+                v = root_widget.version_info
                 version_text = f"{v.version()}|{v.update_date()}"
         except:
             pass

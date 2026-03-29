@@ -49,123 +49,88 @@ class SEIRunnerThread(QThread):
             self.error_signal.emit(str(e))
 
 class AIOCRWorker(QThread):
-    """AI OCR识别线程"""
+    """AI OCR识别线程 - 使用AIManager"""
     finished_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
-    debug_signal = pyqtSignal(str, str)  # 类型, 内容
+    debug_signal = pyqtSignal(str, str)
     
-    def __init__(self, api_key, image_path, prompt):
+    def __init__(self, image_path, prompt):
         super().__init__()
-        self.api_key = api_key
         self.image_path = image_path
         self.prompt = prompt
     
     def run(self):
         try:
             debug_logger.output("iw_online_import.py", LogLevel.INFO, "AIOCRWorker: 开始识别", fold_code="OI_WORKER")
-            from openai import OpenAI
+            from ai_manager import get_ai_manager, AIRequest, AIScene
             
-            client = OpenAI(
-                api_key=self.api_key,
-                base_url="https://open.bigmodel.cn/api/paas/v4/"
-            )
+            ai_manager = get_ai_manager()
             
             def encode_image(image_path):
-                # 优化：在编码前检查图像大小并进行必要的调整
                 try:
                     from PIL import Image
                     import io
                     
                     with Image.open(image_path) as img:
-                        # 智谱 GLM-4V 建议：
-                        # 1. 图像单边在 600-2000 像素之间
-                        # 2. 图像文件大小在 5MB 以内
-                        # 3. 总像素不超过 400w
-                        
-                        # 进一步缩小尺寸以确保稳定性
-                        # 400 (1210) 错误通常是因为图像数据过大或格式不被接受
-                        max_side = 1560  # 恢复至 1560 像素
+                        max_side = 1560
                         if img.width > max_side or img.height > max_side:
                             img.thumbnail((max_side, max_side), Image.LANCZOS)
                             
-                        # 确保是 RGB 格式
                         if img.mode != "RGB":
                             img = img.convert("RGB")
                             
                         buffer = io.BytesIO()
-                        # 使用 JPEG 格式，质量设为 80 以平衡清晰度和体积
                         img.save(buffer, format="JPEG", quality=80, optimize=True)
                         img_bytes = buffer.getvalue()
-                        mime_type = "image/jpeg"
                         
-                        # 记录处理后的图片大小
                         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"图像预处理完成: {img.width}x{img.height}, 大小: {len(img_bytes)/1024:.1f}KB", fold_code="OI_WORKER")
-                        
-                        return base64.b64encode(img_bytes).decode('utf-8'), mime_type
+                        return base64.b64encode(img_bytes).decode('utf-8')
                 except Exception as e:
-                    debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"图像预处理失败，尝试直接读取: {e}", fold_code="OI_WORKER")
-                    with open(image_path, "rb") as image_file:
-                        data = image_file.read()
-                        ext = os.path.splitext(image_path)[1].lower().replace('.', '')
-                        if ext == 'jpg': ext = 'jpeg'
-                        return base64.b64encode(data).decode('utf-8'), f"image/{ext}"
+                    debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"图像预处理失败: {e}", fold_code="OI_WORKER")
+                    with open(image_path, "rb") as f:
+                        return base64.b64encode(f.read()).decode('utf-8')
             
-            base64_image, mime_type = encode_image(self.image_path)
+            base64_image = encode_image(self.image_path)
             
-            #发送提示词
             self.debug_signal.emit("prompt", self.prompt)
             
-            # 增加重试机制
             max_retries = 2
+            last_exception = None
             
             for attempt in range(max_retries + 1):
                 try:
                     if attempt > 0:
                         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在进行第 {attempt} 次识别重试...", fold_code="OI_WORKER")
                     
-                    response = client.chat.completions.create(
-                        model="glm-4v-flash",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "image_url", 
-                                        "image_url": {
-                                            "url": f"data:{mime_type};base64,{base64_image}"
-                                        }
-                                    },
-                                    {"type": "text", "text": self.prompt}
-                                ]
-                            }
-                        ],
-                        max_tokens=1024,  # 改回 1024
-                        temperature=0.1,
-                        stream=False
+                    request = AIRequest(
+                        prompt=self.prompt,
+                        scene=AIScene.VISION,
+                        image_base64=base64_image
                     )
                     
-                    if not response.choices:
-                        raise Exception("API 返回结果为空")
-                        
-                    result = response.choices[0].message.content
-                    self.debug_signal.emit("response", result)
-                    self.finished_signal.emit(result)
-                    return # 成功后退出重试循环
+                    response = ai_manager.chat(request)
                     
+                    if response.success:
+                        self.debug_signal.emit("response", response.text)
+                        self.finished_signal.emit(response.text)
+                        debug_logger.output("iw_online_import.py", LogLevel.INFO, f"AI OCR 识别成功", fold_code="OI_WORKER")
+                        return
+                    else:
+                        raise Exception(response.error or "识别失败")
+                        
                 except Exception as e:
                     last_exception = e
-                    # 如果是 400 错误（参数问题），通常重试无效，除非是临时抖动
                     if "400" in str(e) and attempt == 0:
                         debug_logger.output("iw_online_import.py", LogLevel.WARNING, f"初次识别触发 400 错误: {e}", fold_code="OI_WORKER")
                     
                     if attempt < max_retries:
                         import time
-                        time.sleep(1) # 等待 1 秒后重试
+                        time.sleep(1)
                     else:
                         raise last_exception
             
         except Exception as e:
-            self.error_signal.emit(f"ChatGLM识别失败: {str(e)}")
+            self.error_signal.emit(f"AI识别失败: {str(e)}")
 class OnlineImportDialog(QDialog):
     """在线导入对话框"""
     def __init__(self, parent=None, window_size=None):
@@ -1171,11 +1136,20 @@ class OnlineImportDialog(QDialog):
     def process_image_with_ai(self, image_path, extract_type, pdf_path=""):
         """使用AI处理图像"""
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"开始 AI 图像识别: 提取类型={extract_type}", fold_code="OI_AI")
-        api_key = self.settings_manager.get_api_key("api_key_ChatGLM") if self.settings_manager else ""
-        if not api_key:
-            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "未配置 ChatGLM API Key", fold_code="OI_AI")
-            QMessageBox.warning(self, "API Key未设置", "请在设置界面中配置ChatGLM API Key")
+        
+        from ai_manager import get_ai_manager, AIScene
+        ai_manager = get_ai_manager()
+        default_model = ai_manager.get_default_model(AIScene.VISION)
+        
+        if not default_model:
+            configured = ai_manager.get_configured_providers(AIScene.VISION)
+            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "未配置 AI API Key", fold_code="OI_AI")
+            if configured:
+                QMessageBox.warning(self, "API Key未设置", f"请在设置界面中配置{configured[0]} API Key")
+            else:
+                QMessageBox.warning(self, "API Key未设置", "请在设置界面中配置 AI API Key")
             return
+        
         prompt = f"""
 请仔细识别这张图片中的所有文字内容。
 要求：
@@ -1194,7 +1168,6 @@ class OnlineImportDialog(QDialog):
         loading_dialog.text_label.setText(f"AI正在识别图片中的{extract_type}...")
         
         if self.is_batch_processing and self.total_batch_count > 1:
-            # 计算已完成的数量
             completed_count = self.total_batch_count - len(self.batch_queue) - 1
             loading_dialog.update_progress(completed_count, self.total_batch_count)
             
@@ -1202,7 +1175,7 @@ class OnlineImportDialog(QDialog):
         QApplication.processEvents()
         
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"启动 AIOCRWorker, 图片: {image_path}", fold_code="OI_AI")
-        self.ai_worker = AIOCRWorker(api_key, image_path, prompt)
+        self.ai_worker = AIOCRWorker(image_path, prompt)
         self.ai_worker.finished_signal.connect(lambda text: self.on_ai_finished(text, loading_dialog, image_path))
         self.ai_worker.error_signal.connect(lambda err: self.on_ai_error(err, loading_dialog, image_path))
         self.ai_worker.start()
