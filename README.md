@@ -5,7 +5,7 @@
 
 
 
-# 源悦TTS
+# <img src="https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/26.04.15_02.00.svg" width="36"> 源悦TTS
 	
 
 
