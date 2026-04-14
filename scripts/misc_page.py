@@ -7,7 +7,6 @@
 import sys
 import os
 import base64
-import requests
 import time
 import zipfile
 import subprocess
@@ -22,17 +21,38 @@ except ImportError:
     download = None
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices
-import certifi
 from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
 
-# 导入拆分后的子页面
-from mp_ai_ocr import AIOCRWorker, TextResultDialog
-from mp_pdf_download import PDFDownloadDialog
-from mp_about import AboutDialog
-from mp_license import LicenseDialog
-from mp_resource_download import ResourceDownloadDialog
-from mp_multi_thread_download import MultiThreadDownloadDialog
+
+def _get_ai_ocr_components():
+    from mp_ai_ocr import AIOCRWorker, TextResultDialog
+    return AIOCRWorker, TextResultDialog
+
+
+def _get_pdf_download_dialog():
+    from mp_pdf_download import PDFDownloadDialog
+    return PDFDownloadDialog
+
+
+def _get_about_dialog():
+    from mp_about import AboutDialog
+    return AboutDialog
+
+
+def _get_license_dialog():
+    from mp_license import LicenseDialog
+    return LicenseDialog
+
+
+def _get_resource_download_dialog():
+    from mp_resource_download import ResourceDownloadDialog
+    return ResourceDownloadDialog
+
+
+def _get_multi_thread_download_dialog():
+    from mp_multi_thread_download import MultiThreadDownloadDialog
+    return MultiThreadDownloadDialog
 
 
 # ===== 常量定义 =====
@@ -215,7 +235,8 @@ class MiscPage(QWidget):
             loading_dialog.text_label.setText("正在识别图片文字...")
             loading_dialog.show()
             QApplication.processEvents()
-        
+
+        AIOCRWorker, _ = _get_ai_ocr_components()
         self.ai_worker = AIOCRWorker(file_path)
         self.ai_worker.finished_signal.connect(
             lambda text: self._on_ai_ocr_finished(text, loading_dialog)
@@ -237,6 +258,7 @@ class MiscPage(QWidget):
             loading_dialog.close()
         
         if text:
+            _, TextResultDialog = _get_ai_ocr_components()
             dialog = TextResultDialog(self, "AI图片OCR结果", text)
             dialog.exec_()
         else:
@@ -259,16 +281,19 @@ class MiscPage(QWidget):
         debug_logger.output("misc_page.py", LogLevel.INFO, "打开PDF电子书下载对话框", fold_code="MP_PDF")
         if self.parent_window:
             window_rect = self.parent_window.geometry()
+            PDFDownloadDialog = _get_pdf_download_dialog()
             dialog = PDFDownloadDialog(self, window_rect)
             dialog.exec_()
     
     def _on_about(self):
         """处理关于功能"""
+        AboutDialog = _get_about_dialog()
         dialog = AboutDialog(self)
         dialog.exec_()
     
     def _on_license_agreement(self):
         """处理许可协议功能"""
+        LicenseDialog = _get_license_dialog()
         dialog = LicenseDialog(self)
         dialog.exec_()
     
@@ -277,6 +302,7 @@ class MiscPage(QWidget):
         try:
             self.resource_info = self._fetch_resource_list()
             if self.resource_info:
+                ResourceDownloadDialog = _get_resource_download_dialog()
                 dialog = ResourceDownloadDialog(self, self.resource_info)
                 dialog.exec_()
             else:
@@ -286,6 +312,8 @@ class MiscPage(QWidget):
 
     def _fetch_resource_list(self):
         """从远程获取资源列表"""
+        import requests
+
         url = "https://cn-air84.github.io/YuanYue-TTS/res/resList.txt"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
@@ -381,6 +409,7 @@ class MiscPage(QWidget):
     def _on_multi_thread_download(self):
         """处理多线程下载功能"""
         debug_logger.output("misc_page.py", LogLevel.INFO, "打开多线程下载对话框", fold_code="MP_MT")
+        MultiThreadDownloadDialog = _get_multi_thread_download_dialog()
         dialog = MultiThreadDownloadDialog(self)
         dialog.exec_()
     

@@ -8,14 +8,29 @@ from PyQt5.QtWidgets import (
     QSpinBox, QMessageBox, QDoubleSpinBox, QScrollArea, QGridLayout,
     QFontComboBox, QSizePolicy, QCheckBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEvent, QCoreApplication, QProcess
+from PyQt5.QtCore import (
+    Qt, pyqtSignal, QObject, QEvent, QCoreApplication, QProcess,
+    QPropertyAnimation, QEasingCurve, QRect
+)
+
 from PyQt5.QtGui import QFont, QColor, QFontDatabase
 
 from misc_func import SettingsManager
 import misc_func
-from hotkey_manager import HotkeyManager, HotkeyAction
 from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
+
+_HOTKEY_MODULE = None
+
+
+def _get_hotkey_module():
+    """按需加载 hotkey_manager，避免个性页模块导入时拉起热键依赖。"""
+    global _HOTKEY_MODULE
+    if _HOTKEY_MODULE is None:
+        import hotkey_manager as hotkey_module
+        _HOTKEY_MODULE = hotkey_module
+    return _HOTKEY_MODULE
+
 
 class HotkeyEditButton(QPushButton):
     """专门用于录制热键的按钮"""
@@ -52,8 +67,9 @@ class HotkeyEditButton(QPushButton):
                 self.setToolTip(f"GUID: {guid}\nButton: {btn_id}")
             elif self.key_code:
                 # 显示 Qt 热键 (作为回退或键盘录入)
-                self.setText(HotkeyManager.key_to_string(self.key_code))
+                self.setText(_get_hotkey_module().HotkeyManager.key_to_string(self.key_code))
                 self.setToolTip("")
+
             else:
                 self.setText("未绑定")
                 self.setToolTip("")
@@ -457,10 +473,12 @@ class HotkeyControlWidget(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("自定义热键设置", parent)
         self.settings_manager = SettingsManager()
-        self.hotkey_manager = HotkeyManager(self.settings_manager)
+        self.hotkey_module = _get_hotkey_module()
+        self.hotkey_manager = self.hotkey_module.HotkeyManager(self.settings_manager)
         self.wheel_filter = WheelEventFilter()
         self._init_ui()
         self._apply_card_style()
+
     
     def _apply_card_style(self):
         """应用卡片样式"""
@@ -528,6 +546,7 @@ class HotkeyControlWidget(QGroupBox):
         hotkey_layout.setSpacing(CustomConfig.SPACING_SYSTEM['sm'])
         
         # 定义要显示的热键
+        HotkeyAction = self.hotkey_module.HotkeyAction
         self.hotkey_actions = [
             (HotkeyAction.TOGGLE_PAUSE, "播放/暂停"),
             (HotkeyAction.SEEK_BACKWARD, "快退5秒"),
@@ -537,6 +556,7 @@ class HotkeyControlWidget(QGroupBox):
             (HotkeyAction.NEXT_SENTENCE, "下一句 (听写模式)"),
             (HotkeyAction.PREV_SENTENCE, "上一句 (听写模式)"),
         ]
+
         
         self.edit_buttons = {}
         
@@ -608,8 +628,9 @@ class HotkeyControlWidget(QGroupBox):
         
         self.setLayout(layout)
     
-    def _on_hotkey_changed(self, action: HotkeyAction, key_code: int):
+    def _on_hotkey_changed(self, action, key_code: int):
         """热键改变回调，带冲突检测"""
+
         # 检查冲突
         conflict_action = None
         for a, btn in self.edit_buttons.items():
@@ -623,9 +644,10 @@ class HotkeyControlWidget(QGroupBox):
             
             reply = QMessageBox.warning(
                 self, "热键冲突", 
-                f"键位 '{HotkeyManager.key_to_string(key_code)}' 已被 '{conflict_name}' 使用。\n是否要重新分配？",
+                f"键位 '{self.hotkey_module.HotkeyManager.key_to_string(key_code)}' 已被 '{conflict_name}' 使用。\n是否要重新分配？",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             )
+
             
             if reply == QMessageBox.Yes:
                 # 清除冲突的热键
@@ -1875,8 +1897,10 @@ class CustomPage(QWidget):
         self.parent_window = parent
         self.settings_manager = SettingsManager()
         self.wheel_filter = WheelEventFilter()
+        self._window_resize_animation = None
         
         # 字体大小设置
+
         self.min_font_size = 22
         self.max_font_size = 42
         self.default_width = 1080
@@ -2434,6 +2458,32 @@ class CustomPage(QWidget):
             else:
                 QMessageBox.critical(self, "重启失败", f"无法自动重启程序，请手动重新启动。\n错误: {str(e)}")
     
+    def _animate_parent_window_resize(self, width: int, height: int, duration_ms: int = 260):
+        """以三次方缓动平滑调整主窗口尺寸（宽高同时过渡）。"""
+        if not self.parent_window:
+            return
+
+        if width <= 0 or height <= 0:
+            return
+
+        current_rect = self.parent_window.geometry()
+        target_rect = QRect(current_rect.x(), current_rect.y(), width, height)
+
+        if current_rect.width() == width and current_rect.height() == height:
+            return
+
+        if self._window_resize_animation is not None:
+            self._window_resize_animation.stop()
+
+        animation = QPropertyAnimation(self.parent_window, b"geometry", self)
+        animation.setDuration(duration_ms)
+        animation.setStartValue(current_rect)
+        animation.setEndValue(target_rect)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.start()
+
+        self._window_resize_animation = animation
+
     def _apply_settings_silently(self):
         """静默应用设置（不弹窗）"""
         # 获取共享内存管理器
@@ -2443,9 +2493,13 @@ class CustomPage(QWidget):
         window_size = self.settings_manager.Custom.get_value("window_size", "1024x768")
         if self.parent_window:
             width, height = map(int, window_size.split('x'))
-            self.parent_window.resize(width, height)
+            if self.parent_window.isVisible():
+                self._animate_parent_window_resize(width, height)
+            else:
+                self.parent_window.resize(width, height)
             # 广播窗口尺寸更改
             shared_manager.broadcast_window_size_change(width, height)
+
         
         # 应用背景颜色
         bg_color = self.settings_manager.Custom.get_value(
@@ -2462,7 +2516,9 @@ class CustomPage(QWidget):
             # 刷新生成选项卡
             if hasattr(self.parent_window, 'generation_page') and self.parent_window.generation_page:
                 self.parent_window.generation_page._update_fonts()
-                self.parent_window.generation_page._check_inputs_and_update_button()
+                if hasattr(self.parent_window.generation_page, '_check_inputs_and_update_button'):
+                    self.parent_window.generation_page._check_inputs_and_update_button()
+
         
         # 应用个性化页面自身的背景颜色
         self.setStyleSheet(f"background-color: {bg_color};")
@@ -2480,12 +2536,16 @@ class CustomPage(QWidget):
             'hotkeys': {
                 action: self.settings_manager.Custom.get_value(f"hk_{action}", "")
                 for action in [
-                    HotkeyAction.TOGGLE_PAUSE, HotkeyAction.SEEK_BACKWARD,
-                    HotkeyAction.SEEK_FORWARD, HotkeyAction.VOLUME_UP,
-                    HotkeyAction.VOLUME_DOWN, HotkeyAction.NEXT_SENTENCE,
-                    HotkeyAction.PREV_SENTENCE
+                    self.hotkey_group.hotkey_module.HotkeyAction.TOGGLE_PAUSE,
+                    self.hotkey_group.hotkey_module.HotkeyAction.SEEK_BACKWARD,
+                    self.hotkey_group.hotkey_module.HotkeyAction.SEEK_FORWARD,
+                    self.hotkey_group.hotkey_module.HotkeyAction.VOLUME_UP,
+                    self.hotkey_group.hotkey_module.HotkeyAction.VOLUME_DOWN,
+                    self.hotkey_group.hotkey_module.HotkeyAction.NEXT_SENTENCE,
+                    self.hotkey_group.hotkey_module.HotkeyAction.PREV_SENTENCE
                 ]
             },
+
             'notification_colors': {
                 'info': self.settings_manager.Custom.get_value("info_color", CustomConfig.DEFAULT_COLORS["notification_info"]),
                 'warning': self.settings_manager.Custom.get_value("warning_color", CustomConfig.DEFAULT_COLORS["notification_warning"]),

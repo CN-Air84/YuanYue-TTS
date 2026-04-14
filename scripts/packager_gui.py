@@ -497,13 +497,17 @@ class PackagerGUI(QWidget):
         # 编码选项
         if self.encoding_checkbox.isChecked():
             args.append('--hidden-import=encodings.utf_8')
+
+        runtime_hook_path = Path(__file__).resolve().parent / 'runtime_hook_preload.py'
+        if runtime_hook_path.exists():
+            args.append(f'--runtime-hook={runtime_hook_path}')
         
         # 图标选项
         if icon_path:
             args.append(f'--icon={icon_path}')
         else:
             # 使用默认图标
-            args.append('--icon=G:\\YanchaTTS\\1.ico')
+            args.append('--icon=G:\\YuanyueTTS\\1.ico')
         
         # 模式选项
         args.append(mode)

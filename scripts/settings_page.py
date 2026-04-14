@@ -1,11 +1,12 @@
 # coding=utf-8
 import sys
+import json
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
     QLineEdit, QPushButton, QGroupBox, QFormLayout,
     QSpinBox, QDoubleSpinBox, QScrollArea, QCheckBox, QSlider, QFileDialog,
     QStackedWidget, QButtonGroup, QGraphicsOpacityEffect, QFrame, QSizePolicy,
-    QGridLayout, QApplication
+    QGridLayout, QApplication, QSplitter, QMessageBox
 )
 from PyQt5.QtCore import (
     Qt, pyqtSignal, QObject, QEvent, QVariantAnimation, pyqtProperty, 
@@ -17,8 +18,17 @@ from PyQt5.QtGui import QFont, QColor, QDesktopServices, QDrag, QPixmap
 from misc_func import SettingsManager, CustomConfig
 from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
-import ai_manager
-from ai_manager import AIScene, ModelTier, MODELS
+
+_AI_MANAGER_MODULE = None
+
+
+def _get_ai_manager_module():
+    """按需加载 ai_manager，避免设置页模块导入时拉起重依赖。"""
+    global _AI_MANAGER_MODULE
+    if _AI_MANAGER_MODULE is None:
+        import ai_manager as ai_manager_module
+        _AI_MANAGER_MODULE = ai_manager_module
+    return _AI_MANAGER_MODULE
 
 
 class WheelEventFilter(QObject):
@@ -213,7 +223,8 @@ class AiModelConfigWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings_manager = SettingsManager()
-        self.current_scene = AIScene.CHAT
+        self.ai_module = _get_ai_manager_module()
+        self.current_scene = self.ai_module.AIScene.CHAT
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 10, 0, 0)
@@ -243,9 +254,9 @@ class AiModelConfigWidget(QWidget):
         
         # Tiers (必选 + 可多选)
         self.tiers = {
-            "永久免费": ModelTier.FREE,
-            "限时免费": ModelTier.LIMITED_FREE,
-            "常态收费": ModelTier.PAID
+            "永久免费": self.ai_module.ModelTier.FREE,
+            "限时免费": self.ai_module.ModelTier.LIMITED_FREE,
+            "常态收费": self.ai_module.ModelTier.PAID
         }
         self.tier_btns = {}
         for i, (name, tier) in enumerate(self.tiers.items()):
@@ -254,7 +265,7 @@ class AiModelConfigWidget(QWidget):
             left_panel.addWidget(btn)
             self.tier_btns[tier] = btn
             
-        self.tier_btns[ModelTier.FREE].setChecked(True)
+        self.tier_btns[self.ai_module.ModelTier.FREE].setChecked(True)
         left_panel.addStretch()
         
         layout.addWidget(self.left_panel_container, 1)
@@ -326,8 +337,8 @@ class AiModelConfigWidget(QWidget):
                 
         models_to_show = []
         for provider in selected_providers:
-            if provider in MODELS and self.current_scene.value in MODELS[provider]:
-                for model in MODELS[provider][self.current_scene.value]:
+            if provider in self.ai_module.MODELS and self.current_scene.value in self.ai_module.MODELS[provider]:
+                for model in self.ai_module.MODELS[provider][self.current_scene.value]:
                     if model.tier in selected_tiers:
                         models_to_show.append(model)
                         
@@ -336,7 +347,7 @@ class AiModelConfigWidget(QWidget):
         saved_model = self.settings_manager.Custom.get_value(f"{scene_key}_model", "")
         
         # 如果没有保存的设置且是 TTS 场景，默认选择 edge-tts
-        if not saved_provider and not saved_model and self.current_scene == AIScene.TTS:
+        if not saved_provider and not saved_model and self.current_scene == self.ai_module.AIScene.TTS:
             saved_provider = "MS"
             saved_model = "edge-tts"
             self.settings_manager.Custom.set_value(f"{scene_key}_provider", saved_provider)
@@ -379,6 +390,548 @@ class AiModelConfigWidget(QWidget):
         scene_key = f"ai_model_{self.current_scene.value}"
         self.settings_manager.Custom.set_value(f"{scene_key}_provider", model.provider)
         self.settings_manager.Custom.set_value(f"{scene_key}_model", model.name)
+        
+        # 广播TTS模型配置变更
+        if self.current_scene == self.ai_module.AIScene.TTS:
+            from shared_memory_manager import get_shared_memory_manager
+            shared_manager = get_shared_memory_manager()
+            shared_manager.broadcast_settings_change('ai_model_tts', {
+                'provider': model.provider,
+                'model': model.name
+            })
+            debug_logger.output("settings_page.py", LogLevel.INFO, 
+                f"已广播TTS模型变更: {model.provider} - {model.name}", 
+                fold_code="SETTINGS_TTS")
+            
+            # 显示重启提示
+            QMessageBox.information(
+                self,
+                "需要重启",
+                "TTS模型配置已保存。\n\n为使更改生效，请重启软件。",
+                QMessageBox.Ok
+            )
+
+
+class DefaultVoiceSettingsTab(QWidget):
+    """默认音色设置选项卡"""
+    
+    # TTS提供商映射
+    PROVIDER_MAPPING = {
+        "MS": ["Microsoft", "edge-tts"],  # EdgeTTS使用MS作为provider
+        "ChatGLM": ["ChatGLM"],
+        "Qwen": ["Qwen"],
+        "KIMI": ["KIMI"],
+        "Minimax": ["Minimax"],
+        "Mimo": ["Mimo"]
+    }
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.settings_manager = SettingsManager()
+        self.voice_data = []
+        self.current_provider = "MS"  # 默认EdgeTTS
+        self.current_model = None  # 当前选中的模型
+        self.column_count = 2
+        self.provider_btns = {}
+        self.model_btns = {}
+        self.voice_btn_groups = {}
+        self.ai_module = _get_ai_manager_module()
+        self.ai_manager = self.ai_module.get_ai_manager()  # 获取 ai_manager 实例
+        self.current_font = None  # 保存当前字体
+        
+        self._load_voice_data()
+        self._init_ui()
+        
+    def _init_ui(self):
+        """初始化UI布局"""
+        # 使用QSplitter实现可拖拽调整的布局
+        self.splitter = QSplitter(Qt.Horizontal, self)
+        self.splitter.setHandleWidth(3)
+        self.splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #D0D0D0;
+            }
+            QSplitter::handle:hover {
+                background-color: #A0A0A0;
+            }
+        """)
+        
+        # 创建三个面板：提供商、模型、音色
+        self.provider_panel = self._create_provider_panel()
+        self.model_panel = self._create_model_panel()
+        self.voice_panel = self._create_voice_panel()
+        
+        self.splitter.addWidget(self.provider_panel)
+        self.splitter.addWidget(self.model_panel)
+        self.splitter.addWidget(self.voice_panel)
+        
+        # 设置最小宽度
+        self.provider_panel.setMinimumWidth(100)
+        self.model_panel.setMinimumWidth(100)
+        self.voice_panel.setMinimumWidth(200)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.addWidget(self.splitter)
+        
+        # 初始化显示EdgeTTS的模型列表
+        self._update_model_list()
+        
+        # 计算并设置初始宽度
+        QTimer.singleShot(0, self._adjust_panel_widths)
+        
+    def _load_voice_data(self):
+        """从cache/voiceList.txt加载音色数据"""
+        try:
+            with open("cache/voiceList.txt", "r", encoding="utf-8") as f:
+                voices = []
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        voice = json.loads(line)
+                        voices.append(voice)
+                    except json.JSONDecodeError as e:
+                        debug_logger.output(
+                            "settings_page.py",
+                            LogLevel.WARNING,
+                            f"跳过无效的音色数据行: {e}",
+                            fold_code="VOICE_SETTINGS"
+                        )
+                self.voice_data = voices
+        except FileNotFoundError:
+            debug_logger.output(
+                "settings_page.py",
+                LogLevel.ERROR,
+                "voiceList.txt文件不存在",
+                fold_code="VOICE_SETTINGS"
+            )
+            self.voice_data = []
+        except Exception as e:
+            debug_logger.output(
+                "settings_page.py",
+                LogLevel.ERROR,
+                f"加载音色数据失败: {e}",
+                fold_code="VOICE_SETTINGS"
+            )
+            self.voice_data = []
+            
+    def _adjust_panel_widths(self):
+        """使用固定百分比设置面板宽度"""
+        if not hasattr(self, 'splitter'):
+            return
+            
+        total_width = self.splitter.width()
+        if total_width <= 0:
+            return
+        
+        # 使用固定百分比：提供商10%，模型15%，音色75%
+        provider_width = int(total_width * 0.10)
+        model_width = int(total_width * 0.15)
+        voice_width = int(total_width * 0.75)
+        
+        # 确保最小宽度
+        provider_width = max(provider_width, 100)
+        model_width = max(model_width, 100)
+        voice_width = max(voice_width, 200)
+        
+        # 设置splitter尺寸
+        self.splitter.setSizes([provider_width, model_width, voice_width])
+    
+    def _calculate_panel_width(self, buttons):
+        """计算面板所需的最小宽度以完整显示所有按钮文本"""
+        if not buttons:
+            return 100
+        
+        max_width = 100
+        font = self.current_font if self.current_font else self.font()
+        
+        from PyQt5.QtGui import QFontMetrics
+        fm = QFontMetrics(font)
+        
+        for btn in buttons:
+            try:
+                # 检查按钮是否已被删除
+                if btn is None:
+                    continue
+                # 尝试访问按钮，如果已删除会抛出RuntimeError
+                text = btn.text()
+                # 计算文本宽度，加上按钮的padding和边框
+                text_width = fm.width(text)
+                # 按钮有padding: 8px 16px，边框1px，加上一些余量
+                button_width = text_width + 32 + 2 + 20  # padding + border + margin
+                max_width = max(max_width, button_width)
+            except RuntimeError:
+                # 按钮已被删除，跳过
+                continue
+        
+        # 加上面板的margins (10px * 2)
+        return max_width + 20
+            
+    def _filter_voices_by_provider(self, provider_id):
+        """根据提供商ID和模型名称筛选音色列表"""
+        if not self.current_model:
+            return []
+            
+        keywords = self.PROVIDER_MAPPING.get(provider_id, [])
+        if not keywords:
+            return []
+        
+        filtered = []
+        for voice in self.voice_data:
+            belonging_model = voice.get("belongingModel", "")
+            # 模糊匹配提供商
+            provider_match = any(kw.lower() in belonging_model.lower() for kw in keywords)
+            # 模糊匹配模型名称
+            model_match = self.current_model.lower() in belonging_model.lower()
+            
+            if provider_match and model_match:
+                filtered.append(voice)
+        
+        return filtered
+        
+    def _create_provider_panel(self):
+        """创建左侧TTS提供商面板"""
+        provider_panel_container = StyledContainer()
+        provider_layout = QVBoxLayout(provider_panel_container)
+        provider_layout.setContentsMargins(10, 10, 10, 10)
+        provider_layout.setSpacing(10)
+        
+        # TTS提供商按钮
+        providers = [
+            ("EdgeTTS", "MS"),
+            ("智谱AI", "ChatGLM"),
+            ("阿里云百炼", "Qwen"),
+            ("Kimi", "KIMI"),
+            ("Minimax", "Minimax"),
+            ("其他", "Mimo")
+        ]
+        
+        self.provider_btn_group = QButtonGroup(self)
+        self.provider_btn_group.setExclusive(True)
+        
+        for i, (name, pid) in enumerate(providers):
+            btn = SmoothButton(name, "tab_level2")
+            btn.clicked.connect(lambda checked, p=pid: self._on_provider_clicked(p, checked))
+            provider_layout.addWidget(btn)
+            self.provider_btns[pid] = btn
+            self.provider_btn_group.addButton(btn, i)
+        
+        # 默认选中EdgeTTS
+        self.provider_btns["MS"].setChecked(True)
+        
+        provider_layout.addStretch()
+        return provider_panel_container
+        
+    def _create_model_panel(self):
+        """创建中间模型选择面板"""
+        model_panel_container = StyledContainer()
+        model_layout = QVBoxLayout(model_panel_container)
+        model_layout.setContentsMargins(10, 10, 10, 10)
+        model_layout.setSpacing(10)
+        
+        # 模型列表容器（使用滚动区域）
+        self.model_scroll_area = QScrollArea()
+        self.model_scroll_area.setWidgetResizable(True)
+        self.model_scroll_area.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical { 
+                background: #F5F5F5; width: 12px; margin: 0px; border-radius: 6px; 
+            } 
+            QScrollBar::handle:vertical { 
+                background: #C0C0C0; min-height: 30px; border-radius: 6px; margin: 2px; 
+            } 
+            QScrollBar::handle:vertical:hover { background: #A0A0A0; } 
+            QScrollBar::handle:vertical:pressed { background: #808080; } 
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: none; } 
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; } 
+        """)
+        
+        self.model_list_container = QWidget()
+        self.model_list_layout = QVBoxLayout(self.model_list_container)
+        self.model_list_layout.setSpacing(10)
+        self.model_list_layout.setAlignment(Qt.AlignTop)
+        self.model_list_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.model_scroll_area.setWidget(self.model_list_container)
+        model_layout.addWidget(self.model_scroll_area)
+        
+        return model_panel_container
+        
+    def _create_voice_panel(self):
+        """创建右侧音色网格面板"""
+        voice_panel_container = StyledContainer()
+        voice_layout = QVBoxLayout(voice_panel_container)
+        voice_layout.setContentsMargins(10, 10, 10, 10)
+        voice_layout.setSpacing(10)
+        
+        # 顶部控制栏
+        control_bar = QHBoxLayout()
+        control_bar.addStretch()
+        
+        # 列数设置
+        self.col_label = QLabel("列数:")
+        if self.current_font:
+            self.col_label.setFont(self.current_font)
+        self.col_spinbox = QSpinBox()
+        self.col_spinbox.setRange(1, 4)
+        self.col_spinbox.setValue(2)
+        self.col_spinbox.valueChanged.connect(self._on_column_count_changed)
+        if self.current_font:
+            self.col_spinbox.setFont(self.current_font)
+        
+        control_bar.addWidget(self.col_label)
+        control_bar.addWidget(self.col_spinbox)
+        
+        voice_layout.addLayout(control_bar)
+        
+        # 滚动区域
+        self.voice_scroll_area = QScrollArea()
+        self.voice_scroll_area.setWidgetResizable(True)
+        self.voice_scroll_area.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical { 
+                background: #F5F5F5; width: 12px; margin: 0px; border-radius: 6px; 
+            } 
+            QScrollBar::handle:vertical { 
+                background: #C0C0C0; min-height: 30px; border-radius: 6px; margin: 2px; 
+            } 
+            QScrollBar::handle:vertical:hover { background: #A0A0A0; } 
+            QScrollBar::handle:vertical:pressed { background: #808080; } 
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; background: none; } 
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; } 
+        """)
+        
+        # 音色网格容器
+        self.voice_grid_container = QWidget()
+        self.voice_grid_layout = QGridLayout(self.voice_grid_container)
+        self.voice_grid_layout.setSpacing(10)
+        self.voice_grid_layout.setAlignment(Qt.AlignTop)
+        
+        self.voice_scroll_area.setWidget(self.voice_grid_container)
+        voice_layout.addWidget(self.voice_scroll_area)
+        
+        return voice_panel_container
+        
+    def _on_provider_clicked(self, provider_id, checked):
+        """处理TTS提供商按钮点击事件"""
+        if checked:
+            self.current_provider = provider_id
+            self.current_model = None  # 切换提供商时清空模型选择
+            self._update_model_list()
+            
+    def _on_model_clicked(self, model_name, checked):
+        """处理模型按钮点击事件"""
+        if checked:
+            self.current_model = model_name
+            self._save_default_model(self.current_provider, model_name)
+            self._update_voice_grid()
+            
+    def _update_model_list(self):
+        """更新模型列表显示"""
+        # 清空现有模型按钮
+        while self.model_list_layout.count():
+            item = self.model_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # 清空模型按钮引用字典
+        self.model_btns.clear()
+        
+        # EdgeTTS特殊处理：直接显示EdgeTTS选项
+        if self.current_provider == "MS":
+            btn = SmoothButton("EdgeTTS", "tab_level2")
+            if self.current_font:
+                btn.setFont(self.current_font)
+            btn.clicked.connect(lambda checked: self._on_model_clicked("edge-tts", checked))
+            self.model_list_layout.addWidget(btn)
+            self.model_btns["edge-tts"] = btn
+            
+            self.model_btn_group = QButtonGroup(self)
+            self.model_btn_group.setExclusive(True)
+            self.model_btn_group.addButton(btn, 0)
+            
+            # 默认选中EdgeTTS
+            btn.setChecked(True)
+            self.current_model = "edge-tts"
+            self._update_voice_grid()
+            # 重新计算面板宽度
+            QTimer.singleShot(0, self._adjust_panel_widths)
+            return
+        
+        # 获取当前提供商的TTS模型列表
+        models = self.ai_manager.get_models_by_scene(self.ai_module.AIScene.TTS, provider=self.current_provider)
+        
+        if not models:
+            # 显示空状态
+            empty_label = QLabel("该提供商暂无TTS模型")
+            empty_label.setAlignment(Qt.AlignCenter)
+            empty_label.setStyleSheet("color: #666666;")
+            if self.current_font:
+                empty_label.setFont(self.current_font)
+            self.model_list_layout.addWidget(empty_label)
+            self._update_voice_grid()  # 清空音色列表
+            return
+        
+        # 创建模型按钮组
+        self.model_btn_group = QButtonGroup(self)
+        self.model_btn_group.setExclusive(True)
+        
+        # 加载已保存的默认模型
+        saved_model = self._load_default_model(self.current_provider)
+        
+        # 创建模型按钮
+        for i, model in enumerate(models):
+            btn = SmoothButton(model.name, "tab_level2")
+            if self.current_font:
+                btn.setFont(self.current_font)
+            btn.clicked.connect(lambda checked, m=model.name: self._on_model_clicked(m, checked))
+            self.model_list_layout.addWidget(btn)
+            self.model_btns[model.name] = btn
+            self.model_btn_group.addButton(btn, i)
+            
+            # 恢复选中状态
+            if model.name == saved_model:
+                btn.setChecked(True)
+                self.current_model = model.name
+        
+        # 如果没有保存的模型，默认选中第一个
+        if not saved_model and models:
+            self.model_btns[models[0].name].setChecked(True)
+            self.current_model = models[0].name
+        
+        # 更新音色列表
+        self._update_voice_grid()
+        
+        # 重新计算面板宽度
+        QTimer.singleShot(0, self._adjust_panel_widths)
+            
+    def _on_column_count_changed(self, count):
+        """处理列数设置变更"""
+        self.column_count = count
+        self._update_voice_grid()
+        
+    def _create_voice_button(self, voice_data):
+        """创建音色按钮，动态处理可选字段"""
+        voice_id = voice_data.get("voiceID", "")
+        voice_name = voice_data.get("voiceName", "Unknown")
+        lang = voice_data.get("Lang")
+        gender = voice_data.get("gender")
+        
+        # 动态构建显示文本
+        if lang and gender:
+            display_text = f"{voice_name} [{lang}|{gender}]"
+        elif lang:
+            display_text = f"{voice_name} [{lang}]"
+        else:
+            display_text = f"{voice_name} ({voice_id})"
+        
+        btn = SmoothButton(display_text, "model")
+        if self.current_font:
+            btn.setFont(self.current_font)
+        btn.setProperty("voice_id", voice_id)
+        return btn
+        
+    def _update_voice_grid(self):
+        """更新音色网格显示"""
+        # 清空现有网格
+        while self.voice_grid_layout.count():
+            item = self.voice_grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # 如果没有选中模型，显示提示
+        if not self.current_model:
+            empty_label = QLabel("请先选择模型")
+            empty_label.setAlignment(Qt.AlignCenter)
+            empty_label.setStyleSheet("color: #666666;")
+            if self.current_font:
+                empty_label.setFont(self.current_font)
+            self.voice_grid_layout.addWidget(
+                empty_label, 0, 0, 1, self.column_count
+            )
+            return
+        
+        # 获取筛选后的音色列表
+        voices = self._filter_voices_by_provider(self.current_provider)
+        
+        if not voices:
+            # 显示空状态
+            empty_label = QLabel("该模型暂无可用音色")
+            empty_label.setAlignment(Qt.AlignCenter)
+            empty_label.setStyleSheet("color: #666666;")
+            if self.current_font:
+                empty_label.setFont(self.current_font)
+            self.voice_grid_layout.addWidget(
+                empty_label, 0, 0, 1, self.column_count
+            )
+            return
+        
+        # 创建或获取按钮组（使用provider+model作为key）
+        btn_group_key = f"{self.current_provider}_{self.current_model}"
+        if btn_group_key not in self.voice_btn_groups:
+            self.voice_btn_groups[btn_group_key] = QButtonGroup(self)
+            self.voice_btn_groups[btn_group_key].setExclusive(True)
+            self.voice_btn_groups[btn_group_key].buttonClicked.connect(
+                self._on_voice_selected
+            )
+        
+        btn_group = self.voice_btn_groups[btn_group_key]
+        
+        # 加载已保存的默认音色
+        saved_voice_id = self._load_default_voice(self.current_provider, self.current_model)
+        
+        # 按网格排列音色按钮
+        for i, voice in enumerate(voices):
+            row = i // self.column_count
+            col = i % self.column_count
+            
+            btn = self._create_voice_button(voice)
+            btn_group.addButton(btn, i)
+            
+            # 恢复选中状态
+            if voice.get("voiceID") == saved_voice_id:
+                btn.setChecked(True)
+            
+            self.voice_grid_layout.addWidget(btn, row, col)
+            
+    def _on_voice_selected(self, btn):
+        """处理音色按钮选择事件"""
+        voice_id = btn.property("voice_id")
+        if voice_id and self.current_model:
+            self._save_default_voice(self.current_provider, self.current_model, voice_id)
+            
+    def _save_default_voice(self, provider_id, model_name, voice_id):
+        """保存默认音色设置"""
+        key = f"default_voice_{provider_id}_{model_name}"
+        self.settings_manager.Custom.set_value(key, voice_id)
+        
+    def _load_default_voice(self, provider_id, model_name):
+        """加载默认音色设置"""
+        key = f"default_voice_{provider_id}_{model_name}"
+        return self.settings_manager.Custom.get_value(key, None)
+        
+    def _save_default_model(self, provider_id, model_name):
+        """保存默认模型设置"""
+        key = f"default_model_{provider_id}"
+        self.settings_manager.Custom.set_value(key, model_name)
+        
+    def _load_default_model(self, provider_id):
+        """加载默认模型设置"""
+        key = f"default_model_{provider_id}"
+        return self.settings_manager.Custom.get_value(key, None)
+        
+    def set_font(self, font):
+        """更新所有UI元素的字体"""
+        self.current_font = font  # 保存当前字体
+        
+        def set_font_recursive(widget):
+            widget.setFont(font)
+            for child in widget.findChildren(QWidget):
+                set_font_recursive(child)
+        
+        set_font_recursive(self)
 
 
 class AiSettingsTab(QWidget):
@@ -399,16 +952,19 @@ class AiSettingsTab(QWidget):
         
         self.btn_api_key = SmoothButton("API Key配置", "tab_level2")
         self.btn_ai_model = SmoothButton("AI模型设置", "tab_level2")
+        self.btn_default_voice = SmoothButton("默认音色设置", "tab_level2")
         self.btn_api_key.setChecked(True)
         
         self.level2_group = QButtonGroup(self)
         self.level2_group.addButton(self.btn_api_key, 0)
         self.level2_group.addButton(self.btn_ai_model, 1)
+        self.level2_group.addButton(self.btn_default_voice, 2)
         self.level2_group.buttonClicked[int].connect(self._on_level2_changed)
         
         left_layout.addStretch()
         left_layout.addWidget(self.btn_api_key)
         left_layout.addWidget(self.btn_ai_model)
+        left_layout.addWidget(self.btn_default_voice)
         left_layout.addStretch()
         
         self.right_container = StyledContainer()
@@ -445,9 +1001,11 @@ class AiSettingsTab(QWidget):
         self.stacked_widget = QStackedWidget()
         self.api_key_page = ApiKeyConfigWidget(self)
         self.ai_model_page = AiModelConfigWidget(self)
+        self.default_voice_page = DefaultVoiceSettingsTab(self)
         
         self.stacked_widget.addWidget(self.api_key_page)
         self.stacked_widget.addWidget(self.ai_model_page)
+        self.stacked_widget.addWidget(self.default_voice_page)
         
         layout.addWidget(self.stacked_widget)
         
@@ -499,7 +1057,7 @@ class AiSettingsTab(QWidget):
             self.right_width_anim.setEndValue(target_width)
             self.right_width_anim.start()
             QTimer.singleShot(250, self._start_fade_in)
-        else: # API Key配置
+        else: # API Key配置 或 默认音色设置
             self.is_showing_right = False
             self.fade_anim.stop()
             self.fade_anim.setStartValue(self.right_opacity.opacity())
@@ -554,7 +1112,8 @@ class AiSettingsTab(QWidget):
             QTimer.singleShot(250, self._start_fade_in)
 
     def _on_level3_changed(self, index):
-        scenes = [AIScene.CHAT, AIScene.VISION, AIScene.TTS]
+        ai_module = _get_ai_manager_module()
+        scenes = [ai_module.AIScene.CHAT, ai_module.AIScene.VISION, ai_module.AIScene.TTS]
         self.ai_model_page.set_scene(scenes[index])
 
 
@@ -1522,3 +2081,7 @@ class SettingsPage(QWidget):
                 child.setFont(base_font)
                 
         set_font_recursive(self)
+        
+        # 更新DefaultVoiceSettingsTab的字体
+        if hasattr(self, 'ai_settings_tab') and hasattr(self.ai_settings_tab, 'default_voice_page'):
+            self.ai_settings_tab.default_voice_page.set_font(base_font)
