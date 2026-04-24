@@ -1,5 +1,6 @@
 # coding=utf-8
 
+from re import T
 import sys
 import os
 import time
@@ -71,28 +72,19 @@ _main_window_instance_count = 0
 _main_window_instances_lock = threading.Lock() 
 
 '''
-+ 大幅优化启动耗时，全量加载完毕速度加快至原先的75%
-+ 重写听写页面，大幅优化界面布局，提升美观度
-+ 启动时窗口缩放 添加平滑过渡动效
-+ 设置选项卡-AI设置 添加默认音色设置
-+ 修复自动分句不识别某些符号的bug
-+ 修复其他若干bug
-+ 别的我忘了
++ 新增 好像还不错的启动动画
++ 新增 插件系统 
++ 通过障眼法彻底略去了启动时窗口缩放
 '''
 
 class VersionInfos:
     """版本信息"""
     
     def __init__(self) -> None:
-        self.this_version = '''0.16.'''
-        self.this_update_content = '''大幅优化启动耗时，全量加载完毕速度加快至原先的75%
-重写听写页面，大幅优化界面布局，提升美观度
-启动时窗口缩放 添加平滑过渡动效
-设置选项卡-AI设置 添加默认音色设置
-修复自动分句不识别某些符号的bug
-修复其他若干bug
-别的我忘了'''
-        self.this_update_date = '''2026-04-15'''
+        self.this_version = '''0.17.0'''
+        self.this_update_content = ''' 新增 好像还不错的启动动画
+ 通过障眼法彻底略去了启动时窗口缩放'''
+        self.this_update_date = '''2026-04-24'''
         # self.this_version = '''0.0'''
         # self.this_update_content = '''版本自述文本框每行最多十六个汉字
         # ABCDEFGHABCDEFGHABCDEFGA
@@ -214,6 +206,7 @@ class AsyncInitializer:
             self._steps.append((f"创建页面 [{cfg_name}]", lambda idx=i: self._step_create_single_page(idx)))
 
         self._steps.append(("初始化共享内存", self._step_init_shared_memory))
+        self._steps.append(("初始化插件系统", self._step_init_plugin_system))
         self._steps.append(("初始化通知管理器", self._step_init_notification))
 
         debug_logger.output(
@@ -262,25 +255,43 @@ class AsyncInitializer:
             pw._replace_placeholder_page(page_index, page_widget)
             pw.ready_gate.mark_ready(f"page_{tab_config.name}", page_widget)
 
+            # 如果是插件页面，设置 plugin_manager 引用
+            if tab_config.name == 'plugins' and hasattr(page_widget, 'set_plugin_manager'):
+                if pw.plugin_manager is not None:
+                    page_widget.set_plugin_manager(pw.plugin_manager)
+                    debug_logger.output("main_window.py", LogLevel.INFO, "已将 PluginManager 连接到 PluginPage", fold_code="MAIN_ASYNC")
+
             if pw.ready_gate.is_ready("shared_memory"):
                 pw._connect_page_shared_memory_if_needed(page_widget)
 
             debug_logger.output("main_window.py", LogLevel.DEBUG, f"页面 {tab_config.name} 实例化并替换成功", fold_code="MAIN_ASYNC")
         except Exception as e:
             debug_logger.output("main_window.py", LogLevel.ERROR, f"实例化页面 {tab_config.name} 时出错: {str(e)}", fold_code="MAIN_ASYNC")
+            # 即使页面创建失败，如果是初始页面，也需要触发埋点
+            if is_initial:
+                startup_profiler.mark_once("first_page_ready", f"{tab_config.name}(failed)")
+                debug_logger.output("main_window.py", LogLevel.WARNING, f"初始页面 {tab_config.name} 创建失败，但已记录埋点", fold_code="MAIN_ASYNC")
             return
 
         if getattr(pw, "_is_onboarding", False) and has_onboarding:
             pw.stacked_widget.setCurrentWidget(onboarding_widget)
+            # 新手引导模式下也需要触发埋点
+            if is_initial:
+                startup_profiler.mark_once("first_page_ready", f"{tab_config.name}(onboarding)")
             return
 
         if is_initial:
             pw.stacked_widget.setCurrentIndex(page_index)
             startup_profiler.mark_once("first_page_ready", tab_config.name)
             debug_logger.output("main_window.py", LogLevel.INFO, f"初始页面 {tab_config.name} 已显示", fold_code="MAIN_ASYNC")
-
-
-        if pw.tab_manager.current_tab_index == page_index:
+            # 初始页面需要触发选项卡切换处理
+            pw.tab_manager._on_tab_switched(page_index)
+            
+            # 通知 loading_animation 主窗口已加载完成
+            if hasattr(pw, 'loading_anim') and pw.loading_anim:
+                pw.loading_anim.set_main_loaded()
+        elif pw.tab_manager.current_tab_index == page_index:
+            # 非初始页面但当前索引匹配时（如用户手动切换），触发切换处理
             pw.stacked_widget.setCurrentIndex(page_index)
             pw.tab_manager._on_tab_switched(page_index)
 
@@ -318,6 +329,13 @@ class AsyncInitializer:
         pw.audio_preview = audio_preview_class(pw, pw.hotkey_manager)
         pw.ready_gate.mark_ready("audio", pw.audio_preview)
         debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 AudioPreview 实例", fold_code="MAIN_INIT")
+        
+        # 通知已创建的页面连接音频预览信号
+        for tab_config in pw.tab_manager.tab_configs:
+            if pw.ready_gate.is_ready(f"page_{tab_config.name}"):
+                page_widget = pw.ready_gate.get(f"page_{tab_config.name}")
+                if page_widget and hasattr(page_widget, 'connect_audio_preview_signals'):
+                    page_widget.connect_audio_preview_signals()
 
 
     def _step_load_hotkeys(self):
@@ -327,6 +345,9 @@ class AsyncInitializer:
 
     def _step_init_shared_memory(self):
         self.parent_window._async_init_shared_memory_component()
+
+    def _step_init_plugin_system(self):
+        self.parent_window._async_init_plugin_system()
 
     def _step_init_notification(self):
         self.parent_window._async_init_non_critical_components()
@@ -651,7 +672,8 @@ class MainWindow(QWidget):
         self._init_core_components()
         self._load_settings()  # 优先加载设置
         self._init_ui()
-        self.show()
+        # 不要在这里 show()，窗口在不可见位置
+        # 等异步初始化完成后再 show() 并移动到屏幕中心
         QTimer.singleShot(0, self._deferred_init)
         debug_logger.output("main_window.py", LogLevel.INFO, "主窗口同步初始化部分完成", fold_code="MAIN_INIT")
 
@@ -678,6 +700,9 @@ class MainWindow(QWidget):
             self.ready_gate = ReadyGate()
             self.background_importer = BackgroundImporter()
             self._shared_memory_signals_connected = False
+            
+            # 初始化插件管理器（延迟加载插件）
+            self.plugin_manager = None
             
             self._audio_generator = None  # 延迟加载
             self._notification_manager = None  # 延迟加载
@@ -746,7 +771,8 @@ class MainWindow(QWidget):
         """设置窗口基本属性"""
         debug_logger.output("main_window.py", LogLevel.INFO, "配置窗口属性", fold_code="MAIN_INIT")
         self.setWindowTitle('源悦TTS')
-        self.setGeometry(300, 300, self.default_width, self.default_height)
+        # 先将窗口放到屏幕外（不要用太远的位置，避免Windows几何设置错误）
+        self.setGeometry(-5000, -5000, self.default_width, self.default_height)
         self.setMinimumSize(1080, 720)
         
         # 使用设置中的背景色，如果没有设置则使用默认值
@@ -776,11 +802,12 @@ class MainWindow(QWidget):
             ('settings', '设置', self._get_settings_page_class),
             ('personalization', '个性化', self._get_custom_page_class),
             ('misc', '杂项', self._get_misc_page_class),
-            ('streaming', '流媒体', self._get_streaming_page_class)
+            ('streaming', '流媒体', self._get_streaming_page_class),
+            ('plugins', '插件', self._get_plugin_page_class)
         ]
         
         # 从设置中获取配置
-        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming")
+        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming,plugins")
         debug_logger.output("main_window.py", LogLevel.INFO, f"读取选项卡排序配置: {tab_order_str}", fold_code="MAIN_TABS")
         tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming")
         initial_tab_name = self.settings_manager.get_Custom_value("initial_tab", "welcome")
@@ -798,6 +825,12 @@ class MainWindow(QWidget):
             debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '流媒体' 未在配置中，正在自动注册", fold_code="MAIN_TABS")
             tab_visibility.append('streaming')
             tab_order.append('streaming')
+            
+        # 针对新功能 'plugins'：如果它不在可见列表也不在排序列表中（可能是旧配置），则将其添加到排序列表但不添加到可见列表（默认隐藏）
+        if 'plugins' not in tab_visibility and 'plugins' not in tab_order:
+            debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '插件' 未在配置中，正在自动注册（默认隐藏）", fold_code="MAIN_TABS")
+            # 只添加到排序列表，不添加到可见列表，实现默认隐藏
+            tab_order.append('plugins')
 
         # 1. 过滤掉不显示的选项卡
         visible_tabs = [t for t in all_available_tabs if t[0] in tab_visibility]
@@ -825,7 +858,7 @@ class MainWindow(QWidget):
             self.ready_gate.register(f"page_{name}")
         
         # 4. 注册延迟初始化组件的就绪栅栏
-        for gate_name in ("hotkey", "audio", "shared_memory", "notification"):
+        for gate_name in ("hotkey", "audio", "shared_memory", "plugin_system", "notification"):
             self.ready_gate.register(gate_name)
 
         # 5. 确定起始页索引
@@ -997,6 +1030,24 @@ class MainWindow(QWidget):
         _emit_startup_profile_report()
         debug_logger.flush_buffer()
 
+        # 通知 loading_animation 启动全量完成
+        if hasattr(self, 'loading_anim') and self.loading_anim:
+            self.loading_anim.on_startup_fully_loaded()
+            # 注意：不立即清理 loading_anim，让它自己完成渐隐后关闭
+            
+        # 加载完成，将主窗口移到正确位置并显示
+        # 获取屏幕中心位置
+        screen = QApplication.primaryScreen().geometry()
+        center_x = (screen.width() - self.width()) // 2
+        center_y = (screen.height() - self.height()) // 2
+        debug_logger.output("main_window.py", LogLevel.INFO, 
+                          f"移动窗口到屏幕中心: ({center_x}, {center_y}), 窗口大小: {self.width()}x{self.height()}", 
+                          fold_code="MAIN_ASYNC")
+        self.move(center_x, center_y)
+        self.show()  # 确保窗口显示
+        self.activateWindow()  # 激活窗口
+        self.raise_()  # 提升窗口到最前
+
 
     
     def _async_create_tab_pages(self):
@@ -1018,6 +1069,90 @@ class MainWindow(QWidget):
             debug_logger.output("main_window.py", LogLevel.INFO, "SharedMemoryManager 初始化成功", fold_code="MAIN_ASYNC")
         except Exception as e:
             debug_logger.output("main_window.py", LogLevel.ERROR, f"共享内存异步初始化失败: {str(e)}", fold_code="MAIN_ASYNC")
+
+    def _async_init_plugin_system(self):
+        """异步初始化插件系统。"""
+        try:
+            debug_logger.output("main_window.py", LogLevel.INFO, "执行插件系统异步初始化", fold_code="PLUGIN_INIT")
+            
+            # 阶段1：插件发现和清单验证
+            debug_logger.output("main_window.py", LogLevel.INFO, "阶段1：插件发现和清单验证", fold_code="PLUGIN_INIT")
+            from plugin_manager import PluginManager
+            
+            self.plugin_manager = PluginManager(self)
+            discovered_plugins = self.plugin_manager.discover_plugins()
+            debug_logger.output("main_window.py", LogLevel.INFO, f"发现 {len(discovered_plugins)} 个插件", fold_code="PLUGIN_INIT")
+            
+            # 阶段2：插件加载和API注册
+            debug_logger.output("main_window.py", LogLevel.INFO, "阶段2：插件加载和API注册", fold_code="PLUGIN_INIT")
+            loaded_count = 0
+            for plugin_metadata in discovered_plugins:
+                try:
+                    plugin_path = plugin_metadata.name
+                    if self.plugin_manager.load_plugin(plugin_path):
+                        loaded_count += 1
+                        debug_logger.output("main_window.py", LogLevel.INFO, 
+                                          f"插件加载成功: {plugin_metadata.name} v{plugin_metadata.version}", 
+                                          fold_code="PLUGIN_INIT")
+                except Exception as e:
+                    debug_logger.output("main_window.py", LogLevel.ERROR, 
+                                      f"插件加载失败: {plugin_metadata.name} - {str(e)}", 
+                                      fold_code="PLUGIN_INIT")
+            
+            debug_logger.output("main_window.py", LogLevel.INFO, f"成功加载 {loaded_count}/{len(discovered_plugins)} 个插件", fold_code="PLUGIN_INIT")
+            
+            # 阶段3：插件启用和UI集成
+            debug_logger.output("main_window.py", LogLevel.INFO, "阶段3：插件启用和UI集成", fold_code="PLUGIN_INIT")
+            enabled_count = 0
+            for plugin_name in self.plugin_manager.plugins.keys():
+                try:
+                    # 检查插件是否在设置中被启用（默认启用）
+                    is_enabled_str = self.settings_manager.get_Custom_value(f"Plugin_{plugin_name}.enabled", "True")
+                    is_enabled = is_enabled_str.lower() in ('true', '1', 'yes')
+                    if is_enabled:
+                        if self.plugin_manager.enable_plugin(plugin_name):
+                            enabled_count += 1
+                            debug_logger.output("main_window.py", LogLevel.INFO, 
+                                              f"插件启用成功: {plugin_name}", 
+                                              fold_code="PLUGIN_INIT")
+                except Exception as e:
+                    debug_logger.output("main_window.py", LogLevel.ERROR, 
+                                      f"插件启用失败: {plugin_name} - {str(e)}", 
+                                      fold_code="PLUGIN_INIT")
+            
+            debug_logger.output("main_window.py", LogLevel.INFO, f"成功启用 {enabled_count} 个插件", fold_code="PLUGIN_INIT")
+            
+            # 如果插件页面已经创建，设置 plugin_manager 引用
+            if self.ready_gate.is_ready("page_plugins"):
+                plugin_page = self.ready_gate.get("page_plugins")
+                if plugin_page and hasattr(plugin_page, 'set_plugin_manager'):
+                    plugin_page.set_plugin_manager(self.plugin_manager)
+                    debug_logger.output("main_window.py", LogLevel.INFO, "已将 PluginManager 连接到 PluginPage", fold_code="PLUGIN_INIT")
+            
+            # 标记插件系统就绪
+            self.ready_gate.mark_ready("plugin_system", self.plugin_manager)
+            
+            # 触发插件系统就绪事件
+            self.plugin_manager.event_bus.emit("plugin_system_ready", {
+                "discovered": len(discovered_plugins),
+                "loaded": loaded_count,
+                "enabled": enabled_count
+            })
+            
+            debug_logger.output("main_window.py", LogLevel.INFO, "插件系统初始化成功", fold_code="PLUGIN_INIT")
+        except Exception as e:
+            debug_logger.output("main_window.py", LogLevel.ERROR, f"插件系统异步初始化失败: {str(e)}", fold_code="PLUGIN_INIT")
+            # 插件系统初始化失败不应影响应用程序的其他部分
+            # 创建一个空的插件管理器以避免后续代码出错
+            if self.plugin_manager is None:
+                try:
+                    from plugin_manager import PluginManager
+                    self.plugin_manager = PluginManager(self)
+                    self.ready_gate.mark_ready("plugin_system", self.plugin_manager)
+                except Exception as fallback_error:
+                    debug_logger.output("main_window.py", LogLevel.CRITICAL, 
+                                      f"无法创建备用插件管理器: {str(fallback_error)}", 
+                                      fold_code="PLUGIN_INIT")
 
 
     def _async_init_non_critical_components(self):
@@ -1157,6 +1292,17 @@ class MainWindow(QWidget):
     def closeEvent(self, event):
         """处理窗口关闭事件"""
         debug_logger.output("main_window.py", LogLevel.INFO, "正在安全退出应用程序...", fold_code="MAIN_EXIT")
+        
+        # 1. 首先关闭插件系统（需求 19.11）
+        try:
+            if hasattr(self, 'plugin_manager') and self.plugin_manager is not None:
+                debug_logger.output("main_window.py", LogLevel.INFO, "正在关闭插件系统...", fold_code="MAIN_EXIT")
+                self.plugin_manager.shutdown_plugin_system(timeout=5)
+                debug_logger.output("main_window.py", LogLevel.INFO, "插件系统已成功关闭", fold_code="MAIN_EXIT")
+        except Exception as e:
+            debug_logger.output("main_window.py", LogLevel.ERROR, f"关闭插件系统时出错: {str(e)}", fold_code="MAIN_EXIT")
+        
+        # 2. 释放音频资源
         try:
             audio_preview = self.audio_preview
             if audio_preview is not None:
@@ -1166,6 +1312,7 @@ class MainWindow(QWidget):
         except Exception as e:
             debug_logger.output("main_window.py", LogLevel.ERROR, f"释放音频资源时出错: {str(e)}", fold_code="MAIN_EXIT")
 
+        # 3. 关闭后台导入器
         if self.background_importer is not None:
             self.background_importer.shutdown()
 
@@ -1516,6 +1663,11 @@ class MainWindow(QWidget):
         from streaming_page import StreamingPage
         return StreamingPage
 
+    def _get_plugin_page_class(self):
+        """获取插件页面类"""
+        from plugin_page import PluginPage
+        return PluginPage
+
     def refresh_theme(self):
         """刷新主题显示"""
         # 重新加载背景颜色
@@ -1619,6 +1771,33 @@ class SingleInstanceChecker:
 
 def main():
     """应用程序入口点。"""
+    # ==================== 动画开关 ====================
+    # FORCE_FINISH_ANIMATION 控制动画关闭时机：
+    # True: 等待启动全量完成（async_finished）后才关闭动画
+    # False: 主窗口首屏加载完成后立即关闭动画
+    FORCE_FINISH_ANIMATION = True
+    
+    # True: 动画结束后强制播放呼吸灯动画
+    # False: 动画结束后直接关闭（如果主窗口已加载完）
+    FORCE_BREATHING_ANIMATION = False
+    BREATHING_DURATION_SECONDS = 0.1  # 呼吸灯持续时间（秒）
+    
+    # True: 动画结束后渐隐消失
+    # False: 动画结束后直接消失
+    ENABLE_FADE_OUT = True
+    FADE_OUT_DURATION_MS = 500  # 渐隐动画时长（毫秒）
+    FADE_OUT_DELAY_MS = 500  # 全量完成后延迟多久开始渐隐（毫秒）
+    
+    # True: 渐隐动画在所有 SVG 路径绘制完毕后开始
+    # False: 渐隐动画在启动全量完成后即刻开始
+    WAIT_FOR_SVG_PATHS_COMPLETE = True
+    
+    # True: 主窗口模糊效果渐弱消失
+    # False: 主窗口模糊效果直接移除
+    ENABLE_BLUR_FADE_OUT = True
+    BLUR_FADE_OUT_DURATION_MS = 250 # 模糊渐弱动画时长（毫秒）
+    # =================================================
+    
     startup_profiler.mark_once("main_enter")
     startup_profiler.start_span("setup_encoding")
     setup_encoding()
@@ -1649,12 +1828,49 @@ def main():
     startup_profiler.end_span("qapplication_create")
     startup_profiler.mark_once("qapplication_created")
 
-    debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 开始创建 MainWindow 实例", fold_code="MAIN_INIT")
-    startup_profiler.start_span("main_window_create")
-    window = MainWindow()
-    startup_profiler.end_span("main_window_create")
+    debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 显示加载动画", fold_code="MAIN_INIT")
+    from loading_animation import LoadingAnimationWindow
+    loading_anim = LoadingAnimationWindow()
+    # 设置是否强制等待动画播放完毕
+    loading_anim.force_finish_animation = FORCE_FINISH_ANIMATION
+    loading_anim.force_breathing_animation = FORCE_BREATHING_ANIMATION
+    loading_anim.breathing_duration_seconds = BREATHING_DURATION_SECONDS
+    loading_anim.enable_fade_out = ENABLE_FADE_OUT
+    loading_anim.fade_out_duration_ms = FADE_OUT_DURATION_MS
+    loading_anim.fade_out_delay_ms = FADE_OUT_DELAY_MS
+    loading_anim.wait_for_svg_paths_complete = WAIT_FOR_SVG_PATHS_COMPLETE
+    loading_anim.enable_blur_fade_out = ENABLE_BLUR_FADE_OUT
+    loading_anim.blur_fade_out_duration_ms = BLUR_FADE_OUT_DURATION_MS
+    # 加载动画保持在屏幕中心
+    loading_anim.show()
+    app.processEvents()
 
-    debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 主窗口将在构造阶段提前 show()", fold_code="MAIN_INIT")
+    # 关键：先进入事件循环，确保加载动画的 QTimer / QPropertyAnimation 能正常跑
+    # 再用 singleShot 延迟创建主窗口，避免启动阶段长时间阻塞导致动画卡顿
+    window_holder = []
+
+    def _create_main_window():
+        debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 延迟创建 MainWindow 实例", fold_code="MAIN_INIT")
+        startup_profiler.start_span("main_window_create")
+        window = MainWindow()
+
+        # 给主窗口添加模糊效果
+        from PyQt5.QtWidgets import QGraphicsBlurEffect
+        blur_effect = QGraphicsBlurEffect()
+        blur_effect.setBlurRadius(15)
+        window.setGraphicsEffect(blur_effect)
+        
+        # 保存模糊效果对象到窗口，以便后续渐弱动画使用
+        window.blur_effect = blur_effect
+
+        # 避免静态类型误判：属性在运行时动态挂载
+        setattr(window, "loading_anim", loading_anim)
+        # 让 loading_anim 持有主窗口引用，用于清理模糊效果
+        loading_anim.main_window = window
+        window_holder[:] = [window]
+        startup_profiler.end_span("main_window_create")
+
+    QTimer.singleShot(100, _create_main_window)
 
     debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 进入事件循环 app.exec_()", fold_code="MAIN_INIT")
 

@@ -1798,10 +1798,15 @@ class GenerationPage(QWidget):
         self.signals.all_sentences_complete.connect(self._on_all_sentences_complete)
         self.signals.playback_ready.connect(self._on_playback_ready)
         
-        # 连接音频预览信号
+        # 连接音频预览信号（延迟连接，因为 audio_preview 可能还未创建）
         if self.parent_window and hasattr(self.parent_window, 'audio_preview'):
-            self.parent_window.audio_preview.audio_signals.next_sentence_requested.connect(self._on_hotkey_next_sentence)
-            self.parent_window.audio_preview.audio_signals.prev_sentence_requested.connect(self._on_hotkey_prev_sentence)
+            audio_preview = self.parent_window.audio_preview
+            if audio_preview and hasattr(audio_preview, 'audio_signals') and audio_preview.audio_signals:
+                audio_preview.audio_signals.next_sentence_requested.connect(self._on_hotkey_next_sentence)
+                audio_preview.audio_signals.prev_sentence_requested.connect(self._on_hotkey_prev_sentence)
+                debug_logger.output("generation_page_neo.py", LogLevel.DEBUG, "已连接音频预览热键信号", fold_code="GEN_INIT")
+            else:
+                debug_logger.output("generation_page_neo.py", LogLevel.DEBUG, "audio_preview 未完全初始化，将延迟连接热键信号", fold_code="GEN_INIT")
     
     def _connect_shared_memory_signals(self):
         """连接共享内存信号"""
@@ -1811,6 +1816,18 @@ class GenerationPage(QWidget):
             self.shared_manager.theme_changed.connect(self._on_theme_changed)
             self.shared_manager.window_size_changed.connect(self._on_window_size_changed)
             self.shared_manager.settings_changed.connect(self._on_settings_changed_from_shared_memory)
+    
+    def connect_audio_preview_signals(self):
+        """连接音频预览信号（由 main_window 在 audio_preview 创建后调用）"""
+        if self.parent_window and hasattr(self.parent_window, 'audio_preview'):
+            audio_preview = self.parent_window.audio_preview
+            if audio_preview and hasattr(audio_preview, 'audio_signals') and audio_preview.audio_signals:
+                try:
+                    audio_preview.audio_signals.next_sentence_requested.connect(self._on_hotkey_next_sentence)
+                    audio_preview.audio_signals.prev_sentence_requested.connect(self._on_hotkey_prev_sentence)
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, "延迟连接音频预览热键信号成功", fold_code="GEN_INIT")
+                except Exception as e:
+                    debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"连接音频预览信号失败: {e}", fold_code="GEN_INIT")
     
     # =============================================================================
     # 事件处理
@@ -2051,17 +2068,21 @@ class GenerationPage(QWidget):
         audio_file = manager.get_current_sentence_audio()
         if audio_file and os.path.exists(audio_file):
             if self.parent_window and hasattr(self.parent_window, 'audio_preview'):
-                self.parent_window.audio_preview.audio_signals.playback_finished.connect(
-                    self._on_sentence_playback_complete
-                )
-                self.parent_window.audio_preview._play_audio_file(audio_file)
-                self.play_pause_btn.setText("⏸")
-                
-                # 更新进度条
-                total = len(manager.sentences)
-                current = manager.current_sentence_index + 1
-                progress = int((current / total) * 1000)
-                self.progress_slider.setValue(progress)
+                audio_preview = self.parent_window.audio_preview
+                if audio_preview and hasattr(audio_preview, 'audio_signals') and audio_preview.audio_signals:
+                    audio_preview.audio_signals.playback_finished.connect(
+                        self._on_sentence_playback_complete
+                    )
+                    audio_preview._play_audio_file(audio_file)
+                    self.play_pause_btn.setText("⏸")
+                    
+                    # 更新进度条
+                    total = len(manager.sentences)
+                    current = manager.current_sentence_index + 1
+                    progress = int((current / total) * 1000)
+                    self.progress_slider.setValue(progress)
+                else:
+                    debug_logger.output("generation_page_neo.py", LogLevel.WARNING, "audio_preview 未完全初始化，无法播放音频", fold_code="GEN_AUDIO_PLAY")
         else:
             QMessageBox.information(self, "提示", "当前句子音频尚未生成")
     
