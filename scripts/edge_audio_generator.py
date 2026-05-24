@@ -137,8 +137,14 @@ class AudioStretcher:
             cmd = AudioStretcher._build_ffmpeg_command(input_path, output_path, stretch_factor)
             debug_logger.output("edge_audio_generator.py", LogLevel.INFO, f"FFmpeg command: {cmd}", fold_code="AUDIO_STRETCH")
             
-            # 执行命令
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # 执行命令（隐藏 cmd 窗口）
+            startupinfo = None
+            if platform.system() == 'Windows':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo)
             
             if result.returncode != 0:
                 debug_logger.output("edge_audio_generator.py", LogLevel.ERROR, f"FFmpeg stretch failed: {result.stderr}", fold_code="AUDIO_STRETCH")
@@ -570,7 +576,14 @@ class AudioGenerator:
                         wav_path
                     ]
                     
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    # 隐藏 cmd 窗口
+                    startupinfo = None
+                    if platform.system() == 'Windows':
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.wShowWindow = subprocess.SW_HIDE
+                    
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, startupinfo=startupinfo)
                     
                     if result.returncode == 0 and os.path.exists(wav_path):
                         if os.path.getsize(wav_path) > 0:

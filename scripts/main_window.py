@@ -1,8 +1,49 @@
 # coding=utf-8
+
+'''
+源悦TTS Ver. ☺packager-replace-version☺
+编译于 ☺packager-replace-update-date☺
+------
+本程序基于Apache2.0协议开源。
+------
+
+'''
+#========#
+'''
++ 尝试消除使用过程中频繁弹出的cmd窗口
++ 键控音频播放现不受焦点窗口影响
++ 听写：分句时为标点符号追加语音提示
++ 配置文件(settings.ini)结构重构
++ 添加清除缓存功能
++ 欢迎页面添加在线服务可用性检测
++ 设置-AI设置大改，支持用户自定义模型id名称地址等（暂不支持anthropic协议）
++ 由于兼容性问题，TTS模型现强制使用edgetts而无法自定义。
++ Gitee内容源初步支持
++ SEI现已被废弃，改为用户手动复制教材详情页链接+自动解析下载识图导入。
++ 插件选项卡现在默认可见。
++ 补齐了新手引导-选项卡排序与可见性部分中缺失的流媒体按钮
++ 大改新手引导以适应新特性，并添加了字体设置、热键设置等新页面
+
+'''
+
+from re import T
 import sys
 import os
+import time
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"sipPyTypeDict\(\) is deprecated, the extension module should use sipPyTypeDictRef\(\) instead",
+    category=DeprecationWarning,
+)
+
+_module_boot_time = time.perf_counter()
+
+
 
 def _is_music_backend_mode():
+
     if "--music-backend" in sys.argv:
         return True
     if os.environ.get("YUANYUE_TTS_ROLE") == "music-backend":
@@ -29,36 +70,34 @@ if __name__ == '__main__' and not _is_music_backend_mode():
 
         multiprocessing.freeze_support()
 
-from abc import update_abstractmethods
 import uuid
 import threading
-import locale
-
 # fcntl 只在 Unix/Linux 上可用，Windows 使用 msvcrt
+
 if not sys.platform.startswith('win'):
     import fcntl
-
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QStackedWidget, QGraphicsOpacityEffect
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QPainter, QColor, QPainterPath
-
 # 诊断：记录启动线程（使用print因为此时debug_logger还未导入）
 _startup_thread_id = threading.current_thread().ident
-print(f"[DIAGNOSTIC] 模块加载线程ID: {_startup_thread_id}")
-print(f"[DIAGNOSTIC] sys.frozen={getattr(sys, 'frozen', False)}")
-
-from audio_preview import AudioPreview
-from hotkey_manager import HotkeyManager, HotkeyAction
+if os.environ.get('YUANYUE_DEBUG'):
+    print(f"[DIAGNOSTIC] 模块加载线程ID: {_startup_thread_id}")
+    print(f"[DIAGNOSTIC] sys.frozen={getattr(sys, 'frozen', False)}")
 from misc_func import AudioConfig, SettingsManager
-from shared_memory_manager import get_shared_memory_manager
 from debug_logger import debug_logger, LogLevel
+from skeleton_page import SkeletonPage
+from ready_gate import ReadyGate
+from background_importer import BackgroundImporter
+from startup_profiler import StartupProfiler
 
-# 导入GenerationPage用于属性检查
-from generation_page import GenerationPage
 
 # 全局变量：跟踪MainWindow实例数量
+
 _main_window_instance_count = 0
 _main_window_instances_lock = threading.Lock() 
+
+
 
 class VersionInfos:
     """版本信息"""
@@ -71,13 +110,7 @@ class VersionInfos:
         # self.this_update_content = '''版本自述文本框每行最多十六个汉字
         # ABCDEFGHABCDEFGHABCDEFGA
         # 1234567890123245678901234567\n
-        '''
-        支持阿里百炼（千问）、Kimi、Minimax及Mimo（暂时归为其他）四家新的模型提供商
-        支持文→文（普通对话）、图→文（图片识别、在线导入）两个场景下自选模型。
-          注：文→音（TTS）场景仍待修改
-    
-        设置界面大改，采用更美观的界面结构与非常好动画，添加AI模型设置页，选项卡排序支持拖动
-        '''
+
     def version(self):
         return self.this_version
     
@@ -86,82 +119,256 @@ class VersionInfos:
     
     def update_date(self):
         return self.this_update_date
-version_info = VersionInfos()
-if __name__ == '__main__':
-    debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
-    debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
-    debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
 
-# 在程序最开头添加编码设置
+
+version_info = VersionInfos()
+startup_profiler = StartupProfiler(base_time=_module_boot_time)
+startup_profiler.mark("module_imports_ready", "顶层导入完成")
+_startup_profile_report_emitted = False
+
+
+def _output_startup_profile_line(message, level=LogLevel.INFO, fold_code="STARTUP_PROF"):
+    min_level = getattr(debug_logger, "_min_level", LogLevel.INFO)
+    if level.priority < min_level.priority:
+        print(f"[STARTUP][{level.value.upper()}] {message}")
+    debug_logger.output("startup_profiler.py", level, message, fold_code=fold_code)
+
+
+def _emit_startup_profile_report():
+    global _startup_profile_report_emitted
+    if _startup_profile_report_emitted:
+        return
+
+    _startup_profile_report_emitted = True
+    for line in startup_profiler.build_report_lines():
+        _output_startup_profile_line(line, LogLevel.INFO, "STARTUP_PROF")
+
+    for passed, line in startup_profiler.build_guard_results():
+        level = LogLevel.INFO if passed else LogLevel.WARNING
+        _output_startup_profile_line(line, level, "STARTUP_GUARD")
+
+
 def setup_encoding():
-    # 设置环境变量
+
+    """在真正进入主入口时再设置编码与 locale。"""
+    import locale
+
     debug_logger.output("main_window.py", LogLevel.INFO, "正在设置系统编码环境", fold_code="MAIN_INIT")
     os.environ['PYTHONIOENCODING'] = 'utf-8'
-    os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'  # 禁用 pygame 欢迎信息，缩短加载感知时间
-    
-    # 针对Windows控制台的特殊处理
-    if sys.platform.startswith('win'):
-        # 设置标准输出编码
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8')
-        if hasattr(sys.stderr, 'reconfigure'):
-            sys.stderr.reconfigure(encoding='utf-8')
-        
-        # 设置locale
-        try:
-            locale.setlocale(locale.LC_ALL, 'chinese')
-            debug_logger.output("main_window.py", LogLevel.INFO, "Locale 设置为: chinese", fold_code="MAIN_INIT")
-        except:
-            try:
-                locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
-                debug_logger.output("main_window.py", LogLevel.INFO, "Locale 设置为: zh_CN.UTF-8", fold_code="MAIN_INIT")
-            except:
-                try:
-                    locale.setlocale(locale.LC_ALL, '')
-                    debug_logger.output("main_window.py", LogLevel.INFO, f"Locale 设置为默认值: {locale.getlocale()}", fold_code="MAIN_INIT")
-                except Exception as e:
-                    debug_logger.output("main_window.py", LogLevel.WARNING, f"Locale 设置失败: {str(e)}", fold_code="MAIN_INIT")
-                    pass
+    os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
-# 调用设置函数
-setup_encoding()
+    if sys.platform.startswith('win'):
+        stdout_reconfigure = getattr(sys.stdout, 'reconfigure', None)
+        if callable(stdout_reconfigure):
+            stdout_reconfigure(encoding='utf-8')
+        stderr_reconfigure = getattr(sys.stderr, 'reconfigure', None)
+        if callable(stderr_reconfigure):
+            stderr_reconfigure(encoding='utf-8')
+
+        for locale_name in ('chinese', 'zh_CN.UTF-8', ''):
+
+            try:
+                locale.setlocale(locale.LC_ALL, locale_name)
+                if locale_name:
+                    debug_logger.output("main_window.py", LogLevel.INFO, f"Locale 设置为: {locale_name}", fold_code="MAIN_INIT")
+                else:
+                    debug_logger.output("main_window.py", LogLevel.INFO, f"Locale 设置为默认值: {locale.getlocale()}", fold_code="MAIN_INIT")
+                break
+            except Exception as e:
+                if locale_name == '':
+                    debug_logger.output("main_window.py", LogLevel.WARNING, f"Locale 设置失败: {str(e)}", fold_code="MAIN_INIT")
+
 
 class AsyncInitializer:
-    """异步初始化管理器"""
-    
+    """异步初始化管理器 —— 按用户感知优先级拆成原子步骤。"""
+
     def __init__(self, parent_window):
         self.parent_window = parent_window
         self.timer = QTimer()
-        self.timer.timeout.connect(self._process_initialization)
-        self.current_step = 0
-        self.total_steps = 2  # 两个初始化步骤
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._process_next_step)
+        self._steps = []
+        self._hotkey_manager_class = None
+        self._audio_preview_class = None
         debug_logger.output("main_window.py", LogLevel.INFO, "创建 AsyncInitializer 实例", fold_code="MAIN_INIT")
-    
+
     def start(self):
-        """开始异步初始化"""
+        """构建步骤列表并启动。"""
         debug_logger.output("main_window.py", LogLevel.INFO, "开始异步初始化流程", fold_code="MAIN_INIT")
-        self.timer.start(100)  # 100ms后开始第一个步骤
-    
-    def _process_initialization(self):
-        """处理初始化步骤"""
+        self._build_steps()
+        self.timer.start(0)
+
+    def _build_steps(self):
+        """根据当前选项卡配置构建步骤队列。"""
+        pw = self.parent_window
+        tab_count = len(pw.tab_manager.tab_configs)
+        initial_idx = pw.tab_manager.current_tab_index
+
+        if 0 <= initial_idx < tab_count:
+            self._steps.append(
+                (
+                    f"创建初始页面 [{pw.tab_manager.tab_configs[initial_idx].name}]",
+                    lambda idx=initial_idx: self._step_create_single_page(idx, is_initial=True),
+                )
+            )
+
+        self._steps.extend([
+            ("导入 hotkey_manager", self._step_import_hotkey),
+            ("创建 HotkeyManager", self._step_create_hotkey),
+            ("导入 audio_preview", self._step_import_audio),
+            ("创建 AudioPreview", self._step_create_audio),
+            ("加载热键配置", self._step_load_hotkeys),
+        ])
+
+        for i in range(tab_count):
+            if i == initial_idx:
+                continue
+            cfg_name = pw.tab_manager.tab_configs[i].name
+            self._steps.append((f"创建页面 [{cfg_name}]", lambda idx=i: self._step_create_single_page(idx)))
+
+        self._steps.append(("初始化共享内存", self._step_init_shared_memory))
+        self._steps.append(("初始化插件系统", self._step_init_plugin_system))
+
+        debug_logger.output(
+            "main_window.py",
+            LogLevel.INFO,
+            f"异步初始化共 {len(self._steps)} 步",
+            fold_code="MAIN_INIT",
+        )
+
+    def _process_next_step(self):
+        """执行下一步。"""
+        if not self._steps:
+            debug_logger.output(
+                "main_window.py",
+                LogLevel.INFO,
+                "异步初始化流程全部结束，触发收尾工作",
+                fold_code="MAIN_INIT",
+            )
+            self.parent_window._on_async_finished()
+            return
+
+        label, func = self._steps.pop(0)
         try:
-            if self.current_step == 0:
-                debug_logger.output("main_window.py", LogLevel.INFO, "执行异步初始化步骤 1: 创建标签页", fold_code="MAIN_INIT")
-                self.parent_window._async_create_tab_pages()
-                debug_logger.output("main_window.py", LogLevel.INFO, "步骤 1 完成：所有标签页已创建", fold_code="MAIN_INIT")
-                self.current_step += 1
-                self.timer.start(50)  # 50ms后开始下一个步骤
-            elif self.current_step == 1:
-                debug_logger.output("main_window.py", LogLevel.INFO, "执行异步初始化步骤 2: 初始化非关键组件", fold_code="MAIN_INIT")
-                self.parent_window._async_init_non_critical_components()
-                debug_logger.output("main_window.py", LogLevel.INFO, "步骤 2 完成：非关键组件初始化完毕", fold_code="MAIN_INIT")
-                self.current_step += 1
-                self.timer.stop()
-                debug_logger.output("main_window.py", LogLevel.INFO, "异步初始化流程全部结束，触发收尾工作", fold_code="MAIN_INIT")
-                self.parent_window._on_async_finished()
+            debug_logger.output("main_window.py", LogLevel.INFO, f"异步步骤: {label}", fold_code="MAIN_INIT")
+            func()
         except Exception as e:
-            debug_logger.output("main_window.py", LogLevel.ERROR, f"异步初始化过程中出错: {str(e)}", fold_code="MAIN_INIT")
-            self.timer.stop()
+            debug_logger.output(
+                "main_window.py",
+                LogLevel.ERROR,
+                f"异步步骤 [{label}] 出错: {str(e)}",
+                fold_code="MAIN_INIT",
+            )
+
+        self.timer.start(0)
+
+    def _step_create_single_page(self, page_index, is_initial=False):
+        """创建并替换单个选项卡页面。"""
+        pw = self.parent_window
+        tab_config = pw.tab_manager.tab_configs[page_index]
+        onboarding_widget = getattr(pw, "_onboarding_page", None)
+        has_onboarding = onboarding_widget is not None and pw.stacked_widget.indexOf(onboarding_widget) != -1
+
+        try:
+            debug_logger.output("main_window.py", LogLevel.INFO, f"正在实例化页面: {tab_config.name}", fold_code="MAIN_ASYNC")
+            page_widget = tab_config.widget_class(pw)
+            pw._replace_placeholder_page(page_index, page_widget)
+            pw.ready_gate.mark_ready(f"page_{tab_config.name}", page_widget)
+
+            # 如果是插件页面，设置 plugin_manager 引用
+            if tab_config.name == 'plugins' and hasattr(page_widget, 'set_plugin_manager'):
+                if pw.plugin_manager is not None:
+                    page_widget.set_plugin_manager(pw.plugin_manager)
+                    debug_logger.output("main_window.py", LogLevel.INFO, "已将 PluginManager 连接到 PluginPage", fold_code="MAIN_ASYNC")
+
+            if pw.ready_gate.is_ready("shared_memory"):
+                pw._connect_page_shared_memory_if_needed(page_widget)
+
+            debug_logger.output("main_window.py", LogLevel.DEBUG, f"页面 {tab_config.name} 实例化并替换成功", fold_code="MAIN_ASYNC")
+        except Exception as e:
+            debug_logger.output("main_window.py", LogLevel.ERROR, f"实例化页面 {tab_config.name} 时出错: {str(e)}", fold_code="MAIN_ASYNC")
+            # 即使页面创建失败，如果是初始页面，也需要触发埋点
+            if is_initial:
+                startup_profiler.mark_once("first_page_ready", f"{tab_config.name}(failed)")
+                debug_logger.output("main_window.py", LogLevel.WARNING, f"初始页面 {tab_config.name} 创建失败，但已记录埋点", fold_code="MAIN_ASYNC")
+            return
+
+        if getattr(pw, "_is_onboarding", False) and has_onboarding:
+            pw.stacked_widget.setCurrentWidget(onboarding_widget)
+            # 新手引导模式下也需要触发埋点
+            if is_initial:
+                startup_profiler.mark_once("first_page_ready", f"{tab_config.name}(onboarding)")
+            return
+
+        if is_initial:
+            pw.stacked_widget.setCurrentIndex(page_index)
+            startup_profiler.mark_once("first_page_ready", tab_config.name)
+            debug_logger.output("main_window.py", LogLevel.INFO, f"初始页面 {tab_config.name} 已显示", fold_code="MAIN_ASYNC")
+            # 初始页面需要触发选项卡切换处理
+            pw.tab_manager._on_tab_switched(page_index)
+            
+            # 通知 loading_animation 主窗口已加载完成
+            if hasattr(pw, 'loading_anim') and pw.loading_anim:
+                pw.loading_anim.set_main_loaded()
+        elif pw.tab_manager.current_tab_index == page_index:
+            # 非初始页面但当前索引匹配时（如用户手动切换），触发切换处理
+            pw.stacked_widget.setCurrentIndex(page_index)
+            pw.tab_manager._on_tab_switched(page_index)
+
+    def _step_import_hotkey(self):
+        from hotkey_manager import HotkeyManager
+
+        self._hotkey_manager_class = HotkeyManager
+
+    def _step_create_hotkey(self):
+        pw = self.parent_window
+        if self._hotkey_manager_class is None:
+            self._step_import_hotkey()
+        hotkey_manager_class = self._hotkey_manager_class
+        if hotkey_manager_class is None:
+            return
+        pw.hotkey_manager = hotkey_manager_class(pw.settings_manager)
+        pw.ready_gate.mark_ready("hotkey", pw.hotkey_manager)
+        debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 HotkeyManager 实例", fold_code="MAIN_INIT")
+
+    def _step_import_audio(self):
+        from audio_preview import AudioPreview
+
+        self._audio_preview_class = AudioPreview
+
+    def _step_create_audio(self):
+        pw = self.parent_window
+        if self._audio_preview_class is None:
+            self._step_import_audio()
+        if pw.hotkey_manager is None:
+            debug_logger.output("main_window.py", LogLevel.WARNING, "HotkeyManager 尚未就绪，跳过 AudioPreview 创建", fold_code="MAIN_INIT")
+            return
+        audio_preview_class = self._audio_preview_class
+        if audio_preview_class is None:
+            return
+        pw.audio_preview = audio_preview_class(pw, pw.hotkey_manager)
+        pw.ready_gate.mark_ready("audio", pw.audio_preview)
+        debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 AudioPreview 实例", fold_code="MAIN_INIT")
+        
+        # 通知已创建的页面连接音频预览信号
+        for tab_config in pw.tab_manager.tab_configs:
+            if pw.ready_gate.is_ready(f"page_{tab_config.name}"):
+                page_widget = pw.ready_gate.get(f"page_{tab_config.name}")
+                if page_widget and hasattr(page_widget, 'connect_audio_preview_signals'):
+                    page_widget.connect_audio_preview_signals()
+
+
+    def _step_load_hotkeys(self):
+        pw = self.parent_window
+        if pw.hotkey_manager is not None:
+            pw.hotkey_manager.load_hotkeys()
+
+    def _step_init_shared_memory(self):
+        self.parent_window._async_init_shared_memory_component()
+
+    def _step_init_plugin_system(self):
+        self.parent_window._async_init_plugin_system()
+
 
 
 class FontManager:
@@ -282,10 +489,22 @@ class FontManager:
                     control.minus_button.setFont(font)
 class TabConfig:
     """选项卡配置数据类"""
-    def __init__(self, name, display_name, widget_class):
+    def __init__(self, name, display_name, widget_class=None, class_getter=None):
         self.name = name
         self.display_name = display_name
-        self.widget_class = widget_class
+        self._widget_class = widget_class
+        self._class_getter = class_getter
+
+    @property
+    def widget_class(self):
+        """延迟解析：首次访问时才调用 class_getter 执行 import"""
+        if self._widget_class is None and self._class_getter is not None:
+            self._widget_class = self._class_getter()
+        return self._widget_class
+
+    @widget_class.setter
+    def widget_class(self, value):
+        self._widget_class = value
 
 
 class TabManager:
@@ -300,7 +519,12 @@ class TabManager:
     def register_tab(self, name, display_name, widget_class):
         """注册新选项卡"""
         debug_logger.output("main_window.py", LogLevel.INFO, f"注册选项卡: {name} ({display_name})", fold_code="MAIN_TABS")
-        self.tab_configs.append(TabConfig(name, display_name, widget_class))
+        self.tab_configs.append(TabConfig(name, display_name, widget_class=widget_class))
+
+    def register_tab_lazy(self, name, display_name, class_getter):
+        """注册选项卡（延迟导入：仅保存 class_getter，首次访问 widget_class 时才执行 import）"""
+        debug_logger.output("main_window.py", LogLevel.INFO, f"注册选项卡(lazy): {name} ({display_name})", fold_code="MAIN_TABS")
+        self.tab_configs.append(TabConfig(name, display_name, class_getter=class_getter))
         
     def setup_tabs(self):
         """设置选项卡"""
@@ -332,78 +556,63 @@ class TabManager:
                 debug_logger.output("main_window.py", LogLevel.ERROR, f"创建页面 {tab_config.name} 失败: {str(e)}", fold_code="MAIN_TABS")
 
     def switch_to_tab(self, index):
-        """切换到指定索引的选项卡"""
+        """切换到指定索引的选项卡。"""
         if getattr(self.parent_window, "_is_onboarding", False):
             return
         if index == self.current_tab_index:
             return
-        
+
         if index >= len(self.tab_configs):
             debug_logger.output("main_window.py", LogLevel.WARNING, f"尝试切换到无效的选项卡索引: {index}", fold_code="MAIN_TABS")
             return
 
         tab_name = self.tab_configs[index].name
+        page_ready = self.parent_window.ready_gate.is_ready(f"page_{tab_name}")
         debug_logger.output("main_window.py", LogLevel.INFO, f"切换选项卡: 从 {self.current_tab_index} 切换到 {index} ({tab_name})", fold_code="MAIN_TABS")
-        
-        # 保存当前索引用于动画
+        if not page_ready:
+            debug_logger.output("main_window.py", LogLevel.INFO, f"页面 {tab_name} 尚未就绪，先显示骨架页", fold_code="MAIN_TABS")
+
         from_index = self.current_tab_index
-        
-        # 检查选项卡页面是否已创建
-        if index >= self.parent_window.stacked_widget.count():
-            debug_logger.output("main_window.py", LogLevel.INFO, f"页面 {index} 尚未创建，正在同步创建", fold_code="MAIN_TABS")
-            # 页面尚未创建，需要同步创建
-            try:
-                self._create_tab_page(index)
-            except Exception as e:
-                debug_logger.output("main_window.py", LogLevel.ERROR, f"同步创建页面 {tab_name} 失败: {str(e)}", fold_code="MAIN_TABS")
-                return
-        
-        # 更新按钮选中状态
+
         for i, btn in enumerate(self.tab_buttons):
             btn.setChecked(i == index)
-            
-        # 启动选项卡淡入淡出动画
+
         try:
             self.parent_window._start_tab_fade_animation(from_index, index)
-            # 启动选项卡指示器动画
             self.parent_window._start_tab_indicator_animation(from_index, index)
         except Exception as e:
             debug_logger.output("main_window.py", LogLevel.ERROR, f"启动切换动画失败: {str(e)}", fold_code="MAIN_ANIM")
-            # 动画失败则直接切换
             self.parent_window.stacked_widget.setCurrentIndex(index)
-        
+
         self.current_tab_index = index
-        self._on_tab_switched(index)
-    
+        if page_ready:
+            self._on_tab_switched(index)
+
     def _create_tab_page(self, index):
-        """同步创建单个选项卡页面"""
-        if index < len(self.tab_configs):
-            tab_config = self.tab_configs[index]
-            debug_logger.output("main_window.py", LogLevel.INFO, f"正在同步创建页面实例: {tab_config.name}", fold_code="MAIN_TABS")
-            try:
-                page_widget = tab_config.widget_class(self.parent_window)
-                self.parent_window.stacked_widget.addWidget(page_widget)
-                debug_logger.output("main_window.py", LogLevel.DEBUG, f"页面 {tab_config.name} 同步实例化成功", fold_code="MAIN_TABS")
-            except Exception as e:
-                debug_logger.output("main_window.py", LogLevel.ERROR, f"同步实例化页面 {tab_config.name} 失败: {str(e)}", fold_code="MAIN_TABS")
-                raise
+        """兼容接口：第三阶段改由异步流程逐步替换骨架页。"""
+        debug_logger.output("main_window.py", LogLevel.INFO, f"页面 {index} 由 AsyncInitializer 异步创建，无需同步实例化", fold_code="MAIN_TABS")
 
     def _on_tab_switched(self, index):
-        """选项卡切换后处理"""
-        # 获取当前页面的配置
+        """选项卡切换后处理。"""
         if index < len(self.tab_configs):
             tab_config = self.tab_configs[index]
+            if not self.parent_window.ready_gate.is_ready(f"page_{tab_config.name}"):
+                debug_logger.output("main_window.py", LogLevel.DEBUG, f"页面 {tab_config.name} 仍在加载，跳过就绪后处理", fold_code="MAIN_TABS")
+                return
+
             debug_logger.output("main_window.py", LogLevel.INFO, f"选项卡切换流程完成 -> {tab_config.name}", fold_code="MAIN_TABS")
-            # 如果是生成页面，执行特殊处理
             if tab_config.name == 'generation' and hasattr(self.parent_window, 'generation_page'):
                 debug_logger.output("main_window.py", LogLevel.DEBUG, "正在更新生成页面按钮状态", fold_code="MAIN_TABS")
-                self.parent_window.generation_page._check_inputs_and_update_button()
-            # 如果是听写页面，执行特殊处理
+                if hasattr(self.parent_window.generation_page, '_check_inputs_and_update_button'):
+                    self.parent_window.generation_page._check_inputs_and_update_button()
             elif tab_config.name == 'dictation' and hasattr(self.parent_window, 'dictation_page'):
                 debug_logger.output("main_window.py", LogLevel.DEBUG, "正在更新听写页面按钮状态", fold_code="MAIN_TABS")
-                self.parent_window.dictation_page._check_inputs_and_update_button()
+                if hasattr(self.parent_window.dictation_page, '_check_inputs_and_update_button'):
+                    self.parent_window.dictation_page._check_inputs_and_update_button()
+
         else:
             debug_logger.output("main_window.py", LogLevel.WARNING, f"选项卡切换回调收到无效索引: {index}", fold_code="MAIN_TABS")
+
     def _get_tab_button_style(self):
         """选项卡按钮样式"""
         return """
@@ -480,8 +689,11 @@ class MainWindow(QWidget):
         self._init_core_components()
         self._load_settings()  # 优先加载设置
         self._init_ui()
-        self._start_async_initialization()
+        # 不要在这里 show()，窗口在不可见位置
+        # 等异步初始化完成后再 show() 并移动到屏幕中心
+        QTimer.singleShot(0, self._deferred_init)
         debug_logger.output("main_window.py", LogLevel.INFO, "主窗口同步初始化部分完成", fold_code="MAIN_INIT")
+
         
     def _init_core_components(self):
         """初始化核心组件"""
@@ -493,20 +705,25 @@ class MainWindow(QWidget):
             self.settings_manager = SettingsManager()
             debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 SettingsManager 实例", fold_code="MAIN_INIT")
             
-            self.hotkey_manager = HotkeyManager(self.settings_manager)
-            debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 HotkeyManager 实例", fold_code="MAIN_INIT")
-            
-            self.audio_preview = AudioPreview(self, self.hotkey_manager)
-            debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 AudioPreview 实例", fold_code="MAIN_INIT")
+            # hotkey_manager 和 audio_preview 延迟到异步阶段初始化
+            # 它们会拉入 sdl2 等重量级 C 库，放在窗口显示后加载
+            self.hotkey_manager = None
+            self.audio_preview = None
+            self.shared_manager = None
             
             self.font_manager = FontManager(self)
             debug_logger.output("main_window.py", LogLevel.DEBUG, "已创建 FontManager 实例", fold_code="MAIN_INIT")
             
-            self.shared_manager = get_shared_memory_manager()  # 初始化共享内存管理器
-            debug_logger.output("main_window.py", LogLevel.DEBUG, "已获取 SharedMemoryManager 实例", fold_code="MAIN_INIT")
+            self.ready_gate = ReadyGate()
+            self.background_importer = BackgroundImporter()
+            self._shared_memory_signals_connected = False
+            
+            # 初始化插件管理器（延迟加载插件）
+            self.plugin_manager = None
             
             self._audio_generator = None  # 延迟加载
-            self._notification_manager = None  # 延迟加载
+
+
             self._init_audio_state()
             self._init_ui_variables()
             debug_logger.output("main_window.py", LogLevel.INFO, "核心组件初始化完成", fold_code="MAIN_INIT")
@@ -552,24 +769,27 @@ class MainWindow(QWidget):
         self.pending_tab_index = None
         self._is_onboarding = False
         self._onboarding_page = None
+        self._resize_font_timer = QTimer(self)
+        self._resize_font_timer.setSingleShot(True)
+        self._resize_font_timer.timeout.connect(self._apply_deferred_font_update)
         debug_logger.output("main_window.py", LogLevel.INFO, "UI状态变量初始化完成", fold_code="MAIN_INIT")
 
+
     def _init_ui(self):
-        """初始化用户界面"""
+        """初始化用户界面外壳。"""
         debug_logger.output("main_window.py", LogLevel.INFO, "开始构建UI布局...", fold_code="MAIN_INIT")
         self._setup_window_properties()
         self._setup_tabs()
-        #self._setup_layout()
-        if self.settings_manager.get_is_first_run():
-            self.start_onboarding()
         self.font_manager.update_all_fonts()
         debug_logger.output("main_window.py", LogLevel.INFO, "UI布局构建完成", fold_code="MAIN_INIT")
+
     
     def _setup_window_properties(self):
         """设置窗口基本属性"""
         debug_logger.output("main_window.py", LogLevel.INFO, "配置窗口属性", fold_code="MAIN_INIT")
         self.setWindowTitle('源悦TTS')
-        self.setGeometry(300, 300, self.default_width, self.default_height)
+        # 先将窗口放到屏幕外（不要用太远的位置，避免Windows几何设置错误）
+        self.setGeometry(-5000, -5000, self.default_width, self.default_height)
         self.setMinimumSize(1080, 720)
         
         # 使用设置中的背景色，如果没有设置则使用默认值
@@ -585,9 +805,9 @@ class MainWindow(QWidget):
         # 计算选项卡栏背景颜色（每个RGB值减48）
         self._calculate_tab_bar_background_color(background_color)
         
-        # 广播初始窗口大小到共享内存
-        debug_logger.output("main_window.py", LogLevel.INFO, f"向共享内存广播初始窗口大小: {self.default_width}x{self.default_height}", fold_code="MAIN_INIT")
-        self.shared_manager.broadcast_window_size_change(self.default_width, self.default_height)
+        # 共享内存在异步阶段才会准备好；这里仅记录壳子尺寸，真正广播放到后续步骤
+        debug_logger.output("main_window.py", LogLevel.INFO, f"记录初始窗口大小: {self.default_width}x{self.default_height}", fold_code="MAIN_INIT")
+
 
     def _setup_tabs(self):
         """设置选项卡系统"""
@@ -599,13 +819,14 @@ class MainWindow(QWidget):
             ('settings', '设置', self._get_settings_page_class),
             ('personalization', '个性化', self._get_custom_page_class),
             ('misc', '杂项', self._get_misc_page_class),
-            ('streaming', '流媒体', self._get_streaming_page_class)
+            ('streaming', '流媒体', self._get_streaming_page_class),
+            ('plugins', '插件', self._get_plugin_page_class)
         ]
         
         # 从设置中获取配置
-        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming")
+        tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming,plugins")
         debug_logger.output("main_window.py", LogLevel.INFO, f"读取选项卡排序配置: {tab_order_str}", fold_code="MAIN_TABS")
-        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming")
+        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming,plugins")
         initial_tab_name = self.settings_manager.get_Custom_value("initial_tab", "welcome")
         
         tab_order = [t.strip() for t in tab_order_str.split(',') if t.strip()]
@@ -621,6 +842,12 @@ class MainWindow(QWidget):
             debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '流媒体' 未在配置中，正在自动注册", fold_code="MAIN_TABS")
             tab_visibility.append('streaming')
             tab_order.append('streaming')
+            
+        # 针对新功能 'plugins'：如果它不在可见列表也不在排序列表中（可能是旧配置），则默认将其添加到最后
+        if 'plugins' not in tab_visibility and 'plugins' not in tab_order:
+            debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '插件' 未在配置中，正在自动注册", fold_code="MAIN_TABS")
+            tab_visibility.append('plugins')
+            tab_order.append('plugins')
 
         # 1. 过滤掉不显示的选项卡
         visible_tabs = [t for t in all_available_tabs if t[0] in tab_visibility]
@@ -641,14 +868,18 @@ class MainWindow(QWidget):
             if name in name_to_config:
                 ordered_tabs.append(name_to_config[name])
         
-        # 3. 注册选项卡
+        # 3. 注册选项卡（只保存 class_getter，不立即 import 页面模块）
         for name, display_name, class_getter in ordered_tabs:
             debug_logger.output("main_window.py", LogLevel.INFO, f"注册选项卡: {name} -> {display_name}", fold_code="MAIN_TABS")
-            self.tab_manager.register_tab(name, display_name, class_getter())
+            self.tab_manager.register_tab_lazy(name, display_name, class_getter)
+            self.ready_gate.register(f"page_{name}")
         
-        # 4. 确定起始页索引
+        # 4. 注册延迟初始化组件的就绪栅栏
+        for gate_name in ("hotkey", "audio", "shared_memory", "plugin_system"):
+            self.ready_gate.register(gate_name)
+
+        # 5. 确定起始页索引
         start_index = 0
-        # 检查初始页是否在可见列表中
         if initial_tab_name not in tab_visibility:
             debug_logger.output("main_window.py", LogLevel.WARNING, f"起始页 {initial_tab_name} 当前不可见，已自动回退至首个可见页", fold_code="MAIN_TABS")
             initial_tab_name = ordered_tabs[0][0] if ordered_tabs else 'welcome'
@@ -661,13 +892,91 @@ class MainWindow(QWidget):
         
         self.tab_manager.current_tab_index = start_index
 
-        # 只创建选项卡按钮，页面将在异步中创建
+        # 只创建选项卡按钮与骨架页，真实页面交给异步阶段替换
         self.tab_manager._create_tab_buttons()
+        self._populate_skeleton_pages()
         debug_logger.output("main_window.py", LogLevel.INFO, f"选项卡系统配置完成，初始显示: {initial_tab_name}", fold_code="MAIN_TABS")
+
+
+    def _populate_skeleton_pages(self):
+        """为所有选项卡填充骨架页占位。"""
+        while self.stacked_widget.count() > 0:
+            widget = self.stacked_widget.widget(0)
+            self.stacked_widget.removeWidget(widget)
+            widget.deleteLater()
+
+        for tab_config in self.tab_manager.tab_configs:
+            self.stacked_widget.addWidget(SkeletonPage(tab_config.name, self))
+
+        if self.tab_manager.tab_configs:
+            self.stacked_widget.setCurrentIndex(self.tab_manager.current_tab_index)
+
+    def _replace_placeholder_page(self, page_index, page_widget):
+        """用真实页面替换指定索引上的骨架页。"""
+        current_index = self.stacked_widget.currentIndex()
+        old_widget = self.stacked_widget.widget(page_index)
+
+        if old_widget is page_widget:
+            return
+
+        if old_widget is not None:
+            self.stacked_widget.removeWidget(old_widget)
+        self.stacked_widget.insertWidget(page_index, page_widget)
+
+        if old_widget is not None:
+            old_widget.deleteLater()
+
+        if current_index == page_index:
+            self.stacked_widget.setCurrentIndex(page_index)
+
+    def _connect_page_shared_memory_if_needed(self, page_widget):
+        """在共享内存就绪后为页面补连共享内存信号。"""
+        if page_widget is None:
+            return
+        if getattr(page_widget, "_shared_memory_connected", False):
+            return
+        if hasattr(page_widget, '_connect_shared_memory_signals'):
+            page_widget._connect_shared_memory_signals()
+            page_widget._shared_memory_connected = True
+
+    def _connect_ready_pages_to_shared_memory(self):
+        """为已替换完成的真实页面补连共享内存信号。"""
+        for tab_config in self.tab_manager.tab_configs:
+            if not self.ready_gate.is_ready(f"page_{tab_config.name}"):
+                continue
+            page_widget = self.ready_gate.get(f"page_{tab_config.name}")
+            self._connect_page_shared_memory_if_needed(page_widget)
+
+    def showEvent(self, a0):
+        """记录窗口首次真正进入可见态。"""
+        startup_profiler.mark_once("window_visible")
+        super().showEvent(a0)
+
+
+    def _deferred_init(self):
+        """窗口显示后的延迟初始化入口。"""
+        startup_profiler.mark_once("deferred_init_started")
+        debug_logger.output("main_window.py", LogLevel.INFO, "开始执行窗口显示后的 deferred init", fold_code="MAIN_INIT")
+        self._start_background_preload()
+        if self.settings_manager.get_is_first_run():
+            startup_profiler.mark_once("onboarding_started")
+            self.start_onboarding()
+        self._start_async_initialization()
+
+
+    def _start_background_preload(self):
+        """启动后台模块预热。"""
+        if self.background_importer is None:
+            return
+        debug_logger.output("main_window.py", LogLevel.INFO, "启动后台模块预热", fold_code="MAIN_INIT")
+        self.background_importer.start()
+        startup_profiler.mark_once("background_preload_started")
+
 
     def start_onboarding(self):
         if self._is_onboarding:
             return
+
         try:
             from onboarding_page import OnboardingPage
         except Exception as e:
@@ -723,64 +1032,156 @@ class MainWindow(QWidget):
 
     def _start_async_initialization(self):
         """启动异步初始化"""
+        startup_profiler.mark_once("async_initialization_started")
+        startup_profiler.start_span("async_initializer_total")
         debug_logger.output("main_window.py", LogLevel.INFO, "触发异步初始化流程", fold_code="MAIN_ASYNC")
         self._async_initializer = AsyncInitializer(self)
         self._async_initializer.start()
     
     def _on_async_finished(self):
-        """异步初始化完成"""
+        """异步初始化完成。"""
+        startup_profiler.end_span("async_initializer_total")
+        startup_profiler.mark_once("async_finished")
         debug_logger.output("main_window.py", LogLevel.INFO, "异步初始化流程全部结束", fold_code="MAIN_ASYNC")
         self._async_initializer = None
+        _emit_startup_profile_report()
+        debug_logger.flush_buffer()
+
+        # 通知 loading_animation 启动全量完成
+        if hasattr(self, 'loading_anim') and self.loading_anim:
+            self.loading_anim.on_startup_fully_loaded()
+            # 注意：不立即清理 loading_anim，让它自己完成渐隐后关闭
+            
+        # 加载完成，将主窗口移到正确位置并显示
+        # 获取屏幕中心位置
+        screen = QApplication.primaryScreen().geometry()
+        center_x = (screen.width() - self.width()) // 2
+        center_y = (screen.height() - self.height()) // 2
+        debug_logger.output("main_window.py", LogLevel.INFO, 
+                          f"移动窗口到屏幕中心: ({center_x}, {center_y}), 窗口大小: {self.width()}x{self.height()}", 
+                          fold_code="MAIN_ASYNC")
+        self.move(center_x, center_y)
+        self.show()  # 确保窗口显示
+        self.activateWindow()  # 激活窗口
+        self.raise_()  # 提升窗口到最前
+
+
     
     def _async_create_tab_pages(self):
-        """异步创建选项卡页面"""
-        debug_logger.output("main_window.py", LogLevel.INFO, "开始异步创建各页面实例...", fold_code="MAIN_ASYNC")
-        onboarding_widget = getattr(self, "_onboarding_page", None)
-        has_onboarding = onboarding_widget is not None and self.stacked_widget.indexOf(onboarding_widget) != -1
-        # 延迟创建选项卡页面
-        for i, tab_config in enumerate(self.tab_manager.tab_configs):
-            try:
-                debug_logger.output("main_window.py", LogLevel.INFO, f"正在实例化页面: {tab_config.name}", fold_code="MAIN_ASYNC")
-                page_widget = tab_config.widget_class(self)
-                if has_onboarding:
-                    self.stacked_widget.insertWidget(i, page_widget)
-                else:
-                    self.stacked_widget.addWidget(page_widget)
-                
-                # 如果页面有共享内存信号连接方法，则调用它
-                if hasattr(page_widget, '_connect_shared_memory_signals'):
-                    debug_logger.output("main_window.py", LogLevel.DEBUG, f"正在连接页面 {tab_config.name} 的共享内存信号", fold_code="MAIN_ASYNC")
-                    page_widget._connect_shared_memory_signals()
-                
-                debug_logger.output("main_window.py", LogLevel.DEBUG, f"页面 {tab_config.name} 实例化并添加成功", fold_code="MAIN_ASYNC")
-            except Exception as e:
-                debug_logger.output("main_window.py", LogLevel.ERROR, f"实例化页面 {tab_config.name} 时出错: {str(e)}", fold_code="MAIN_ASYNC")
-        
-        if getattr(self, "_is_onboarding", False) and onboarding_widget is not None and self.stacked_widget.indexOf(onboarding_widget) != -1:
-            self.stacked_widget.setCurrentWidget(onboarding_widget)
-            return
-
-        # 设置初始显示的页面
-        if self.tab_manager.current_tab_index < self.stacked_widget.count():
-            debug_logger.output("main_window.py", LogLevel.INFO, f"切换至初始显示页面 (索引: {self.tab_manager.current_tab_index})", fold_code="MAIN_ASYNC")
-            self.stacked_widget.setCurrentIndex(self.tab_manager.current_tab_index)
-        else:
-            debug_logger.output("main_window.py", LogLevel.WARNING, f"初始页面索引 {self.tab_manager.current_tab_index} 超出范围 (总数: {self.stacked_widget.count()})", fold_code="MAIN_ASYNC")
+        """异步创建选项卡页面（已由 AsyncInitializer 逐步处理，保留为兼容接口）"""
+        debug_logger.output("main_window.py", LogLevel.INFO,
+                            "页面创建已由 AsyncInitializer 逐步处理", fold_code="MAIN_ASYNC")
     
+    def _async_init_shared_memory_component(self):
+        """异步初始化共享内存组件。"""
+        try:
+            debug_logger.output("main_window.py", LogLevel.INFO, "执行共享内存异步初始化", fold_code="MAIN_ASYNC")
+            from shared_memory_manager import get_shared_memory_manager
+
+            self.shared_manager = get_shared_memory_manager()
+            self.shared_manager.broadcast_window_size_change(self.width(), self.height())
+            self.ready_gate.mark_ready("shared_memory", self.shared_manager)
+            self._connect_shared_memory_signals()
+            self._connect_ready_pages_to_shared_memory()
+            debug_logger.output("main_window.py", LogLevel.INFO, "SharedMemoryManager 初始化成功", fold_code="MAIN_ASYNC")
+        except Exception as e:
+            debug_logger.output("main_window.py", LogLevel.ERROR, f"共享内存异步初始化失败: {str(e)}", fold_code="MAIN_ASYNC")
+
+    def _async_init_plugin_system(self):
+        """异步初始化插件系统。"""
+        try:
+            debug_logger.output("main_window.py", LogLevel.INFO, "执行插件系统异步初始化", fold_code="PLUGIN_INIT")
+            
+            # 阶段1：插件发现和清单验证
+            debug_logger.output("main_window.py", LogLevel.INFO, "阶段1：插件发现和清单验证", fold_code="PLUGIN_INIT")
+            from plugin_manager import PluginManager
+            
+            self.plugin_manager = PluginManager(self)
+            discovered_plugins = self.plugin_manager.discover_plugins()
+            debug_logger.output("main_window.py", LogLevel.INFO, f"发现 {len(discovered_plugins)} 个插件", fold_code="PLUGIN_INIT")
+            
+            # 阶段2：插件加载和API注册
+            debug_logger.output("main_window.py", LogLevel.INFO, "阶段2：插件加载和API注册", fold_code="PLUGIN_INIT")
+            loaded_count = 0
+            for plugin_metadata in discovered_plugins:
+                try:
+                    plugin_path = plugin_metadata.name
+                    if self.plugin_manager.load_plugin(plugin_path):
+                        loaded_count += 1
+                        debug_logger.output("main_window.py", LogLevel.INFO, 
+                                          f"插件加载成功: {plugin_metadata.name} v{plugin_metadata.version}", 
+                                          fold_code="PLUGIN_INIT")
+                except Exception as e:
+                    debug_logger.output("main_window.py", LogLevel.ERROR, 
+                                      f"插件加载失败: {plugin_metadata.name} - {str(e)}", 
+                                      fold_code="PLUGIN_INIT")
+            
+            debug_logger.output("main_window.py", LogLevel.INFO, f"成功加载 {loaded_count}/{len(discovered_plugins)} 个插件", fold_code="PLUGIN_INIT")
+            
+            # 阶段3：插件启用和UI集成
+            debug_logger.output("main_window.py", LogLevel.INFO, "阶段3：插件启用和UI集成", fold_code="PLUGIN_INIT")
+            enabled_count = 0
+            for plugin_name in self.plugin_manager.plugins.keys():
+                try:
+                    # 检查插件是否在设置中被启用（默认启用）
+                    is_enabled_str = self.settings_manager.get_Custom_value(f"Plugin_{plugin_name}.enabled", "True")
+                    is_enabled = is_enabled_str.lower() in ('true', '1', 'yes')
+                    if is_enabled:
+                        if self.plugin_manager.enable_plugin(plugin_name):
+                            enabled_count += 1
+                            debug_logger.output("main_window.py", LogLevel.INFO, 
+                                              f"插件启用成功: {plugin_name}", 
+                                              fold_code="PLUGIN_INIT")
+                except Exception as e:
+                    debug_logger.output("main_window.py", LogLevel.ERROR, 
+                                      f"插件启用失败: {plugin_name} - {str(e)}", 
+                                      fold_code="PLUGIN_INIT")
+            
+            debug_logger.output("main_window.py", LogLevel.INFO, f"成功启用 {enabled_count} 个插件", fold_code="PLUGIN_INIT")
+            
+            # 如果插件页面已经创建，设置 plugin_manager 引用
+            if self.ready_gate.is_ready("page_plugins"):
+                plugin_page = self.ready_gate.get("page_plugins")
+                if plugin_page and hasattr(plugin_page, 'set_plugin_manager'):
+                    plugin_page.set_plugin_manager(self.plugin_manager)
+                    debug_logger.output("main_window.py", LogLevel.INFO, "已将 PluginManager 连接到 PluginPage", fold_code="PLUGIN_INIT")
+            
+            # 标记插件系统就绪
+            self.ready_gate.mark_ready("plugin_system", self.plugin_manager)
+            
+            # 触发插件系统就绪事件
+            self.plugin_manager.event_bus.emit("plugin_system_ready", {
+                "discovered": len(discovered_plugins),
+                "loaded": loaded_count,
+                "enabled": enabled_count
+            })
+            
+            debug_logger.output("main_window.py", LogLevel.INFO, "插件系统初始化成功", fold_code="PLUGIN_INIT")
+        except Exception as e:
+            debug_logger.output("main_window.py", LogLevel.ERROR, f"插件系统异步初始化失败: {str(e)}", fold_code="PLUGIN_INIT")
+            # 插件系统初始化失败不应影响应用程序的其他部分
+            # 创建一个空的插件管理器以避免后续代码出错
+            if self.plugin_manager is None:
+                try:
+                    from plugin_manager import PluginManager
+                    self.plugin_manager = PluginManager(self)
+                    self.ready_gate.mark_ready("plugin_system", self.plugin_manager)
+                except Exception as fallback_error:
+                    debug_logger.output("main_window.py", LogLevel.CRITICAL, 
+                                      f"无法创建备用插件管理器: {str(fallback_error)}", 
+                                      fold_code="PLUGIN_INIT")
+
+
     def _async_init_non_critical_components(self):
-        """异步初始化非关键组件"""
+        """异步初始化非关键组件。"""
         try:
             debug_logger.output("main_window.py", LogLevel.INFO, "执行非关键组件异步初始化", fold_code="MAIN_ASYNC")
-            # 延迟导入以加快启动
-            from notification import NotificationManager
-            self._notification_manager = NotificationManager(self)
-            debug_logger.output("main_window.py", LogLevel.INFO, "NotificationManager 初始化成功", fold_code="MAIN_ASYNC")
-            
-            # 设置字体
+
             self.font_manager.update_all_fonts()
             debug_logger.output("main_window.py", LogLevel.INFO, "全局字体适配完成", fold_code="MAIN_ASYNC")
         except Exception as e:
             debug_logger.output("main_window.py", LogLevel.ERROR, f"非关键组件异步初始化失败: {str(e)}", fold_code="MAIN_ASYNC")
+
     
     def _load_settings(self):
         """加载设置"""
@@ -801,15 +1202,28 @@ class MainWindow(QWidget):
 
     def _load_hotkeys(self):
         """加载热键设置"""
-        if hasattr(self, 'hotkey_manager'):
+        if self.hotkey_manager is not None:
             debug_logger.output("main_window.py", LogLevel.INFO, "正在加载全局热键配置", fold_code="MAIN_INIT")
             self.hotkey_manager.load_hotkeys()
+            
+            # 检查是否启用键盘钩子模式
+            use_hook_raw = self.settings_manager.Custom.get_value("use_keyboard_hook", True)
+            if isinstance(use_hook_raw, str):
+                use_hook = use_hook_raw.lower() == 'true'
+            else:
+                use_hook = bool(use_hook_raw)
+            
+            if use_hook:
+                debug_logger.output("main_window.py", LogLevel.INFO, "正在启动键盘钩子模式", fold_code="MAIN_INIT")
+                self.hotkey_manager.set_keyboard_hook_mode(True)
 
     def _connect_shared_memory_signals(self):
         """连接共享内存信号"""
-        if hasattr(self, 'shared_manager') and self.shared_manager:
+        if self.shared_manager is not None and not self._shared_memory_signals_connected:
             debug_logger.output("main_window.py", LogLevel.INFO, "连接共享内存变更信号", fold_code="MAIN_SHARED")
             self.shared_manager.settings_changed.connect(self._on_settings_changed_from_shared_memory)
+            self._shared_memory_signals_connected = True
+
 
     def _on_settings_changed_from_shared_memory(self, page_name, settings_data):
         """从共享内存接收设置更改"""
@@ -853,50 +1267,82 @@ class MainWindow(QWidget):
             debug_logger.output("main_window.py", LogLevel.WARNING, f"背景色计算解析失败: {str(e)}，已使用默认兜底颜色", fold_code="MAIN_UI")
             self.tab_bar_background_color = QColor(200, 200, 200)
 
+    def _schedule_font_update(self):
+        """节流字体重算，避免 resize 高频期间重复更新。"""
+        if self._resize_font_timer.isActive():
+            self._resize_font_timer.stop()
+        self._resize_font_timer.start(100)
+
+    def _apply_deferred_font_update(self):
+        """执行节流后的字体刷新。"""
+        self.font_manager.update_all_fonts()
+
     def resizeEvent(self, event):
-        """处理窗口大小变化事件"""
+        """处理窗口大小变化事件。"""
         width = self.width()
         height = self.height()
         debug_logger.output("main_window.py", LogLevel.INFO, f"触发窗口缩放事件: {width}x{height}", fold_code="MAIN_UI")
-        
+
         if getattr(self, "_is_onboarding", False):
             tab_bar_width = 0
             content_width = width
         else:
             tab_bar_width = int(width * 0.1)
-            content_width = width - tab_bar_width - 10  # 右侧间隔
+            content_width = width - tab_bar_width - 10
             self.tab_manager.resize_tabs(width, height)
-            
+
         self.stacked_widget.setGeometry(tab_bar_width, 0, content_width, height)
-        self.font_manager.update_all_fonts()
-        
-        # 广播窗口大小变化到共享内存
-        debug_logger.output("main_window.py", LogLevel.DEBUG, "正在向共享内存同步最新窗口尺寸", fold_code="MAIN_UI")
-        self.shared_manager.broadcast_window_size_change(width, height)
+        self._schedule_font_update()
+
+        if self.shared_manager is not None:
+            debug_logger.output("main_window.py", LogLevel.DEBUG, "正在向共享内存同步最新窗口尺寸", fold_code="MAIN_UI")
+            self.shared_manager.broadcast_window_size_change(width, height)
+
         if event is not None:
             super().resizeEvent(event)
+
 
     def keyPressEvent(self, event):
         """处理键盘按键事件"""
         # 仅在调试级别较低时才记录所有按键
         # debug_logger.output("main_window.py", LogLevel.DEBUG, f"收到键盘事件: {event.key()}", fold_code="MAIN_EVENT")
-        self.audio_preview.handle_key_event(event)
+        audio_preview = self.audio_preview
+        if audio_preview is not None:
+            audio_preview.handle_key_event(event)
         super().keyPressEvent(event)
+
 
     def closeEvent(self, event):
         """处理窗口关闭事件"""
         debug_logger.output("main_window.py", LogLevel.INFO, "正在安全退出应用程序...", fold_code="MAIN_EXIT")
-        # 强制释放音频资源
+        
+        # 1. 首先关闭插件系统（需求 19.11）
         try:
-            self.audio_preview.force_stop_audio()
-            self.audio_preview.cleanup_preview_audio()
-            debug_logger.output("main_window.py", LogLevel.INFO, "音频资源已成功释放", fold_code="MAIN_EXIT")
+            if hasattr(self, 'plugin_manager') and self.plugin_manager is not None:
+                debug_logger.output("main_window.py", LogLevel.INFO, "正在关闭插件系统...", fold_code="MAIN_EXIT")
+                self.plugin_manager.shutdown_plugin_system(timeout=5)
+                debug_logger.output("main_window.py", LogLevel.INFO, "插件系统已成功关闭", fold_code="MAIN_EXIT")
+        except Exception as e:
+            debug_logger.output("main_window.py", LogLevel.ERROR, f"关闭插件系统时出错: {str(e)}", fold_code="MAIN_EXIT")
+        
+        # 2. 释放音频资源
+        try:
+            audio_preview = self.audio_preview
+            if audio_preview is not None:
+                audio_preview.force_stop_audio()
+                audio_preview.cleanup_preview_audio()
+                debug_logger.output("main_window.py", LogLevel.INFO, "音频资源已成功释放", fold_code="MAIN_EXIT")
         except Exception as e:
             debug_logger.output("main_window.py", LogLevel.ERROR, f"释放音频资源时出错: {str(e)}", fold_code="MAIN_EXIT")
-            
+
+        # 3. 关闭后台导入器
+        if self.background_importer is not None:
+            self.background_importer.shutdown()
+
         event.accept()
         super().closeEvent(event)
         debug_logger.output("main_window.py", LogLevel.INFO, "主窗口已安全关闭", fold_code="MAIN_EXIT")
+
     
     def paintEvent(self, event):
         """绘制选项卡栏背景和激活选项卡指示器"""
@@ -997,11 +1443,10 @@ class MainWindow(QWidget):
     
     def _update_tab_indicator_animation(self):
         """更新选项卡指示器动画"""
-        # 从设置中获取动画速度（现在以毫秒为单位，需要转换为秒）
-        from misc_func import SettingsManager
-        settings_manager = SettingsManager()
-        animation_speed_ms = int(settings_manager.Custom.get_value("indicator_animation_speed", "50"))
+        # 从已缓存的设置中获取动画速度（现在以毫秒为单位，需要转换为秒）
+        animation_speed_ms = int(self.settings_manager.Custom.get_value("indicator_animation_speed", "50"))
         animation_speed = animation_speed_ms / 1000.0  # 转换为秒
+
         
         # 增加动画进度（调整动画速度以获得更平滑的效果）
         self.tab_indicator_animation_progress += animation_speed  # 使用设置中的动画速度
@@ -1055,14 +1500,12 @@ class MainWindow(QWidget):
     
     def _apply_indicator_settings(self, geometry):
         """应用指示器设置（偏移和调整）"""
-        from misc_func import SettingsManager
-        settings_manager = SettingsManager()
-        
         # 获取设置值
-        x_offset = int(settings_manager.Custom.get_value("indicator_x_offset", "0"))
-        y_offset = int(settings_manager.Custom.get_value("indicator_y_offset", "0"))
-        width_adjust = int(settings_manager.Custom.get_value("indicator_width_adjust", "0"))
-        height_adjust = int(settings_manager.Custom.get_value("indicator_height_adjust", "0"))
+        x_offset = int(self.settings_manager.Custom.get_value("indicator_x_offset", "0"))
+        y_offset = int(self.settings_manager.Custom.get_value("indicator_y_offset", "0"))
+        width_adjust = int(self.settings_manager.Custom.get_value("indicator_width_adjust", "0"))
+        height_adjust = int(self.settings_manager.Custom.get_value("indicator_height_adjust", "0"))
+
         
         # 应用偏移和调整
         adjusted_geometry = geometry.copy()
@@ -1184,31 +1627,23 @@ class MainWindow(QWidget):
         return 1.0 - pow(1.0 - t, 3)
     @property
     def audio_generator(self):
-        """获取音频生成器（延迟加载）"""
+        """获取音频生成器（延迟加载）- 使用TTS路由器"""
         if self._audio_generator is None:
-            debug_logger.output("main_window.py", LogLevel.INFO, "正在延迟加载音频生成器组件", fold_code="MAIN_LAZY")
-            from edge_audio_generator import AudioGenerator
-            self._audio_generator = AudioGenerator()
+            debug_logger.output("main_window.py", LogLevel.INFO, "正在延迟加载TTS路由器组件", fold_code="MAIN_LAZY")
+            from tts_router import get_tts_router
+            self._audio_generator = get_tts_router()
         return self._audio_generator
-    
-    @property
-    def notification_manager(self):
-        """获取通知管理器（延迟加载）"""
-        if self._notification_manager is None:
-            debug_logger.output("main_window.py", LogLevel.INFO, "正在延迟加载通知管理器组件", fold_code="MAIN_LAZY")
-            from notification import NotificationManager
-            self._notification_manager = NotificationManager(self)
-        return self._notification_manager
     
     @property
     def generation_page(self):
         """获取生成页面（便捷属性）"""
-        # 找到生成页面的索引
+        # 使用类名判断，避免为 isinstance 检查提前导入重量级页面模块
         for i in range(self.stacked_widget.count()):
             widget = self.stacked_widget.widget(i)
-            if isinstance(widget, GenerationPage):
+            if type(widget).__name__ == 'GenerationPage':
                 return widget
         return None
+
     
     def _get_welcome_page_class(self):
         """获取欢迎页面类"""
@@ -1239,6 +1674,11 @@ class MainWindow(QWidget):
         """获取流媒体页面类"""
         from streaming_page import StreamingPage
         return StreamingPage
+
+    def _get_plugin_page_class(self):
+        """获取插件页面类"""
+        from plugin_page import PluginPage
+        return PluginPage
 
     def refresh_theme(self):
         """刷新主题显示"""
@@ -1342,31 +1782,113 @@ class SingleInstanceChecker:
             return True
 
 def main():
-    """应用程序入口点"""
-    # 诊断：记录启动信息
+    """应用程序入口点。"""
+    # ==================== 动画开关 ====================
+    # FORCE_FINISH_ANIMATION 控制动画关闭时机：
+    # True: 等待启动全量完成（async_finished）后才关闭动画
+    # False: 主窗口首屏加载完成后立即关闭动画
+    FORCE_FINISH_ANIMATION = True
+    
+    # True: 动画结束后强制播放呼吸灯动画
+    # False: 动画结束后直接关闭（如果主窗口已加载完）
+    FORCE_BREATHING_ANIMATION = False
+    BREATHING_DURATION_SECONDS = 0.1  # 呼吸灯持续时间（秒）
+    
+    # True: 动画结束后渐隐消失
+    # False: 动画结束后直接消失
+    ENABLE_FADE_OUT = True
+    FADE_OUT_DURATION_MS = 500  # 渐隐动画时长（毫秒）
+    FADE_OUT_DELAY_MS = 500  # 全量完成后延迟多久开始渐隐（毫秒）
+    
+    # True: 渐隐动画在所有 SVG 路径绘制完毕后开始
+    # False: 渐隐动画在启动全量完成后即刻开始
+    WAIT_FOR_SVG_PATHS_COMPLETE = True
+    
+    # True: 主窗口模糊效果渐弱消失
+    # False: 主窗口模糊效果直接移除
+    ENABLE_BLUR_FADE_OUT = True
+    BLUR_FADE_OUT_DURATION_MS = 250 # 模糊渐弱动画时长（毫秒）
+    # =================================================
+    
+    startup_profiler.mark_once("main_enter")
+    startup_profiler.start_span("setup_encoding")
+    setup_encoding()
+    startup_profiler.end_span("setup_encoding")
+    startup_profiler.mark_once("encoding_ready")
+
     debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] main() 函数被调用", fold_code="MAIN_INIT")
     debug_logger.output("main_window.py", LogLevel.INFO, f"[DIAGNOSTIC] 当前线程ID: {threading.current_thread().ident}", fold_code="MAIN_INIT")
     debug_logger.output("main_window.py", LogLevel.INFO, f"[DIAGNOSTIC] sys.argv: {sys.argv}", fold_code="MAIN_INIT")
     debug_logger.output("main_window.py", LogLevel.INFO, f"[DIAGNOSTIC] sys.frozen: {getattr(sys, 'frozen', False)}", fold_code="MAIN_INIT")
-    
+    debug_logger.output(" ", LogLevel.ERROR, f"当前程序版本: {version_info.version()}", fold_code="MAIN_VERSION")
+    debug_logger.output(" ", LogLevel.WARNING, f"更新日期: {version_info.update_date()}", fold_code="MAIN_VERSION")
+    debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
+
     # multiprocessing.freeze_support() 已在文件最前部、本模块其余 import 之前调用（见文件开头注释）
-    
-    # 检查是否已有实例在运行
-    if SingleInstanceChecker.is_already_running():
+
+    startup_profiler.start_span("single_instance_check")
+    already_running = SingleInstanceChecker.is_already_running()
+    startup_profiler.end_span("single_instance_check")
+    startup_profiler.mark_once("single_instance_checked")
+    if already_running:
         debug_logger.output("main_window.py", LogLevel.WARNING, "检测到已有实例在运行，退出当前启动", fold_code="MAIN_INIT")
         return 1
-    
+
     debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 开始创建 QApplication 实例", fold_code="MAIN_INIT")
+    startup_profiler.start_span("qapplication_create")
     app = QApplication(sys.argv)
-    
-    debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 开始创建 MainWindow 实例", fold_code="MAIN_INIT")
-    window = MainWindow()
-    
-    debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 调用 window.show()", fold_code="MAIN_INIT")
-    window.show()
-    
+    startup_profiler.end_span("qapplication_create")
+    startup_profiler.mark_once("qapplication_created")
+
+    debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 显示加载动画", fold_code="MAIN_INIT")
+    from loading_animation import LoadingAnimationWindow
+    loading_anim = LoadingAnimationWindow()
+    # 设置是否强制等待动画播放完毕
+    loading_anim.force_finish_animation = FORCE_FINISH_ANIMATION
+    loading_anim.force_breathing_animation = FORCE_BREATHING_ANIMATION
+    loading_anim.breathing_duration_seconds = BREATHING_DURATION_SECONDS
+    loading_anim.enable_fade_out = ENABLE_FADE_OUT
+    loading_anim.fade_out_duration_ms = FADE_OUT_DURATION_MS
+    loading_anim.fade_out_delay_ms = FADE_OUT_DELAY_MS
+    loading_anim.wait_for_svg_paths_complete = WAIT_FOR_SVG_PATHS_COMPLETE
+    loading_anim.enable_blur_fade_out = ENABLE_BLUR_FADE_OUT
+    loading_anim.blur_fade_out_duration_ms = BLUR_FADE_OUT_DURATION_MS
+    # 加载动画保持在屏幕中心
+    loading_anim.show()
+    app.processEvents()
+
+    # 关键：先进入事件循环，确保加载动画的 QTimer / QPropertyAnimation 能正常跑
+    # 再用 singleShot 延迟创建主窗口，避免启动阶段长时间阻塞导致动画卡顿
+    window_holder = []
+
+    def _create_main_window():
+        debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 延迟创建 MainWindow 实例", fold_code="MAIN_INIT")
+        startup_profiler.start_span("main_window_create")
+        window = MainWindow()
+
+        # 给主窗口添加模糊效果
+        from PyQt5.QtWidgets import QGraphicsBlurEffect
+        blur_effect = QGraphicsBlurEffect()
+        blur_effect.setBlurRadius(15)
+        window.setGraphicsEffect(blur_effect)
+        
+        # 保存模糊效果对象到窗口，以便后续渐弱动画使用
+        window.blur_effect = blur_effect
+
+        # 避免静态类型误判：属性在运行时动态挂载
+        setattr(window, "loading_anim", loading_anim)
+        # 让 loading_anim 持有主窗口引用，用于清理模糊效果
+        loading_anim.main_window = window
+        window_holder[:] = [window]
+        startup_profiler.end_span("main_window_create")
+
+    QTimer.singleShot(100, _create_main_window)
+
     debug_logger.output("main_window.py", LogLevel.INFO, "[DIAGNOSTIC] 进入事件循环 app.exec_()", fold_code="MAIN_INIT")
+
     exit_code = app.exec_()
+
+
     
     # 清理文件锁
     if SingleInstanceChecker._instance_file:

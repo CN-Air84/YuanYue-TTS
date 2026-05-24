@@ -1,5 +1,6 @@
 # coding=utf-8
 import base64
+import json
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -274,7 +275,11 @@ class AIManager:
             f"prompt长度={len(request.prompt)}, image={request.image_path}, "
             f"provider={request.provider}, model={request.model}", 
             fold_code="AI_REQUEST")
-        
+
+        custom_cfg = self._get_active_custom_model(request.scene)
+        if custom_cfg:
+            return self._chat_with_custom(custom_cfg, request)
+
         # 1. 选择模型
         model_info = self._select_model(request)
         if not model_info:
@@ -320,6 +325,76 @@ class AIManager:
             text=text,
             model_used=model_info.name,
             provider_used=model_info.provider
+        )
+
+    def _get_active_custom_model(self, scene: AIScene) -> Optional[Dict[str, Any]]:
+        """读取设置页选中的自定义模型配置。"""
+        if scene == AIScene.TTS:
+            return None
+        if not self.settings_manager:
+            return None
+        try:
+            from ai_settings_store import ACTIVE_KEY_FMT
+            model_id = self.settings_manager.Custom.get_value(
+                ACTIVE_KEY_FMT.format(scene=scene.value), ""
+            )
+            if not model_id:
+                return None
+            raw = self.settings_manager.Custom.get_value("custom_ai_models", "")
+            if not raw:
+                return None
+            items = json.loads(raw)
+            if not isinstance(items, list):
+                return None
+            for item in items:
+                if isinstance(item, dict) and item.get("id") == model_id:
+                    if item.get("scene") == scene.value:
+                        return item
+            return None
+        except Exception:
+            return None
+
+    def _chat_with_custom(self, cfg: Dict[str, Any], request: AIRequest) -> AIResponse:
+        """使用用户自定义 OpenAI 兼容端点发起请求。"""
+        model_name = cfg.get("model", "")
+        provider = cfg.get("provider", "") or "custom"
+        api_key = cfg.get("api_key", "")
+        base_url = cfg.get("base_url", "")
+        if not model_name or not api_key or not base_url:
+            raise ValueError("自定义模型配置不完整，请在设置中检查")
+
+        if request.scene == AIScene.TTS:
+            debug_logger.output("ai_manager.py", LogLevel.INFO,
+                f"自定义 TTS 模型已选择: {model_name} ({provider})",
+                fold_code="AI_TTS_SELECT")
+            if self.settings_manager:
+                self.settings_manager.Custom.set_value("ai_model_tts_model", model_name)
+                self.settings_manager.Custom.set_value("ai_model_tts_provider", provider)
+            return AIResponse(
+                text="",
+                model_used=model_name,
+                provider_used=provider,
+            )
+
+        from openai import OpenAI
+        cache_key = f"custom_{base_url}_{api_key[:8]}"
+        if cache_key not in self._clients:
+            self._clients[cache_key] = OpenAI(api_key=api_key, base_url=base_url)
+        client = self._clients[cache_key]
+        messages = self._build_messages(request)
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            max_tokens=1000,
+        )
+        text = response.choices[0].message.content
+        debug_logger.output("ai_manager.py", LogLevel.INFO,
+            f"自定义模型响应: {model_name}, text长度={len(text)}",
+            fold_code="AI_RESPONSE")
+        return AIResponse(
+            text=text,
+            model_used=model_name,
+            provider_used=provider,
         )
 
     def resolve_model(self, request: AIRequest) -> Optional[AIModel]:
@@ -541,6 +616,16 @@ class AIManager:
     
     def get_default_model(self, scene: AIScene) -> Optional[AIModel]:
         """获取指定场景的默认模型（已配置且可用）"""
+        # 优先检查是否启用了自定义模型
+        custom_cfg = self._get_active_custom_model(scene)
+        if custom_cfg:
+            return AIModel(
+                name=custom_cfg.get("model", "Custom Model"),
+                provider=custom_cfg.get("provider", "Custom"),
+                tier=ModelTier.FREE,
+                scene=scene
+            )
+            
         configured_providers = self.get_configured_providers(scene)
         
         if not configured_providers:

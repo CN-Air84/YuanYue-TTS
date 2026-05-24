@@ -658,10 +658,6 @@ class AudioPreview:
             
             # 显示跳转提示
             direction = "前进" if seconds > 0 else "回退"
-            if hasattr(self.parent_window, 'notification_manager'):
-                self.parent_window.notification_manager.show_message(
-                    f"已{direction} {abs(seconds)} 秒", "I", 1000
-                )
         except Exception as e:
             debug_logger.output("audio_preview.py", LogLevel.ERROR, f"执行相对跳转时发生异常: {str(e)}", fold_code="AUDIO_SEEK")
     def _adjust_volume(self, delta: float):
@@ -678,10 +674,7 @@ class AudioPreview:
                 self.set_volume(new_volume)
                 
                 volume_percent = int(new_volume * 100)
-                if hasattr(self.parent_window, 'notification_manager'):
-                    self.parent_window.notification_manager.show_message(
-                        f"听写：音量: {volume_percent}%", "I", 1000
-                    )
+
         except Exception as e:
             debug_logger.output("audio_preview.py", LogLevel.ERROR, f"调整音量时发生异常: {str(e)}", fold_code="AUDIO_VOL")
 
@@ -702,8 +695,7 @@ class AudioPreview:
             if (cache_key not in self.parent_window.audio_cache or 
                 not os.path.exists(self.parent_window.audio_cache[cache_key])):
                 debug_logger.output("audio_preview.py", LogLevel.WARNING, f"没有可用的音频缓存 (Key: {cache_key[:20]}...)", fold_code="AUDIO_PLAY")
-                if hasattr(self.parent_window, 'notification_manager'):
-                    self.parent_window.notification_manager.show_message("听写：没有可用的预览音频，请先生成预览", "W", 3000)
+
                 return
                 
             if not self.cache_manager.is_content_unchanged(self.parent_window.config):
@@ -711,8 +703,7 @@ class AudioPreview:
                 if hasattr(self.parent_window, 'generation_page'):
                     self.parent_window.generation_page.preview_control.preview_button.setText("生成预览")
                 self.parent_window.has_preview = False
-                if hasattr(self.parent_window, 'notification_manager'):
-                    self.parent_window.notification_manager.show_message("听写：文本内容已改变，请重新生成预览", "W", 3000)
+
                 return
                 
             if self.state.is_playing:
@@ -787,8 +778,7 @@ class AudioPreview:
             
         except Exception as e:
             debug_logger.output("audio_preview.py", LogLevel.ERROR, f"播放音频时发生异常: {str(e)}", fold_code="AUDIO_PLAY")
-            if hasattr(self.parent_window, 'notification_manager'):
-                self.parent_window.notification_manager.show_message(f"听写：播放音频时发生错误: {str(e)}", "E", 5000)
+
 
     def _on_playback_finished(self):
         """
@@ -808,8 +798,7 @@ class AudioPreview:
                     generation_page.preview_control.preview_progress.setValue(1000)
                     generation_page.preview_control.update_pause_button_text(False)
                 
-                if hasattr(self.parent_window, 'notification_manager'):
-                    self.parent_window.notification_manager.show_message("听写：音频播放完毕", "I", 2000)
+
                 
             self.progress_timer.stop()
         except Exception as e:
@@ -868,8 +857,7 @@ class AudioPreview:
                     generation_page = self.parent_window.generation_page
                     if hasattr(generation_page, 'preview_control'):
                         generation_page.preview_control.update_pause_button_text(True)
-                if hasattr(self.parent_window, 'notification_manager'):
-                    self.parent_window.notification_manager.show_message("听写：音频已暂停", "I", 1500)
+
                 return True
             else:
                 # 继续播放：重新计算时间基准点，确保时间同步
@@ -881,8 +869,7 @@ class AudioPreview:
                     generation_page = self.parent_window.generation_page
                     if hasattr(generation_page, 'preview_control'):
                         generation_page.preview_control.update_pause_button_text(False)
-                if hasattr(self.parent_window, 'notification_manager'):
-                    self.parent_window.notification_manager.show_message("听写：音频已继续", "I", 1500)
+
                 return True
         except Exception as e:
             debug_logger.output("audio_preview.py", LogLevel.ERROR, f"切换暂停状态时发生异常: {str(e)}", fold_code="AUDIO_PLAY")
@@ -1142,9 +1129,6 @@ class AudioPreview:
             self.pygame_manager.cleanup()
         except Exception as e:
             debug_logger.output("audio_preview.py", LogLevel.ERROR, f"强制停止音频时发生异常: {str(e)}", fold_code="AUDIO_PLAY")
-            if hasattr(self.parent_window, 'notification_manager'):
-                self.parent_window.notification_manager.show_message("程序出现错误 请重启程序", "E", 5000)
-
     def cleanup_preview_audio(self):
         """
         清理预览音频缓存文件及状态
@@ -1171,7 +1155,5 @@ class AudioPreview:
             
         except Exception as e:
             debug_logger.output("audio_preview.py", LogLevel.ERROR, f"清理预览音频时发生异常: {str(e)}", fold_code="AUDIO_CLEANUP")
-            if hasattr(self.parent_window, 'notification_manager'):
-                self.parent_window.notification_manager.show_message("程序出现错误 请重启程序", "E", 5000)
             return 0
 

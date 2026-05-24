@@ -181,11 +181,20 @@ class ResourceDownloadDialog(QDialog):
             # x: 带路径解压
             # -o: 指定输出目录
             # -y: 自动回答 yes（覆盖）
+            
+            # 隐藏 cmd 窗口
+            startupinfo = None
+            if sys.platform == 'win32':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             result = subprocess.run(
                 ['7z', 'x', file_path, f'-o{target_path}', '-y'],
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 debug_logger.output("mp_resource_download.py", LogLevel.INFO, "7z 解压成功", fold_code="MP_RD_EXTRACT")
@@ -289,7 +298,11 @@ class ResourceDownloadDialog(QDialog):
                 if resource.get('task'):
                     task = resource['task']
                     debug_logger.output("mp_resource_download.py", LogLevel.INFO, f"执行任务: {task['type']}", fold_code="MP_RD_DEPLOY")
-                    if task['type'] == 'UnzipTo':
+                    if task['type'] == 'alarm':
+                        alarm_content = task.get('content', '')
+                        debug_logger.output("mp_resource_download.py", LogLevel.WARNING, f"显示警告: {alarm_content}", fold_code="MP_RD_DEPLOY")
+                        QMessageBox.warning(self, "警告", alarm_content)
+                    elif task['type'] == 'UnzipTo':
                         target_path = task['path']
 
                         # 处理相对路径

@@ -55,6 +55,11 @@ def _get_multi_thread_download_dialog():
     return MultiThreadDownloadDialog
 
 
+def _get_cache_cleaner_dialog():
+    from mp_cache_cleaner import CacheCleanerDialog
+    return CacheCleanerDialog
+
+
 # ===== 常量定义 =====
 # 界面字体大小和窗口尺寸常量
 MIN_FONT_SIZE = 22
@@ -129,7 +134,7 @@ class MiscPage(QWidget):
             ("资源下载", self._on_resource_download),
             ("关于", self._on_about),
             ("多线程下载", self._on_multi_thread_download),
-            ("预留6", self._on_reserved_function),
+            ("清除缓存", self._on_cache_cleaner),
             ("预留7", self._on_reserved_function),
             ("预留8", self._on_reserved_function),
             ("许可协议", self._on_license_agreement)
@@ -365,6 +370,11 @@ class MiscPage(QWidget):
                             if target_path.endswith('/'):
                                 target_path = target_path[:-1]
                             task = {'type': 'UnzipTo', 'path': target_path}
+                        elif task_str.startswith('alarm '):
+                            alarm_content = task_str[6:]
+                            if alarm_content.startswith('"') and alarm_content.endswith('"'):
+                                alarm_content = alarm_content[1:-1]
+                            task = {'type': 'alarm', 'content': alarm_content}
 
                 resource_info.append({
                     'name': name_part,
@@ -411,6 +421,13 @@ class MiscPage(QWidget):
         debug_logger.output("misc_page.py", LogLevel.INFO, "打开多线程下载对话框", fold_code="MP_MT")
         MultiThreadDownloadDialog = _get_multi_thread_download_dialog()
         dialog = MultiThreadDownloadDialog(self)
+        dialog.exec_()
+    
+    def _on_cache_cleaner(self):
+        """处理清除缓存功能"""
+        debug_logger.output("misc_page.py", LogLevel.INFO, "打开清除缓存对话框", fold_code="MP_CACHE")
+        CacheCleanerDialog = _get_cache_cleaner_dialog()
+        dialog = CacheCleanerDialog(self)
         dialog.exec_()
     
     def _on_reserved_function(self):

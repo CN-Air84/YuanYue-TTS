@@ -4,9 +4,16 @@ import os
 import ctypes
 from typing import Dict, Tuple, Optional, List
 
+from debug_logger import debug_logger, LogLevel
+
 # 设置 PySDL2 DLL 路径（优先使用 pygame 包中的 SDL2 库）
 if 'PYSDL2_DLL_PATH' not in os.environ:
-    pygame_sdl_path = os.path.join(os.path.dirname(__file__), '.venv', 'Lib', 'site-packages', 'pygame')
+    # 使用 sys.executable 的目录避免 MEI 临时目录问题
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    pygame_sdl_path = os.path.join(base_path, '.venv', 'Lib', 'site-packages', 'pygame')
     if os.path.exists(pygame_sdl_path):
         os.environ['PYSDL2_DLL_PATH'] = pygame_sdl_path
 
@@ -14,7 +21,6 @@ if 'PYSDL2_DLL_PATH' not in os.environ:
 try:
     import sdl2
     import sdl2.ext
-    from debug_logger import debug_logger, LogLevel
     SDL_AVAILABLE = True
 except ImportError as e:
     SDL_AVAILABLE = False

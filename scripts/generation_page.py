@@ -999,8 +999,7 @@ class GenerationPage(QWidget):
         self.parent_window.last_content_hash = ContentHasher.get_content_hash(self.config)
         self.parent_window.has_preview = True
         
-        # 使用新的消息系统
-        self.parent_window.notification_manager.show_message("预览音频生成完成", "I", 3000)
+
         
         # 预览音频生成完成
 
@@ -1016,8 +1015,7 @@ class GenerationPage(QWidget):
         self.preview_control.update_preview_button_state(False, False)
         self.parent_window.has_preview = False
         
-        # 使用新的消息系统
-        self.parent_window.notification_manager.show_message(f"生成预览失败: {error}", "E", 5000)
+
 
     # 音频生成相关方法
     def _generate_audio(self):
@@ -1030,8 +1028,7 @@ class GenerationPage(QWidget):
         # 设置默认保存路径
         self.config.save_path = AudioFileManager.get_default_save_path(self.config, self.parent_window.settings_manager)
         if not self.config.save_path:
-            # 使用新的消息系统
-            self.parent_window.notification_manager.show_message("请先在设置中配置默认保存路径", "W", 5000)
+
             return
             
         self.generation_control.set_enabled(False)
@@ -1054,12 +1051,8 @@ class GenerationPage(QWidget):
         self.generation_control.set_button_state(not success, "生成并保存音频")
         
         if success:
-            # 使用新的消息系统
-            self.parent_window.notification_manager.show_message("音频成功生成并保存", "I", 3000)
             # 音频生成成功
         else:
-            # 使用新的消息系统
-            self.parent_window.notification_manager.show_message(f"音频生成失败: {message}", "E", 5000)
             # 音频生成失败
 
     # 验证方法
@@ -1067,8 +1060,6 @@ class GenerationPage(QWidget):
         """验证预览输入"""
         success, message = InputValidator.validate_preview_inputs(self.config)
         if not success:
-            # 使用新的消息系统
-            self.parent_window.notification_manager.show_message(message, "W", 5000)
             # 验证失败
             return False
         return True
@@ -1077,8 +1068,6 @@ class GenerationPage(QWidget):
         """验证输入参数"""
         success, message = InputValidator.validate_generation_inputs(self.config, self.parent_window.settings_manager)
         if not success:
-            # 使用新的消息系统
-            self.parent_window.notification_manager.show_message(message, "W", 5000)
             # 验证失败
             return False
         return True

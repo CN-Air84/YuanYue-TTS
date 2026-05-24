@@ -58,6 +58,7 @@ class SentenceSplitter:
         '叹号': ('！', '！'),
         '问号': ('？', '？'),
         '分号': ('；', '；'),
+        '冒号': ('：', '：'),        # 中文冒号
         '省略号': ('……', '……'),
         '左括号': ('（', '（'),      # 中文左括号
         '右括号': ('）', '）'),      # 中文右括号
@@ -69,20 +70,154 @@ class SentenceSplitter:
         '英文叹号': ('!', '!'),
         '英文问号': ('?', '?'),
         '英文分号': (';', ';'),
+        '英文冒号': (':', ':'),      # 英文冒号
         '英文左括号': ('(', '('),    # 英文左括号
         '英文右括号': (')', ')'),    # 英文右括号
         '换行': ('\n', '↵'),
     }
     
+    # 所有标点符号的映射表（包括分隔符和非分隔符）
+    ALL_PUNCTUATION_MARKS = {
+        # 中文标点
+        '，': '逗号',
+        '。': '句号',
+        '！': '叹号',
+        '？': '问号',
+        '；': '分号',
+        '：': '冒号',
+        '……': '省略号',
+        '—': '破折号',
+        '–': '短破折号',
+        '（': '左括号',
+        '）': '右括号',
+        '【': '左方括号',
+        '】': '右方括号',
+        '《': '左书名号',
+        '》': '右书名号',
+        '〈': '左单书名号',
+        '〉': '右单书名号',
+        '"': '左双引号',
+        '"': '右双引号',
+        ''': '左单引号',
+        ''': '右单引号',
+        '『': '左直角引号',
+        '』': '右直角引号',
+        '「': '左角引号',
+        '」': '右角引号',
+        '、': '顿号',
+        '·': '间隔号',
+        '～': '波浪号',
+        '〜': '全角波浪号',
+        
+        # 英文标点
+        ',': '英文逗号',
+        '.': '句点',
+        '!': '英文叹号',
+        '?': '英文问号',
+        ';': '英文分号',
+        ':': '英文冒号',
+        '-': '连字符',
+        '—': '长破折号',
+        '–': '短破折号',
+        '(': '英文左括号',
+        ')': '英文右括号',
+        '[': '英文左方括号',
+        ']': '英文右方括号',
+        '{': '英文左花括号',
+        '}': '英文右花括号',
+        '<': '英文左尖括号',
+        '>': '英文右尖括号',
+        '"': '英文双引号',
+        "'": '英文单引号',
+        '`': '反引号',
+        '´': '重音符',
+        
+        # 其他符号
+        '/': '斜杠',
+        '\\': '反斜杠',
+        '|': '竖线',
+        '~': '波浪线',
+        '*': '星号',
+        '&': '和号',
+        '@': 'at符号',
+        '#': '井号',
+        '$': '美元符号',
+        '%': '百分号',
+        '^': '脱字符',
+        '_': '下划线',
+        '+': '加号',
+        '=': '等号',
+        '¥': '人民币符号',
+        '€': '欧元符号',
+        '£': '英镑符号',
+        '°': '度数符号',
+        '§': '章节符号',
+        '¶': '段落符号',
+        '†': '剑号',
+        '‡': '双剑号',
+        '•': '项目符号',
+        '‰': '千分号',
+        '′': '分符号',
+        '″': '秒符号',
+        '※': '参考符号',
+        '→': '右箭头',
+        '←': '左箭头',
+        '↑': '上箭头',
+        '↓': '下箭头',
+        '⇒': '双线右箭头',
+        '⇐': '双线左箭头',
+        '×': '乘号',
+        '÷': '除号',
+        '±': '正负号',
+        '≈': '约等于',
+        '≠': '不等于',
+        '≤': '小于等于',
+        '≥': '大于等于',
+        '∞': '无穷大',
+        '∑': '求和符号',
+        '∏': '连乘符号',
+        '√': '根号',
+        '∫': '积分符号',
+        '∂': '偏微分符号',
+        '∇': '梯度符号',
+        '∈': '属于',
+        '∉': '不属于',
+        '⊂': '真子集',
+        '⊃': '真超集',
+        '⊆': '子集',
+        '⊇': '超集',
+        '∪': '并集',
+        '∩': '交集',
+        '∅': '空集',
+        '∀': '任意',
+        '∃': '存在',
+        '¬': '非',
+        '∧': '与',
+        '∨': '或',
+        '⊕': '异或',
+        '⊗': '张量积',
+        '℃': '摄氏度',
+        '℉': '华氏度',
+        '\n': '换行',
+    }
+    
     def __init__(self):
         # 默认所有分隔符都启用
         self.enabled_marks = set(self.PAUSE_MARKS.keys())
+        # 标点提示开关，默认启用
+        self.punctuation_hint_enabled = True
     
     def set_pause_marks(self, enabled_marks: set):
         """设置启用的停顿符号名称集合"""
         debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
                            f"更新启用的停顿符号，数量: {len(enabled_marks)}", fold_code="GEN_SPLIT")
         self.enabled_marks = enabled_marks
+    
+    def set_punctuation_hint(self, enabled: bool):
+        """设置标点提示开关"""
+        debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
+                           f"标点提示开关: {'启用' if enabled else '禁用'}", fold_code="GEN_SPLIT")
+        self.punctuation_hint_enabled = enabled
     
     def _get_enabled_separators(self) -> List[str]:
         """获取所有启用的分隔符字符列表"""
@@ -114,7 +249,12 @@ class SentenceSplitter:
         # 获取启用的分隔符
         separators = self._get_enabled_separators()
         if not separators:
-            return [text] if self._has_content(text) else []
+            # 如果没有分隔符，整个文本作为一句
+            if self._has_content(text):
+                if self.punctuation_hint_enabled:
+                    text = self._convert_non_separator_punctuation(text, [])
+                return [text]
+            return []
         
         # 构建分割模式：使用 re.split 一次性分割
         # 转义所有分隔符并组合成正则表达式
@@ -127,6 +267,7 @@ class SentenceSplitter:
         # 合并结果：分隔符前的文本作为一个句子
         sentences = []
         current_sentence = ""
+        current_separator = None
         
         for part in parts:
             if not part:
@@ -138,22 +279,72 @@ class SentenceSplitter:
                     cleaned = self._clean_sentence(current_sentence)
                     # 检查是否包含实际内容（不只是符号）
                     if cleaned and self._has_content(cleaned):
+                        # 如果启用了标点提示
+                        if self.punctuation_hint_enabled:
+                            # 1. 先转换句子内部的非分隔符标点
+                            cleaned = self._convert_non_separator_punctuation(cleaned, separators)
+                            # 2. 在句子末尾添加分隔符的名称
+                            separator_name = self._get_separator_name(part)
+                            if separator_name:
+                                cleaned = cleaned + " " + separator_name
                         sentences.append(cleaned)
                     current_sentence = ""
-                # 分隔符本身不保留
+                current_separator = part
             else:
                 current_sentence += part
         
-        # 处理最后剩余的内容
+        # 处理最后剩余的内容（没有分隔符结尾的情况）
         if current_sentence:
             cleaned = self._clean_sentence(current_sentence)
             # 检查是否包含实际内容（不只是符号）
             if cleaned and self._has_content(cleaned):
+                if self.punctuation_hint_enabled:
+                    cleaned = self._convert_non_separator_punctuation(cleaned, separators)
                 sentences.append(cleaned)
         
         debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
                            f"文本分割完成，产出句子数: {len(sentences)}", fold_code="GEN_SPLIT")
         return sentences
+    
+    def _get_separator_name(self, separator: str) -> str:
+        """根据分隔符获取其名称
+        
+        Args:
+            separator: 分隔符字符
+            
+        Returns:
+            分隔符的名称，如"逗号"、"句号"等
+        """
+        for name, (symbol, _) in self.PAUSE_MARKS.items():
+            if symbol == separator:
+                return name
+        return ""
+    
+    def _convert_non_separator_punctuation(self, text: str, separators: List[str]) -> str:
+        """将文本中的非分隔符标点符号转换为汉字提示
+        
+        Args:
+            text: 原始文本
+            separators: 分隔符列表（这些不转换）
+            
+        Returns:
+            转换后的文本
+        """
+        # 按长度降序排列，确保多字符标点（如……）优先匹配
+        sorted_puncts = sorted(self.ALL_PUNCTUATION_MARKS.keys(), key=len, reverse=True)
+        
+        result = text
+        for punct in sorted_puncts:
+            # 跳过分隔符（分隔符已经在句子末尾单独处理）
+            if punct in separators:
+                continue
+            
+            if punct in result:
+                name = self.ALL_PUNCTUATION_MARKS[punct]
+                # 将标点符号替换为 " 标点名称 "（前后加空格）
+                result = result.replace(punct, f" {name} ")
+        
+        return result
     
     def _clean_sentence(self, text: str) -> str:
         """清理单个句子：去除首尾空白和多余空格"""
@@ -656,6 +847,7 @@ class PauseParamWidget(QWidget):
     pause_settings_changed = pyqtSignal(set)  # 停顿设置改变信号
     speed_changed = pyqtSignal(int)  # 语速改变信号
     volume_changed = pyqtSignal(int)  # 音量改变信号
+    punctuation_hint_changed = pyqtSignal(bool)  # 标点提示开关改变信号
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -684,10 +876,11 @@ class PauseParamWidget(QWidget):
         # 符号定义：(名称, 显示符号) - 与 SentenceSplitter.PAUSE_MARKS 保持一致
         marks = [
             ('逗号', '，'), ('句号', '。'), ('叹号', '！'), ('问号', '？'),
-            ('省略号', '……'), ('左括号', '（'), ('右括号', '）'), ('斜杠', '/'),
-            ('反斜杠', '\\'), ('波浪线', '~'), ('句点', '.'), ('英文逗号', ','),
-            ('换行', '↵'), ('英文叹号', '!'), ('英文问号', '?'), ('英文左括号', '('),
-            ('英文右括号', ')'), ('', ''), ('', ''), ('', '')
+            ('分号', '；'), ('冒号', '：'), ('省略号', '……'), ('左括号', '（'),
+            ('右括号', '）'), ('斜杠', '/'), ('反斜杠', '\\'), ('波浪线', '~'),
+            ('句点', '.'), ('英文逗号', ','), ('英文叹号', '!'), ('英文问号', '?'),
+            ('英文分号', ';'), ('英文冒号', ':'), ('英文左括号', '('), ('英文右括号', ')'),
+            ('换行', '↵'), ('', ''), ('', ''), ('', '')
         ]
         
         for i, (name, symbol) in enumerate(marks):
@@ -713,6 +906,39 @@ class PauseParamWidget(QWidget):
                 grid_layout.addWidget(btn, i // 4, i % 4)
         
         pause_layout.addLayout(grid_layout)
+        
+        # 标点提示开关
+        hint_layout = QHBoxLayout()
+        hint_layout.setContentsMargins(0, 5, 0, 0)
+        self.punctuation_hint_checkbox = QCheckBox("启用标点提示")
+        self.punctuation_hint_checkbox.setChecked(True)
+        self.punctuation_hint_checkbox.setStyleSheet("""
+            QCheckBox {
+                border: none;
+                background: transparent;
+                spacing: 5px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 1px solid #D0D0D0;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                background-color: rgb(85, 85, 255);
+                border: 1px solid rgb(85, 85, 255);
+            }
+            QCheckBox::indicator:checked::after {
+                content: "✓";
+                color: white;
+            }
+        """)
+        self.punctuation_hint_checkbox.stateChanged.connect(self._on_punctuation_hint_toggled)
+        hint_layout.addWidget(self.punctuation_hint_checkbox)
+        hint_layout.addStretch()
+        pause_layout.addLayout(hint_layout)
+        
         layout.addWidget(pause_container)
         
         # 生成参数设置区域
@@ -796,6 +1022,11 @@ class PauseParamWidget(QWidget):
                 enabled.add(n)
         self.pause_settings_changed.emit(enabled)
     
+    def _on_punctuation_hint_toggled(self, state):
+        """处理标点提示开关切换"""
+        enabled = (state == Qt.Checked)
+        self.punctuation_hint_changed.emit(enabled)
+    
     def _on_speed_changed(self, value):
         """处理语速改变"""
         self.speed_value_label.setText(f"{value}%")
@@ -830,6 +1061,7 @@ class PauseParamWidget(QWidget):
         self.speed_value_label.setFont(font)
         self.volume_label.setFont(font)
         self.volume_value_label.setFont(font)
+        self.punctuation_hint_checkbox.setFont(font)
         for btn in self.pause_buttons.values():
             btn.setFont(font)
 
@@ -911,7 +1143,9 @@ class VoiceListWidget(QWidget):
         """
         self.current_model = model
         voices = []
-        voicelist_path = os.path.join(os.path.dirname(__file__), 'cache', 'voicelist.txt')
+        # 使用 get_app_base_path 避免读取到 PyInstaller 的 MEI 临时目录
+        from misc_func import get_app_base_path
+        voicelist_path = os.path.join(get_app_base_path(), 'cache', 'voicelist.txt')
         
         try:
             if os.path.exists(voicelist_path):
@@ -929,55 +1163,34 @@ class VoiceListWidget(QWidget):
             debug_logger.output("generation_page_neo.py", LogLevel.ERROR, f"加载音色列表失败: {e}", fold_code="GEN_VOICE")
         
         self._create_voice_buttons(voices)
-        
-        # 自动选中默认音色
         if auto_select_default and voices:
             default_voice = self._load_default_voice_for_model(model)
             if default_voice:
                 self.select_voice(default_voice)
-                self.selected_voice = default_voice
-    
+            else:
+                first_id = voices[0].get("voiceID", "")
+                if first_id:
+                    self.select_voice(first_id)
+
     def _load_default_voice_for_model(self, model: str):
-        """根据模型加载默认音色
-        
-        Args:
-            model: 模型名称，格式如 "Microsoft/edge-tts"
-            
-        Returns:
-            默认音色ID，如果没有配置则返回None
-        """
-        # 从模型名称提取提供商和模型
-        # 例如: "Microsoft/edge-tts" -> provider="MS", model_name="edge-tts"
+        """从设置读取该模型的默认音色（与设置页 EdgeTTS 默认音色配置一致）。"""
         provider_mapping = {
             "Microsoft": "MS",
             "ChatGLM": "ChatGLM",
             "Qwen": "Qwen",
             "KIMI": "KIMI",
             "Minimax": "Minimax",
-            "Mimo": "Mimo"
+            "Mimo": "Mimo",
         }
-        
         try:
-            parts = model.split('/')
+            parts = model.split("/")
             if len(parts) >= 2:
-                provider_name = parts[0]
+                provider_id = provider_mapping.get(parts[0], parts[0])
                 model_name = parts[1]
-                
-                provider_id = provider_mapping.get(provider_name, provider_name)
-                
-                # 加载默认音色
                 key = f"default_voice_{provider_id}_{model_name}"
-                default_voice = self.settings_manager.Custom.get_value(key, None)
-                
-                debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
-                                  f"加载默认音色: model={model}, key={key}, voice={default_voice}", 
-                                  fold_code="GEN_VOICE")
-                
-                return default_voice
-        except Exception as e:
-            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, 
-                              f"加载默认音色失败: {e}", fold_code="GEN_VOICE")
-        
+                return self.settings_manager.Custom.get_value(key, None) or None
+        except Exception:
+            pass
         return None
     
     def _create_voice_buttons(self, voices):
@@ -1039,6 +1252,7 @@ class VoiceListWidget(QWidget):
                 btn.setChecked(True)
             else:
                 btn.setChecked(False)
+        self.voice_selected.emit(voice_id)
     
     def set_font(self, font):
         """设置字体"""
@@ -1156,6 +1370,7 @@ class ImportButtonHandler:
     def _process_next_ocr_image(self):
         """处理OCR队列中的下一张图片"""
         from ai_manager import get_ai_manager, AIRequest, AIScene
+        from PyQt5.QtCore import QThread, pyqtSignal
         from PIL import Image
         import io
         import base64
@@ -1285,6 +1500,10 @@ class GenerationPage(QWidget):
         # 获取共享内存管理器
         self.shared_manager = get_shared_memory_manager()
         
+        # 获取设置管理器
+        from misc_func import SettingsManager
+        self.settings_manager = parent.settings_manager if parent and hasattr(parent, 'settings_manager') else SettingsManager()
+        
         # 初始化颜色
         if parent:
             self.text_color = parent.settings_manager.get_Custom_value('text_color', '#333333')
@@ -1300,6 +1519,9 @@ class GenerationPage(QWidget):
         self.sentence_manager = SentenceAudioManager()
         self.import_handler = ImportButtonHandler(self)
         
+        # 从设置中加载默认配置
+        self._load_default_settings()
+        
         # 当前文本
         self.current_text = ""
         
@@ -1311,9 +1533,6 @@ class GenerationPage(QWidget):
         self._init_ui()
         self._connect_signals()
         self._connect_shared_memory_signals()
-        
-        # 初始化后加载默认音色
-        QTimer.singleShot(100, self._load_and_apply_default_voice)
         
         debug_logger.output("generation_page_neo.py", LogLevel.INFO, "GenerationPage 初始化完成", fold_code="GEN_INIT")
     
@@ -1469,6 +1688,7 @@ class GenerationPage(QWidget):
         self.pause_param_widget.pause_settings_changed.connect(self._on_pause_settings_changed)
         self.pause_param_widget.speed_changed.connect(self._on_speed_changed)
         self.pause_param_widget.volume_changed.connect(self._on_gen_volume_changed)
+        self.pause_param_widget.punctuation_hint_changed.connect(self._on_punctuation_hint_changed)
         
         self.voice_list_widget = VoiceListWidget(self)
         self.voice_list_widget.voice_selected.connect(self._on_voice_selected)
@@ -1853,6 +2073,16 @@ class GenerationPage(QWidget):
             self.sentence_manager.set_sentences(sentences)
             self._update_sentence_list()
     
+    def _on_punctuation_hint_changed(self, enabled):
+        """标点提示开关改变"""
+        debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"标点提示开关变更: {enabled}", fold_code="GEN_PAUSE")
+        self.sentence_splitter.set_punctuation_hint(enabled)
+        # 重新分割文本
+        if self.current_text:
+            sentences = self.sentence_splitter.split_text(self.current_text)
+            self.sentence_manager.set_sentences(sentences)
+            self._update_sentence_list()
+    
     def _on_speed_changed(self, value):
         """语速改变"""
         debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"语速变更: {value}", fold_code="GEN_PARAM")
@@ -1868,55 +2098,43 @@ class GenerationPage(QWidget):
         debug_logger.output("generation_page_neo.py", LogLevel.INFO, f"音色选择: {voice_id}", fold_code="GEN_VOICE")
         self.config.voice = voice_id
     
-    def _load_and_apply_default_voice(self):
-        """加载并应用默认音色"""
-        try:
-            # 获取当前使用的模型
-            current_model = self._get_current_model()
-            
-            if not current_model:
-                debug_logger.output("generation_page_neo.py", LogLevel.WARNING, 
-                                  "无法获取当前模型", fold_code="GEN_VOICE")
-                return
-            
-            # 加载该模型的默认音色
-            default_voice = self.voice_list_widget._load_default_voice_for_model(current_model)
-            
-            if default_voice:
-                # 应用默认音色
-                self.config.voice = default_voice
-                self.voice_list_widget.select_voice(default_voice)
-                debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
-                                  f"已应用默认音色: {default_voice}", fold_code="GEN_VOICE")
-            else:
-                # 没有配置默认音色，仅记录日志，不弹窗
-                debug_logger.output("generation_page_neo.py", LogLevel.WARNING, 
-                                  f"模型 {current_model} 未配置默认音色", fold_code="GEN_VOICE")
-                
-        except Exception as e:
-            debug_logger.output("generation_page_neo.py", LogLevel.ERROR, 
-                              f"加载默认音色失败: {e}", fold_code="GEN_VOICE")
-    
-    def _get_current_model(self):
-        """获取当前使用的TTS模型
+    def _load_default_settings(self):
+        """从设置中加载默认配置"""
+        import json
         
-        Returns:
-            当前模型名称，格式如 "Microsoft/edge-tts"
-        """
         try:
-            # 直接从voice_list_widget获取当前模型
-            if hasattr(self, 'voice_list_widget') and self.voice_list_widget.current_model:
-                return self.voice_list_widget.current_model
-            
-            # 默认返回EdgeTTS
+            # 加载标点提示开关
+            hint_enabled = self.settings_manager.Custom.get_value('default_punctuation_hint', 'True')
+            self.sentence_splitter.set_punctuation_hint(hint_enabled.lower() == 'true')
             debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
-                              "使用默认模型: Microsoft/edge-tts", fold_code="GEN_VOICE")
-            return "Microsoft/edge-tts"
+                               f"加载默认标点提示设置: {hint_enabled}", fold_code="GEN_INIT")
             
+            # 加载停顿符号配置
+            marks_str = self.settings_manager.Custom.get_value('default_pause_marks', '')
+            if marks_str:
+                try:
+                    pause_marks = json.loads(marks_str)
+                    # 更新 PAUSE_MARKS
+                    self.sentence_splitter.PAUSE_MARKS.clear()
+                    for name, config in pause_marks.items():
+                        symbol = config['symbol']
+                        self.sentence_splitter.PAUSE_MARKS[name] = (symbol, symbol)
+                    
+                    # 更新启用的标记
+                    enabled_marks = set()
+                    for name, config in pause_marks.items():
+                        if config.get('enabled', True):
+                            enabled_marks.add(name)
+                    self.sentence_splitter.set_pause_marks(enabled_marks)
+                    
+                    debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
+                                       f"加载自定义停顿符号配置，共{len(pause_marks)}个", fold_code="GEN_INIT")
+                except Exception as e:
+                    debug_logger.output("generation_page_neo.py", LogLevel.ERROR, 
+                                       f"加载停顿符号配置失败: {str(e)}", fold_code="GEN_INIT")
         except Exception as e:
             debug_logger.output("generation_page_neo.py", LogLevel.ERROR, 
-                              f"获取当前模型失败: {e}", fold_code="GEN_VOICE")
-            return "Microsoft/edge-tts"
+                               f"加载默认设置失败: {str(e)}", fold_code="GEN_INIT")
     
     def _on_sentence_clicked_in_list(self, idx):
         """句子列表中的句子被点击"""
@@ -2141,29 +2359,6 @@ class GenerationPage(QWidget):
         if self.key_button_state == "next_sentence":
             self._handle_key_button_next_sentence()
             return
-        
-        # 检查是否配置了默认音色
-        current_model = self._get_current_model()
-        if current_model:
-            default_voice = self.voice_list_widget._load_default_voice_for_model(current_model)
-            if not default_voice:
-                # 没有配置默认音色，弹窗提醒
-                debug_logger.output("generation_page_neo.py", LogLevel.WARNING, 
-                                  f"模型 {current_model} 未配置默认音色", fold_code="GEN_VOICE")
-                
-                message = (
-                    "您尚未为当前模型配置默认音色。\n\n"
-                    f"当前模型: {current_model}\n\n"
-                    "请在右侧音色列表选项卡中选择一个音色，"
-                    "然后在设置页面的AI设置-默认音色设置中"
-                    "为该模型配置默认音色。"
-                )
-                
-                QMessageBox.information(self, "提示", message)
-                
-                # 自动切换到音色列表选项卡
-                self._switch_tab(2)
-                return
         
         text_content = self.text_edit.toPlainText()
         if not text_content.strip():

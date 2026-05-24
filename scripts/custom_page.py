@@ -524,6 +524,23 @@ class HotkeyControlWidget(QGroupBox):
         else:
             use_sdl = bool(use_sdl_raw)
         
+        # 读取键盘钩子模式状态
+        use_hook_raw = self.settings_manager.Custom.get_value("use_keyboard_hook", True)  # 默认开启
+        if isinstance(use_hook_raw, str):
+            use_hook = use_hook_raw.lower() == 'true'
+        else:
+            use_hook = bool(use_hook_raw)
+        
+        # 键盘钩子模式开关
+        self.keyboard_hook_check = QCheckBox("不受焦点窗口影响")
+        self.keyboard_hook_check.setStyleSheet(f"color: {text_color}; font-weight: bold;")
+        self.keyboard_hook_check.setChecked(use_hook)
+        self.keyboard_hook_check.toggled.connect(self._on_keyboard_hook_toggled)
+        self.keyboard_hook_check.setToolTip(
+            "启用：直接捕获键盘按键状态，避免其他应用（推荐）\n"
+            "禁用：仅当应用处于前台时响应热键（传统模式，可能导致操作不生效）"
+        )
+        
         self.sdl_mode_check = QCheckBox("高级监听模式（理论支持所有设备）")
         self.sdl_mode_check.setStyleSheet(f"color: {text_color}; font-weight: bold;")
         self.sdl_mode_check.setChecked(use_sdl)
@@ -536,6 +553,7 @@ class HotkeyControlWidget(QGroupBox):
         self.device_combo.setVisible(use_sdl) # 初始显示状态取决于 SDL 模式
         self.device_combo.currentIndexChanged.connect(self._on_device_changed)
         
+        control_layout.addWidget(self.keyboard_hook_check)
         control_layout.addWidget(self.sdl_mode_check)
         control_layout.addWidget(self.device_combo)
         control_layout.addStretch()
@@ -685,6 +703,8 @@ class HotkeyControlWidget(QGroupBox):
             btn.setFont(font)
         if hasattr(self, 'reset_btn'):
             self.reset_btn.setFont(font)
+        if hasattr(self, 'keyboard_hook_check'):
+            self.keyboard_hook_check.setFont(font)
         if hasattr(self, 'sdl_mode_check'):
             self.sdl_mode_check.setFont(font)
         if hasattr(self, 'device_combo'):
@@ -730,6 +750,37 @@ class HotkeyControlWidget(QGroupBox):
             height: 0px;
         }}
         """
+
+    def _on_keyboard_hook_toggled(self, checked: bool):
+        """切换键盘钩子模式"""
+        if not self.hotkey_manager.keyboard_hook.is_available():
+            QMessageBox.warning(
+                self, "错误", 
+                "键盘钩子功能不可用。\n请确保已安装 pynput 库。\n\n安装命令: pip install pynput"
+            )
+            self.keyboard_hook_check.blockSignals(True)
+            self.keyboard_hook_check.setChecked(False)
+            self.keyboard_hook_check.blockSignals(False)
+            return
+        
+        actual_state = self.hotkey_manager.set_keyboard_hook_mode(checked)
+        
+        if checked and not actual_state:
+            # 初始化失败
+            QMessageBox.warning(
+                self, "错误", 
+                "无法启动键盘钩子监听。\n请检查系统权限或重启软件后重试。"
+            )
+            self.keyboard_hook_check.blockSignals(True)
+            self.keyboard_hook_check.setChecked(False)
+            self.keyboard_hook_check.blockSignals(False)
+            return
+        
+        # 显示提示信息
+        if actual_state:
+            debug_logger.output("custom_page.py", LogLevel.INFO, 
+                               "键盘钩子模式已启用，热键将在后台持续监听", 
+                               fold_code="CUSTOM_HOTKEY")
 
     def _on_sdl_mode_toggled(self, checked: bool):
         """切换 SDL 模式"""

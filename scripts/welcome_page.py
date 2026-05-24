@@ -15,6 +15,8 @@ from PyQt5.QtGui import QFont, QPixmap, QDesktopServices, QFontDatabase, QIcon
 from debug_logger import debug_logger, LogLevel
 from misc_func import SettingsManager, get_app_base_path
 import mp_about
+from network_latency_checker import NetworkLatencyChecker
+from resource_urls import get_resource_url
 
 class ClickableLabel(QLabel):
     """可点击的标签，用于切换字体"""
@@ -54,6 +56,13 @@ class WelcomePage(QWidget):
         self.intro_text = "加载中..."
         self.current_slogan_font_name = self.global_font
         
+        # Logo相关
+        self.original_logo_pixmap = None  # 保存原始Logo图片
+        
+        # 初始化网络延迟检测器
+        self.latency_checker = NetworkLatencyChecker()
+        self.latency_checker.latency_updated.connect(self._on_latency_updated)
+        
         # 初始化UI
         self.init_ui()
         
@@ -76,6 +85,10 @@ class WelcomePage(QWidget):
         
         # 随机切换标语字体
         self._change_slogan_font()
+        
+        # 启动网络延迟检测
+        self.latency_checker.check_once()  # 立即检测一次
+        self.latency_checker.start_checking(interval=30)  # 每30秒检测一次
 
     def _connect_shared_memory_signals(self):
         """连接共享内存信号"""
@@ -90,10 +103,16 @@ class WelcomePage(QWidget):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(20)
         
-        # 1. 顶部 Logo 横幅
+        # 1. 顶部 Logo 横幅 + 网络状态
         self.logo_card = QFrame()
         self.logo_card.setStyleSheet("background-color: transparent; border: none;")
-        logo_layout = QVBoxLayout(self.logo_card)
+        logo_main_layout = QHBoxLayout(self.logo_card)
+        logo_main_layout.setContentsMargins(0, 0, 0, 0)
+        logo_main_layout.setSpacing(20)
+        
+        # 1.1 Logo部分
+        logo_container = QWidget()
+        logo_layout = QVBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
         
         self.logo_label = QLabel()
@@ -101,6 +120,54 @@ class WelcomePage(QWidget):
         self.logo_label.setMinimumHeight(180)
         self.logo_label.setText("正在获取 Logo...")
         logo_layout.addWidget(self.logo_label)
+        
+        # 1.2 网络状态卡片
+        self.network_status_card = QFrame()
+        self.network_status_card.setObjectName("whiteCard")
+        self.network_status_card.setFixedWidth(280)
+        network_layout = QVBoxLayout(self.network_status_card)
+        network_layout.setContentsMargins(15, 15, 15, 15)
+        network_layout.setSpacing(10)
+        
+        # 标题
+        network_title = QLabel("在线服务可用性检测")
+        network_title.setObjectName("networkTitle")
+        network_title.setStyleSheet("font-weight: bold; color: #333;")
+        network_title.setAlignment(Qt.AlignCenter)
+        network_layout.addWidget(network_title)
+        
+        # Github延迟
+        github_row = QHBoxLayout()
+        github_label = QLabel("Github")
+        github_label.setStyleSheet("color: #555;")
+        self.github_latency = QLabel("999ms")
+        self.github_latency.setObjectName("latencyValue")
+        self.github_latency.setStyleSheet("font-weight: bold; color: #E74C3C;")
+        self.github_latency.setAlignment(Qt.AlignRight)
+        github_row.addWidget(github_label)
+        github_row.addStretch()
+        github_row.addWidget(self.github_latency)
+        network_layout.addLayout(github_row)
+        
+        # 国内资源延迟
+        domestic_row = QHBoxLayout()
+        domestic_label = QLabel("国内资源")
+        domestic_label.setStyleSheet("color: #555;")
+        self.domestic_latency = QLabel("16ms")
+        self.domestic_latency.setObjectName("latencyValue")
+        self.domestic_latency.setStyleSheet("font-weight: bold; color: #27AE60;")
+        self.domestic_latency.setAlignment(Qt.AlignRight)
+        domestic_row.addWidget(domestic_label)
+        domestic_row.addStretch()
+        domestic_row.addWidget(self.domestic_latency)
+        network_layout.addLayout(domestic_row)
+        
+        network_layout.addStretch()
+        
+        # 组装Logo区域
+        logo_main_layout.addWidget(logo_container, stretch=7)
+        logo_main_layout.addWidget(self.network_status_card, stretch=3)
+        
         self.main_layout.addWidget(self.logo_card)
         
         # 2. 中间内容网格
@@ -126,9 +193,9 @@ class WelcomePage(QWidget):
         nav_layout.setContentsMargins(15, 15, 15, 15)
         nav_layout.setSpacing(20)
         
-        self.btn_dictation = self._create_nav_button("听写", "https://CN-Air84.github.io/YuanYue-TTS/ico/Dictation.png", 1)
-        self.btn_settings = self._create_nav_button("设置", "https://CN-Air84.github.io/YuanYue-TTS/ico/Settings.png", 2)
-        self.btn_misc = self._create_nav_button("杂项", "https://CN-Air84.github.io/YuanYue-TTS/ico/Misc.png", 4)
+        self.btn_dictation = self._create_nav_button("听写", get_resource_url('icon', 'dictation'), 1)
+        self.btn_settings = self._create_nav_button("设置", get_resource_url('icon', 'settings'), 2)
+        self.btn_misc = self._create_nav_button("杂项", get_resource_url('icon', 'misc'), 4)
         
         nav_layout.addWidget(self.btn_dictation)
         nav_layout.addWidget(self.btn_settings)
@@ -213,7 +280,7 @@ class WelcomePage(QWidget):
         # 第二行: 按钮 (靠右)
         btns_row = QHBoxLayout()
         self.github_btn = QPushButton("Github 主页")
-        self.github_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/CN-Air84/YuanYue-TTS")))
+        self.github_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(get_resource_url('repo'))))
         
         self.update_btn = QPushButton("检查更新")
         self.update_btn.clicked.connect(self._check_updates)
@@ -401,6 +468,20 @@ class WelcomePage(QWidget):
         self.btn_settings.setFont(nav_font)
         self.btn_misc.setFont(nav_font)
         
+        # 6. 网络状态卡片
+        network_title_font = QFont(self.global_font, font_base + 1, QFont.Bold)
+        network_content_font = QFont(self.global_font, font_base)
+        
+        # 查找网络状态卡片中的标题和标签
+        if hasattr(self, 'network_status_card'):
+            for child in self.network_status_card.findChildren(QLabel):
+                if child.objectName() == "networkTitle":
+                    child.setFont(network_title_font)
+                elif child.objectName() == "latencyValue":
+                    child.setFont(QFont(self.global_font, font_base + 2, QFont.Bold))
+                else:
+                    child.setFont(network_content_font)
+        
         # 调整导航按钮图标大小 - 放大为原先的 133%
         icon_size = int(48 * 1.33 * ratio)
         self.btn_dictation.setIconSize(QSize(icon_size, icon_size))
@@ -412,6 +493,14 @@ class WelcomePage(QWidget):
         self.btn_dictation.setFixedSize(btn_size, btn_size)
         self.btn_settings.setFixedSize(btn_size, btn_size)
         self.btn_misc.setFixedSize(btn_size, btn_size)
+        
+        # 调整网络状态卡片宽度
+        if hasattr(self, 'network_status_card'):
+            card_width = int(280 * ratio)
+            self.network_status_card.setFixedWidth(card_width)
+        
+        # 调整Logo大小
+        self._scale_logo()
 
     def _update_time(self):
         """更新时间显示"""
@@ -472,7 +561,7 @@ class WelcomePage(QWidget):
         """开始异步加载网络数据"""
         debug_logger.output("welcome_page.py", LogLevel.INFO, "Starting asynchronous data loading...", fold_code="WELCOME_ASYNC")
         # 1. 加载 Logo
-        logo_url = "https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/icon_full_1080%20_inside.png?raw=true"
+        logo_url = get_resource_url('logo')
         logo_path = os.path.join(self.cache_dir, "logo_banner.png")
         if os.path.exists(logo_path):
             debug_logger.output("welcome_page.py", LogLevel.INFO, "Using cached logo banner", fold_code="WELCOME_ASYNC")
@@ -494,16 +583,37 @@ class WelcomePage(QWidget):
             github_acceleration = 0
         
         final_url = original_url
-        if "github.com" in original_url and "blob" in original_url:
-            final_url = original_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
         
-        mirrors = {
-            1: "https://ghfast.top/",
-            2: "https://gh-proxy.org/",
-            3: "https://hk.gh-proxy.org/",
-            4: "https://edgeone.gh-proxy.org/"
-        }
-        return mirrors.get(github_acceleration, "") + final_url
+        # 根据资源源进行不同的 URL 转换
+        from resource_urls import ResourceURLManager
+        current_source = ResourceURLManager.get_current_source()
+        
+        if current_source == 'github':
+            # GitHub: 将 blob URL 转换为 raw URL
+            if "github.com" in original_url and "blob" in original_url:
+                final_url = original_url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+        elif current_source == 'gitee':
+            # Gitee: 将 blob URL 转换为 raw URL
+            if "gitee.com" in original_url and "blob" in original_url:
+                final_url = original_url.replace("/blob/", "/raw/")
+        elif current_source == 'custom':
+            # Custom: 自建源的 URL 转换（待实现）
+            # 等官网建好后根据实际 URL 格式修改
+            pass
+        
+        # 应用镜像加速（仅 GitHub）
+        if current_source == 'github' and github_acceleration > 0:
+            mirrors = {
+                1: "https://ghfast.top/",
+                2: "https://gh-proxy.org/",
+                3: "https://hk.gh-proxy.org/",
+                4: "https://edgeone.gh-proxy.org/"
+            }
+            mirror_prefix = mirrors.get(github_acceleration, "")
+            if mirror_prefix:
+                final_url = mirror_prefix + final_url
+        
+        return final_url
 
     def _download_image_async(self, url, local_path, tag):
         """异步下载图片"""
@@ -527,7 +637,7 @@ class WelcomePage(QWidget):
     def _fetch_echo_zen_task(self):
         """获取回声树洞"""
         try:
-            url = "https://CN-Air84.github.io/YuanYue-TTS/docs/echo_zen.html"
+            url = get_resource_url('doc', 'echo_zen')
             debug_logger.output("welcome_page.py", LogLevel.INFO, "Fetching echo zen quotes...", fold_code="WELCOME_ASYNC")
             response = requests.get(url, timeout=10)
             response.encoding = 'utf-8'
@@ -546,7 +656,7 @@ class WelcomePage(QWidget):
     def _fetch_intro_task(self):
         """获取程序简介"""
         try:
-            url = "https://CN-Air84.github.io/YuanYue-TTS/docs/intro.html"
+            url = get_resource_url('doc', 'intro')
             debug_logger.output("welcome_page.py", LogLevel.INFO, "Fetching program intro...", fold_code="WELCOME_ASYNC")
             response = requests.get(url, timeout=10)
             response.encoding = 'utf-8'
@@ -587,12 +697,49 @@ class WelcomePage(QWidget):
             # 图标大小在 _update_fonts 中统一处理
 
     def _display_logo(self, path):
+        """显示Logo图片"""
         pixmap = QPixmap(path)
         if not pixmap.isNull():
-            # 缩放到 Logo 标签高度
-            scaled_pixmap = pixmap.scaledToHeight(180, Qt.SmoothTransformation)
+            # 保存原始pixmap供后续缩放使用
+            self.original_logo_pixmap = pixmap
+            # 初始缩放
+            self._scale_logo()
+    
+    def _scale_logo(self):
+        """根据当前窗口大小缩放Logo"""
+        if self.original_logo_pixmap is None or self.original_logo_pixmap.isNull():
+            return
+        
+        if not self.parent_window:
+            # 如果没有父窗口，使用默认高度
+            scaled_pixmap = self.original_logo_pixmap.scaledToHeight(180, Qt.SmoothTransformation)
             self.logo_label.setPixmap(scaled_pixmap)
             self.logo_label.setText("")
+            return
+        
+        # 根据窗口大小计算Logo高度
+        current_height = self.parent_window.height()
+        default_height = 720
+        
+        # Logo高度基准为180px，随窗口高度缩放
+        base_logo_height = 180
+        height_ratio = current_height / default_height
+        logo_height = int(base_logo_height * height_ratio)
+        
+        # 限制Logo高度范围（最小120px，最大300px）
+        logo_height = max(120, min(300, logo_height))
+        
+        # 缩放Logo
+        scaled_pixmap = self.original_logo_pixmap.scaledToHeight(logo_height, Qt.SmoothTransformation)
+        self.logo_label.setPixmap(scaled_pixmap)
+        self.logo_label.setText("")
+        
+        # 更新Logo标签的最小高度
+        self.logo_label.setMinimumHeight(logo_height)
+        
+        debug_logger.output("welcome_page.py", LogLevel.DEBUG, 
+                          f"Logo缩放: 高度={logo_height}px (比例={height_ratio:.2f})", 
+                          fold_code="WELCOME_LOGO")
 
     def _reload_page(self, settings_data):
         """重新加载页面以应用最新设置"""
@@ -616,3 +763,49 @@ class WelcomePage(QWidget):
         if page_name in ["custom", "custom_page"] or any(k in settings_data for k in ["background_color", "card_background_color", "text_color"]):
             debug_logger.output("welcome_page.py", LogLevel.INFO, f"Settings change received from shared memory (source: {page_name})", fold_code="WELCOME_RELOAD")
             self._reload_page(settings_data)
+    
+    def _on_latency_updated(self, server_name, latency_ms, success, status):
+        """网络延迟更新回调
+        
+        Args:
+            server_name: 服务器名称 ('baidu' 或 'github')
+            latency_ms: 延迟毫秒数
+            success: 是否成功连接
+            status: 状态描述 ('正常', '超时', 'DNS错误', '错误')
+        """
+        # 根据状态设置显示文本和颜色
+        if not success:
+            color = "#E74C3C"  # 红色 - 失败
+            if status == "超时":
+                text = "超时"
+            elif status == "DNS错误":
+                text = "DNS错误"
+            else:
+                text = "连接失败"
+        elif latency_ms < 100:
+            color = "#27AE60"  # 绿色 - 良好
+            text = f"{latency_ms}ms"
+        elif latency_ms < 300:
+            color = "#F39C12"  # 橙色 - 一般
+            text = f"{latency_ms}ms"
+        else:
+            color = "#E74C3C"  # 红色 - 较差
+            text = f"{latency_ms}ms"
+        
+        # 更新对应的标签
+        if server_name == 'github':
+            self.github_latency.setText(text)
+            self.github_latency.setStyleSheet(f"font-weight: bold; color: {color};")
+        elif server_name == 'baidu':
+            self.domestic_latency.setText(text)
+            self.domestic_latency.setStyleSheet(f"font-weight: bold; color: {color};")
+        
+        debug_logger.output("welcome_page.py", LogLevel.DEBUG, 
+                          f"更新 {server_name} 延迟显示: {text} ({color})", 
+                          fold_code="WELCOME_NET")
+    
+    def closeEvent(self, event):
+        """窗口关闭事件 - 停止网络检测"""
+        if hasattr(self, 'latency_checker'):
+            self.latency_checker.stop_checking()
+        super().closeEvent(event)

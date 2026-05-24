@@ -22,12 +22,12 @@ pygame = None
 from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QGraphicsOpacityEffect, 
                              QApplication, QFrame, QPushButton, QScrollArea, 
                              QDialog, QHBoxLayout, QSizePolicy, QLineEdit, QGraphicsDropShadowEffect,
-                             QComboBox, QCheckBox, QMessageBox)
+                              QComboBox, QFontComboBox, QCheckBox, QSpinBox, QMessageBox)
 from PyQt5.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve, 
-                          pyqtSignal, QRect, QPoint, QUrl, QSize, QParallelAnimationGroup,
+                          pyqtSignal, QRect, QPoint, QSize, QParallelAnimationGroup,
                           QAbstractAnimation, QMimeData, QThread)
 from PyQt5.QtGui import (QPainter, QColor, QPen, QFont, QBrush, QPainterPath, 
-                         QMouseEvent, QPixmap, QDesktopServices, QCursor, QFontDatabase,
+                         QMouseEvent, QPixmap, QCursor, QFontDatabase,
                          QDrag, QImage)
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
@@ -35,9 +35,12 @@ from PyQt5.QtMultimediaWidgets import QVideoWidget
 import requests
 from misc_func import get_app_base_path, SettingsManager
 from debug_logger import debug_logger, LogLevel
+from resource_urls import get_resource_url
 
 class LoadingSpinner(QWidget):
     """Windows 10 风格的圆环旋转加载动画"""
+    completion_finished = pyqtSignal()  # 完成动画结束信号
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(64, 64)
@@ -49,6 +52,16 @@ class LoadingSpinner(QWidget):
         self.dots = []
         for i in range(5):
             self.dots.append({'angle': -i * 20, 'speed': 0})
+        
+        # 完成动画相关状态
+        self.is_completing = False  # 是否正在执行完成动画
+        self.completion_stage = 0  # 0: 连线渐显, 1: 旋转两圈, 2: 变绿, 3: 圆环到勾的过渡, 4: 画勾
+        self.line_opacity = 0.0  # 连线透明度
+        self.extra_rotations = 0  # 额外旋转的圈数
+        self.green_progress = 0.0  # 变绿进度 0-1
+        self.morph_progress = 0.0  # 圆环变形到勾的进度 0-1
+        self.checkmark_progress = 0.0  # 勾的绘制进度 0-1
+        self.completion_start_angle = 0  # 开始完成动画时的角度
 
     def showEvent(self, event):
         self.timer.start(16)
@@ -58,8 +71,70 @@ class LoadingSpinner(QWidget):
         self.timer.stop()
         super().hideEvent(event)
 
+    def start_completion_animation(self):
+        """开始完成动画"""
+        self.is_completing = True
+        self.completion_stage = 0
+        self.line_opacity = 0.0
+        self.extra_rotations = 0
+        self.green_progress = 0.0
+        self.morph_progress = 0.0
+        self.checkmark_progress = 0.0
+        self.completion_start_angle = self.angle
+        debug_logger.output("onboarding_page.py", LogLevel.INFO, "开始完成动画", fold_code="ONBOARD_ANIM")
+
     def update_angle(self):
-        self.angle = (self.angle + 5) % 360
+        if not self.is_completing:
+            # 正常加载动画
+            self.angle = (self.angle + 5) % 360
+        else:
+            # 完成动画逻辑
+            if self.completion_stage == 0:
+                # 阶段0: 连线渐显 (0.5秒)
+                self.line_opacity += 0.016 / 0.5  # 16ms per frame
+                if self.line_opacity >= 1.0:
+                    self.line_opacity = 1.0
+                    self.completion_stage = 1
+                    debug_logger.output("onboarding_page.py", LogLevel.INFO, "连线渐显完成，开始旋转", fold_code="ONBOARD_ANIM")
+                self.angle = (self.angle + 5) % 360
+                
+            elif self.completion_stage == 1:
+                # 阶段1: 继续旋转两圈
+                self.angle = (self.angle + 5) % 360
+                if self.angle < (self.completion_start_angle + 10) % 360:
+                    self.extra_rotations += 1
+                    if self.extra_rotations >= 2:
+                        self.completion_stage = 2
+                        debug_logger.output("onboarding_page.py", LogLevel.INFO, "旋转两圈完成，开始变绿", fold_code="ONBOARD_ANIM")
+                        
+            elif self.completion_stage == 2:
+                # 阶段2: 转到225度并变绿
+                self.angle = (self.angle + 5) % 360
+                # 当角度接近225度时开始变绿
+                if 220 <= self.angle <= 230:
+                    self.green_progress += 0.05
+                    if self.green_progress >= 1.0:
+                        self.green_progress = 1.0
+                        self.completion_stage = 3
+                        debug_logger.output("onboarding_page.py", LogLevel.INFO, "变绿完成，开始圆环变形", fold_code="ONBOARD_ANIM")
+                        
+            elif self.completion_stage == 3:
+                # 阶段3: 圆环变形到勾的形状 (0.3秒)
+                self.morph_progress += 0.016 / 0.3
+                if self.morph_progress >= 1.0:
+                    self.morph_progress = 1.0
+                    self.completion_stage = 4
+                    debug_logger.output("onboarding_page.py", LogLevel.INFO, "圆环变形完成，开始画勾", fold_code="ONBOARD_ANIM")
+                        
+            elif self.completion_stage == 4:
+                # 阶段4: 画勾
+                self.checkmark_progress += 0.02
+                if self.checkmark_progress >= 1.0:
+                    self.checkmark_progress = 1.0
+                    self.timer.stop()
+                    debug_logger.output("onboarding_page.py", LogLevel.INFO, "完成动画结束", fold_code="ONBOARD_ANIM")
+                    QTimer.singleShot(500, self.completion_finished.emit)
+                    
         self.update()
 
     def paintEvent(self, event):
@@ -68,23 +143,170 @@ class LoadingSpinner(QWidget):
         
         center_x = self.width() / 2
         center_y = self.height() / 2
-        radius = 24
+        radius = 24  # 圆的半径，直径=48
         dot_radius = 3
         
-        painter.translate(center_x, center_y)
-        painter.rotate(self.angle)
+        # 计算颜色（蓝色到绿色的渐变）
+        if self.is_completing and self.green_progress > 0:
+            # 从蓝色 (66, 133, 244) 渐变到绿色 (76, 175, 80)
+            r = int(66 + (76 - 66) * self.green_progress)
+            g = int(133 + (175 - 133) * self.green_progress)
+            b = int(244 + (80 - 244) * self.green_progress)
+            color = QColor(r, g, b)
+        else:
+            color = QColor(66, 133, 244)
         
-        for i in range(5):
-            painter.save()
-            current_angle = -i * 25
-            painter.rotate(current_angle)
-            painter.translate(radius, 0)
+        if self.completion_stage < 3:
+            # 阶段0-2: 绘制旋转的圆环
+            painter.translate(center_x, center_y)
+            painter.rotate(self.angle)
             
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(66, 133, 244))
-            painter.drawEllipse(QPoint(0, 0), dot_radius, dot_radius)
+            # 绘制点
+            for i in range(5):
+                painter.save()
+                current_angle = -i * 25
+                painter.rotate(current_angle)
+                painter.translate(radius, 0)
+                
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(color)
+                painter.drawEllipse(QPoint(0, 0), dot_radius, dot_radius)
+                painter.restore()
             
-            painter.restore()
+            # 绘制连线（完成动画时）
+            if self.is_completing and self.line_opacity > 0:
+                painter.resetTransform()
+                painter.translate(center_x, center_y)
+                painter.rotate(self.angle)
+                
+                # 设置连线的透明度和颜色
+                line_color = QColor(color)
+                line_color.setAlphaF(self.line_opacity)
+                # 连线宽度等于圆点直径 (dot_radius * 2 = 6)
+                painter.setPen(QPen(line_color, dot_radius * 2))
+                
+                # 绘制连接所有点的曲线
+                path = QPainterPath()
+                for i in range(5):
+                    angle_rad = math.radians(-i * 25)
+                    x = radius * math.cos(angle_rad)
+                    y = radius * math.sin(angle_rad)
+                    if i == 0:
+                        path.moveTo(x, y)
+                    else:
+                        path.lineTo(x, y)
+                painter.drawPath(path)
+                
+        elif self.completion_stage == 3:
+            # 阶段3: 圆环变形到勾的过渡动画
+            painter.translate(center_x, center_y)
+            
+            # 勾的坐标（边界框为48x48，与圆直径相同）
+            # 调整勾的坐标使其完全在48x48的边界框内
+            # 勾的形状：左下(-16, 4) -> 中间(-4, 16) -> 右上(20, -20)
+            # 缩放到48x48边界框内：乘以系数使最大范围为48
+            scale = 0.6  # 缩放系数，使勾的视觉大小合适
+            check_p1_x = -16 * scale  # 左下起点
+            check_p1_y = 4 * scale
+            check_p2_x = -4 * scale   # 中间转折点
+            check_p2_y = 16 * scale
+            check_p3_x = 20 * scale   # 右上终点
+            check_p3_y = -20 * scale
+            
+            # 使用morph_progress进行插值
+            t = self.morph_progress
+            # 使用更平滑的缓动函数
+            t_eased = t * t * t * (t * (t * 6 - 15) + 10)  # smootherstep
+            
+            # 绘制变形中的路径
+            painter.setPen(QPen(color, dot_radius * 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            painter.setBrush(Qt.NoBrush)
+            
+            # 创建圆形路径（作为起始形状）
+            # 将圆周分成多个点进行采样
+            num_points = 100  # 增加采样点数使变形更平滑
+            
+            path = QPainterPath()
+            
+            for i in range(num_points):
+                # 圆上的参数 t_circle: 0 到 1
+                t_circle = i / num_points
+                angle_rad = t_circle * 2 * math.pi
+                
+                # 圆上的点
+                circle_x = radius * math.cos(angle_rad)
+                circle_y = radius * math.sin(angle_rad)
+                
+                # 将圆周参数映射到勾的路径参数
+                # 勾有两段：第一段从p1到p2，第二段从p2到p3
+                # 将圆周的0-0.3映射到第一段，0.3-1.0映射到第二段
+                if t_circle < 0.3:
+                    # 第一段：左下到中间
+                    segment_t = t_circle / 0.3
+                    target_x = check_p1_x + (check_p2_x - check_p1_x) * segment_t
+                    target_y = check_p1_y + (check_p2_y - check_p1_y) * segment_t
+                else:
+                    # 第二段：中间到右上
+                    segment_t = (t_circle - 0.3) / 0.7
+                    target_x = check_p2_x + (check_p3_x - check_p2_x) * segment_t
+                    target_y = check_p2_y + (check_p3_y - check_p2_y) * segment_t
+                
+                # 在圆和勾之间插值
+                final_x = circle_x * (1 - t_eased) + target_x * t_eased
+                final_y = circle_y * (1 - t_eased) + target_y * t_eased
+                
+                if i == 0:
+                    path.moveTo(final_x, final_y)
+                else:
+                    path.lineTo(final_x, final_y)
+            
+            # 闭合路径（在变形早期阶段）
+            if t_eased < 0.5:
+                path.closeSubpath()
+            
+            painter.drawPath(path)
+                
+        else:
+            # 阶段4: 绘制勾（带绘制进度）
+            painter.translate(center_x, center_y)
+            
+            # 绘制勾的路径（边界框为48x48，与圆直径相同）
+            check_color = QColor(76, 175, 80)  # 绿色
+            painter.setPen(QPen(check_color, dot_radius * 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            
+            # 使用与阶段3相同的勾坐标
+            scale = 0.6
+            p1_x = -16 * scale  # 左下起点
+            p1_y = 4 * scale
+            p2_x = -4 * scale   # 中间转折点
+            p2_y = 16 * scale
+            p3_x = 20 * scale   # 右上终点
+            p3_y = -20 * scale
+            
+            path = QPainterPath()
+            
+            # 根据进度绘制勾
+            if self.checkmark_progress <= 0.4:
+                # 前40%绘制第一段（左下到中间）
+                progress = self.checkmark_progress / 0.4
+                current_x = p1_x + (p2_x - p1_x) * progress
+                current_y = p1_y + (p2_y - p1_y) * progress
+                path.moveTo(p1_x, p1_y)
+                path.lineTo(current_x, current_y)
+            else:
+                # 第一段已完成
+                path.moveTo(p1_x, p1_y)
+                path.lineTo(p2_x, p2_y)
+                
+                # 后60%绘制第二段（中间到右上）
+                progress = (self.checkmark_progress - 0.4) / 0.6
+                current_x = p2_x + (p3_x - p2_x) * progress
+                current_y = p2_y + (p3_y - p2_y) * progress
+                path.lineTo(current_x, current_y)
+            
+            painter.drawPath(path)
+        
+        painter.end()
 
 class DownloadWorker(QThread):
     download_finished = pyqtSignal(bool, str, str)
@@ -127,8 +349,9 @@ class LoadingScene(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.download_queue = []
-        self.current_download = None
+        self.download_workers = []  # 存储所有下载线程
+        self.completed_downloads = 0  # 已完成的下载数量
+        self.total_downloads = 0  # 总下载数量
         self.setup_ui()
         
     def setup_ui(self):
@@ -182,45 +405,49 @@ class LoadingScene(QWidget):
     def on_skip_button_clicked(self):
         debug_logger.output("onboarding_page.py", LogLevel.INFO, "跳过按钮被点击，停止所有下载任务", fold_code="ONBOARD_DL")
         
-        # Stop current download if any
-        if self.current_download and self.current_download.isRunning():
-            self.current_download.stop()
-            self.current_download.wait() # Wait for the thread to finish its current operation
-            
-        # Clear the download queue
-        self.download_queue.clear()
+        # Stop all download workers
+        for worker in self.download_workers:
+            if worker.isRunning():
+                worker.stop()
+        
+        # Wait for all threads to finish
+        for worker in self.download_workers:
+            worker.wait()
+        
+        # Clear the workers list
+        self.download_workers.clear()
         
         # Emit signal to skip to LogoScene (index 2)
         self.skip_requested.emit(2) # Assuming LogoScene is at index 2
         
     def start_download(self):
-        """开始后台下载"""
+        """开始并行下载所有资源"""
         cache_dir = os.path.join(get_app_base_path(), "cache")
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
             
         # 视频链接
-        video_url = "https://github.tbedu.top/https://github.com/CN-Air84/CN-Air84.github.io/releases/download/intro.mov/intro_1.mov"
+        video_url = get_resource_url('release', 'intro_video')
         # 图标链接
-        icon_url = "https://cn-air84.github.io/YuanYue-TTS/ico/icon.png"
+        icon_url = get_resource_url('icon', 'icon')
         
-        self.download_queue = []
+        download_tasks = []  # 存储所有下载任务
         
-        # 字体文件下载链接 (待填)
+        # 字体文件下载链接
         font_urls = {
-            "OpenSymbol": "https://raw.githubusercontent.com/CN-Air84/CN-Air84.github.io/refs/heads/main/YuanYue-TTS/font/opens__.ttf",
-            "HarmonyOS Sans SC Black": "https://raw.githubusercontent.com/CN-Air84/CN-Air84.github.io/refs/heads/main/YuanYue-TTS/font/HarmonyOS_Sans_SC_Black.ttf",
-            "HarmonyOS Sans SC": "https://raw.githubusercontent.com/CN-Air84/CN-Air84.github.io/refs/heads/main/YuanYue-TTS/font/HarmonyOS_Sans_SC_Regular.ttf",
-            "HarmonyOS Sans SC Medium": "https://raw.githubusercontent.com/CN-Air84/CN-Air84.github.io/refs/heads/main/YuanYue-TTS/font/HarmonyOS_Sans_SC_Medium.ttf",
-            "HarmonyOS Sans SC Thin": "https://raw.githubusercontent.com/CN-Air84/CN-Air84.github.io/refs/heads/main/YuanYue-TTS/font/HarmonyOS_Sans_SC_Thin.ttf"
+            "OpenSymbol": get_resource_url('font', 'OpenSymbol'),
+            "HarmonyOS Sans SC Black": get_resource_url('font', 'HarmonyOS_Sans_SC_Black'),
+            "HarmonyOS Sans SC": get_resource_url('font', 'HarmonyOS_Sans_SC'),
+            "HarmonyOS Sans SC Medium": get_resource_url('font', 'HarmonyOS_Sans_SC_Medium'),
+            "HarmonyOS Sans SC Thin": get_resource_url('font', 'HarmonyOS_Sans_SC_Thin')
         }
 
-        # 检查并下载安装字体
+        # 检查并添加需要下载的字体
         for font_name, font_url in font_urls.items():
             if not self.is_font_installed(font_name):
                 if font_url:
                     font_filename = f"{font_name.replace(' ', '_')}.ttf"
-                    self.download_queue.append({
+                    download_tasks.append({
                         'url': font_url,
                         'filename': font_filename,
                         'type': 'font'
@@ -230,53 +457,71 @@ class LoadingScene(QWidget):
             else:
                 debug_logger.output("onboarding_page.py", LogLevel.INFO, f"字体 {font_name} 已安装", fold_code="ONBOARD_FONT")
         
-        if video_url:
-            self.download_queue.append({
+        # 添加视频下载任务
+        video_path = os.path.join(cache_dir, 'intro_1.mov')
+        if video_url and not os.path.exists(video_path):
+            download_tasks.append({
                 'url': video_url,
                 'filename': 'intro_1.mov',
                 'type': 'video'
             })
+            debug_logger.output("onboarding_page.py", LogLevel.INFO, "视频文件不存在，添加到下载队列", fold_code="ONBOARD_DL")
+        elif os.path.exists(video_path):
+            debug_logger.output("onboarding_page.py", LogLevel.INFO, "视频文件已存在，跳过下载", fold_code="ONBOARD_DL")
             
-        if icon_url:
-             self.download_queue.append({
+        # 添加图标下载任务
+        icon_path = os.path.join(cache_dir, 'icon.png')
+        if icon_url and not os.path.exists(icon_path):
+            download_tasks.append({
                 'url': icon_url,
                 'filename': 'icon.png',
                 'type': 'image'
             })
+            debug_logger.output("onboarding_page.py", LogLevel.INFO, "图标文件不存在，添加到下载队列", fold_code="ONBOARD_DL")
+        elif os.path.exists(icon_path):
+            debug_logger.output("onboarding_page.py", LogLevel.INFO, "图标文件已存在，跳过下载", fold_code="ONBOARD_DL")
             
-        if not self.download_queue:
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "下载队列为空，跳过下载", fold_code="ONBOARD_DL")
-            QTimer.singleShot(2000, self.finished.emit)
+        if not download_tasks:
+            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "没有需要下载的资源，播放完成动画后进入下一场景", fold_code="ONBOARD_DL")
+            self.label.setText("准备就绪！")
+            # 即使没有下载任务，也播放完成动画
+            self.spinner.start_completion_animation()
+            self.spinner.completion_finished.connect(self.finished.emit)
             return
 
-        self.process_queue()
+        # 设置总下载数量
+        self.total_downloads = len(download_tasks)
+        self.completed_downloads = 0
+        
+        debug_logger.output("onboarding_page.py", LogLevel.INFO, f"开始并行下载 {self.total_downloads} 个资源", fold_code="ONBOARD_DL")
+        
+        # 为每个任务创建并启动下载线程
+        for task in download_tasks:
+            save_path = os.path.join(cache_dir, task['filename'])
+            
+            worker = DownloadWorker(
+                url=task['url'],
+                save_path=save_path,
+                file_type=task['type'],
+                filename=task['filename']
+            )
+            worker.download_finished.connect(self.on_download_finished)
+            self.download_workers.append(worker)
+            worker.start()  # 立即启动线程
+            
+        # 更新加载提示
+        self.label.setText(f"正在下载资源... (0/{self.total_downloads})")
         
     def is_font_installed(self, font_name):
         """检查系统是否已安装指定字体"""
         return QFontDatabase().families().__contains__(font_name)
 
-    def process_queue(self):
-        if not self.download_queue:
-            debug_logger.output("onboarding_page.py", LogLevel.INFO, "所有下载任务完成，延迟2秒进入下一幕...", fold_code="ONBOARD_DL")
-            QTimer.singleShot(1000, lambda: self.finished.emit())
-            return
-            
-        item = self.download_queue.pop(0)
-        cache_dir = os.path.join(get_app_base_path(), "cache")
-        save_path = os.path.join(cache_dir, item['filename'])
-        
-        self.current_download = DownloadWorker(
-            url=item['url'],
-            save_path=save_path,
-            file_type=item['type'],
-            filename=item['filename']
-        )
-        self.current_download.download_finished.connect(self.on_download_finished)
-        self.current_download.start()
-        
     def on_download_finished(self, success, file_type, filename):
+        """单个下载完成的回调"""
         if success:
             debug_logger.output("onboarding_page.py", LogLevel.INFO, f"文件 {filename} 下载完成", fold_code="ONBOARD_DL")
+            
+            # 如果是字体文件，立即安装
             if file_type == 'font':
                 font_path = os.path.join(get_app_base_path(), "cache", filename)
                 if os.path.exists(font_path):
@@ -287,14 +532,21 @@ class LoadingScene(QWidget):
                         debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"字体 {filename} 安装失败", fold_code="ONBOARD_FONT")
                 else:
                     debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"下载的字体文件 {font_path} 不存在", fold_code="ONBOARD_FONT")
-            elif file_type == 'video':
-                debug_logger.output("onboarding_page.py", LogLevel.INFO, "视频下载完成，延迟1秒进入播放...", fold_code="ONBOARD_DL")
-                QTimer.singleShot(1000, self.finished.emit)
-                return
         else:
             debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"文件 {filename} 下载失败", fold_code="ONBOARD_DL")
         
-        self.process_queue()
+        # 更新已完成数量
+        self.completed_downloads += 1
+        self.label.setText(f"正在下载资源... ({self.completed_downloads}/{self.total_downloads})")
+        
+        # 检查是否所有下载都已完成
+        if self.completed_downloads >= self.total_downloads:
+            debug_logger.output("onboarding_page.py", LogLevel.INFO, "所有资源下载完成，开始完成动画", fold_code="ONBOARD_DL")
+            self.label.setText("下载完成！")
+            # 启动完成动画
+            self.spinner.start_completion_animation()
+            # 连接完成信号 - 只在动画完成后才切换场景
+            self.spinner.completion_finished.connect(self.finished.emit)
 
 class ControlOverlay(QFrame):
     """视频播放时的悬浮控制窗"""
@@ -630,16 +882,12 @@ class LogoScene(QWidget):
         layout.setSpacing(30)
         
         # Icon
-        icon_path = os.path.join(get_app_base_path(), "cache", "icon.png")
         self.icon_label = QLabel()
-        self.icon_label.setFixedSize(120, 120)
+        self.icon_label.setFixedSize(180, 180)
         self.icon_label.setAlignment(Qt.AlignCenter)
         
-        if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path)
-            self.icon_label.setPixmap(pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        else:
-            self.icon_label.setStyleSheet("background-color: #e0e0e0;")
+        # 初始显示灰色占位符
+        self.icon_label.setStyleSheet("background-color: #e0e0e0;")
             
         layout.addStretch(1)
         layout.addWidget(self.icon_label, 0, Qt.AlignCenter)
@@ -648,6 +896,7 @@ class LogoScene(QWidget):
         title = QLabel("源悦TTS")
         title.setFont(QFont("微软雅黑", 36, QFont.Bold))
         title.setStyleSheet("color: #333;")
+        self._logo_title = title
         layout.addWidget(title, 0, Qt.AlignCenter)
         
         # Nav Button Container
@@ -690,229 +939,417 @@ class LogoScene(QWidget):
         # Since main layout is centered, adding it to main layout might not push it to very bottom
         # Let's add it to main layout but ensure stretches are correct
         layout.addLayout(bottom_layout)
+        
+    def showEvent(self, event):
+        """场景显示时重新加载图标"""
+        super().showEvent(event)
+        self.load_icon()
+        
+    def load_icon(self):
+        """加载图标图片"""
+        icon_path = os.path.join(get_app_base_path(), "cache", "icon.png")
+        
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path)
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(pixmap.scaled(180, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.icon_label.setStyleSheet("")  # 清除灰色背景
+                debug_logger.output("onboarding_page.py", LogLevel.INFO, "Logo 图标加载成功", fold_code="ONBOARD_LOGO")
+            else:
+                debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"Logo 图标文件损坏: {icon_path}", fold_code="ONBOARD_LOGO")
+        else:
+            debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"Logo 图标文件不存在: {icon_path}", fold_code="ONBOARD_LOGO")
 
 class SettingsScene(QWidget):
     next_clicked = pyqtSignal()
     prev_clicked = pyqtSignal()
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
-        
+
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(40, 40, 40, 40)
-        
-        # Header
+        main_layout.setContentsMargins(40, 40, 40, 20)
+        main_layout.setSpacing(0)
+
         header_layout = QVBoxLayout()
         header_layout.setAlignment(Qt.AlignCenter)
-        
-        title = QLabel("第四幕") # Red placeholder text from image, maybe user wants actual title?
-        # User image shows "第四幕" in red at top, but main title is "基本设置"
-        # I will assume "第四幕" is annotation.
-        
-        page_title = QLabel("基本设置")
-        page_title_font = QFont("HarmonyOS Sans SC Black", 28, QFont.Bold)
-        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC Black"):
+
+        page_title = QLabel("AI 模型设置")
+        page_title_font = QFont("HarmonyOS Sans SC Medium", 28, QFont.Bold)
+        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC Medium"):
             page_title_font = QFont("微软雅黑", 28, QFont.Bold)
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC Black 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
         page_title.setFont(page_title_font)
         page_title.setAlignment(Qt.AlignCenter)
-        
-        subtitle = QLabel("配置源悦TTS的基本设置。")
+
+        subtitle = QLabel("请配置一个支持多模态输入的AI模型，以使用AI图像导入等功能。")
         subtitle_font = QFont("HarmonyOS Sans SC", 14)
         if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
             subtitle_font = QFont("微软雅黑", 14)
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
         subtitle.setFont(subtitle_font)
         subtitle.setStyleSheet("color: #555;")
         subtitle.setAlignment(Qt.AlignCenter)
-        
+
         header_layout.addWidget(page_title)
         header_layout.addSpacing(10)
         header_layout.addWidget(subtitle)
-        
-        main_layout.addStretch(1)
+
         main_layout.addLayout(header_layout)
-        main_layout.addSpacing(40)
-        
-        # Card
-        card = QFrame()
-        card.setStyleSheet("""
-            QFrame {
-                background-color: #f5f5f5;
-                border-radius: 16px;
-                border: 1px solid #ddd;
-            }
-        """)
-        # Drop shadow
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        shadow.setOffset(0, 4)
-        card.setGraphicsEffect(shadow)
-        
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(30, 30, 30, 30)
-        card_layout.setSpacing(20)
-        
-        # Icon
-        key_icon = QLabel("🔑")
-        key_icon.setFont(QFont("Segoe UI Emoji", 48))
-        key_icon.setStyleSheet("background: transparent; border: none;")
-        card_layout.addWidget(key_icon)
-        
-        # Text Content
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(5)
-        
-        item_title = QLabel("智谱AI API Key")
-        item_title_font = QFont("HarmonyOS Sans SC Medium", 12, QFont.Bold)
-        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC Medium"):
-            item_title_font = QFont("微软雅黑", 12, QFont.Bold)
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC Medium 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
-        item_title.setFont(item_title_font)
-        item_title.setStyleSheet("background: transparent; border: none;")
-        
-        desc_label = QLabel("填入API Key以使用各项由AI驱动的特色功能。")
-        desc_label_font = QFont("HarmonyOS Sans SC", int(10)) # 0.8倍字号
-        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
-            desc_label_font = QFont("微软雅黑", int(12 * 0.8))
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
-        desc_label.setFont(desc_label_font)
-        desc_label.setStyleSheet("color: #666; background: transparent; border: none;")
-        desc_label.setWordWrap(False) # Ensure single line
-        
-        # sub_desc 与 desc_label 平级
-        sub_desc = QLabel("只支持智谱AI开放平台API Key，不支持Z.ai API Key。")
-        sub_desc.setFont(desc_label_font) # Same font as desc_label
-        sub_desc.setStyleSheet("color: #666; background: transparent; border: none;")
-        sub_desc.setWordWrap(False) # Ensure single line
-        
-        text_layout.addWidget(item_title)
-        text_layout.addWidget(desc_label) # 直接添加，不再用desc_layout
-        text_layout.addWidget(sub_desc)
-        
-        # API Key 输入框
-        self.api_input = QLineEdit()
-        input_font = QFont("HarmonyOS Sans SC", 14)
-        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
-            input_font = QFont("微软雅黑", 14)
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
-        self.api_input.setFont(input_font)
-        self.api_input.setPlaceholderText("在此处粘贴密钥")
-        self.api_input.setMinimumHeight(40)
-        self.api_input.setMinimumWidth(200)
-        self.api_input.setStyleSheet("""
-            QLineEdit {
-                background-color: white;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                padding: 0 10px;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border-color: #4285f4;
-            }
-        """)
-        
-        # 注册按钮
-        register_btn = QPushButton("注册智谱AI开放平台账号并获取APIKey")
-        register_btn_font = QFont("HarmonyOS Sans SC", int(12 * 0.67)) # 0.67倍字号
-        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
-            register_btn_font = QFont("微软雅黑", int(12 * 0.67))
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "HarmonyOS Sans SC 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
-        register_btn.setFont(register_btn_font)
-        register_btn.setCursor(Qt.PointingHandCursor)
-        register_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4285f4;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3367d6;
-            }
-        """)
-        register_btn.clicked.connect(self.open_register_link)
-        
-        # 垂直布局，包含输入框和按钮
-        input_button_layout = QVBoxLayout()
-        input_button_layout.addWidget(self.api_input)
-        input_button_layout.addWidget(register_btn)
-        input_button_layout.setAlignment(Qt.AlignCenter) # 垂直居中
-        
-        # 将文本布局和输入/按钮布局左右对调
-        card_layout.addLayout(text_layout, 1)
-        card_layout.addLayout(input_button_layout)
-        
-        main_layout.addWidget(card)
-        main_layout.addSpacing(40)
-        
-        # Footer & Nav
-        footer_layout = QHBoxLayout()
-        
-        note_text = ("注：程序会向智谱AI发送您的API Key以调用AI模型，\n"
-                     "    除此以外，程序不会向外界发送您的任何数据。\n"
-                     "注：程序调用的GLM-4-Flash和GLM-4V-Flash模型均为完全免费使用，\n"
-                     "    因此您无需为由AI驱动的功能付费。")
-        note_label = QLabel(note_text)
-        note_label_font = QFont("HarmonyOS Sans SC", int(8)) # 2.25倍字号
-        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
-            note_label_font = QFont("微软雅黑", int(8))
-            debug_logger.output("onboarding_page.py", LogLevel.WARNING, "···HarmonyOS Sans SC Thin 字体未加载，使用 微软雅黑 作为替代", fold_code="ONBOARD_FONT")
-        note_label.setFont(note_label_font)
-        note_label.setStyleSheet("color: #888; line-height: 1.5;")
-        
+        main_layout.addSpacing(20)
+
+        from ai_settings_ui import AddModelWidget
+        from ai_settings_store import CustomAIModelStore
+        self.store = CustomAIModelStore()
+        self.add_page = AddModelWidget(self.store)
+        self.add_page.input_scene.setCurrentIndex(1)
+        self.add_page.input_scene.hide()
+        for lb in self.add_page.findChildren(QLabel):
+            if lb.text() == "使用场景 *":
+                lb.hide()
+                break
+        self.add_page.submit_btn.setText("保存并应用模型")
+        self.add_page.submit_btn.clicked.disconnect()
+        self.add_page.submit_btn.clicked.connect(self._on_save_and_apply)
+        self.add_page.layout().setContentsMargins(0, 0, 0, 0)
+        for sa in self.add_page.findChildren(QScrollArea):
+            sa.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        main_layout.addWidget(self.add_page, 1)
+
         nav_layout = QHBoxLayout()
         nav_layout.setSpacing(20)
-        
+
         self.btn_prev = NavButton(is_next=False)
         self.btn_prev.clicked.connect(self.prev_clicked.emit)
-        
+
         self.btn_next = NavButton(is_next=True)
-        self.btn_next.clicked.connect(self.save_and_next)
-        
+        self.btn_next.clicked.connect(self.next_clicked.emit)
+
+        nav_layout.addStretch()
         nav_layout.addWidget(self.btn_prev)
         nav_layout.addWidget(self.btn_next)
-        
-        footer_layout.addWidget(note_label)
-        footer_layout.addStretch()
-        footer_layout.addLayout(nav_layout)
-        
-        main_layout.addLayout(footer_layout)
+        nav_layout.addStretch()
+
+        main_layout.addSpacing(10)
+        main_layout.addLayout(nav_layout)
+
+    def _on_save_and_apply(self):
+        data = self.add_page._validate()
+        if not data:
+            return
+        data["scene"] = "vision"
+        if self.add_page._editing_id:
+            self.add_page.store.update_model(self.add_page._editing_id, data)
+            model_id = self.add_page._editing_id
+        else:
+            m = self.add_page.store.add_model(data)
+            model_id = m["id"]
+        self.add_page.store.reload()
+        self.add_page.store.set_active_id("vision", model_id)
+        self.add_page._refresh_provider_candidates()
+        self.add_page._clear_form()
+        self._show_notification()
+
+    def _show_notification(self):
+        notification = QFrame(self)
+        notification.setStyleSheet("""
+            QFrame {
+                background-color: #323232;
+                border-radius: 12px;
+            }
+        """)
+        notification.setFixedSize(420, 130)
+        layout = QVBoxLayout(notification)
+        layout.setContentsMargins(20, 15, 20, 15)
+
+        ratio = max(0.65, min(1.5, (self.width() / 1080 + self.height() / 720) / 2))
+        title_size = max(10, int(16 * ratio))
+        hint_size = max(8, int(12 * ratio))
+
+        title = QLabel("✓ 模型已保存并应用")
+        title.setFont(QFont("微软雅黑", title_size, QFont.Bold))
+        title.setStyleSheet("color: #4CAF50; border: none;")
+        title.setAlignment(Qt.AlignCenter)
+        hint = QLabel("如需修改，请前往 设置 → AI设置 → 选择模型\n长按卡片以编辑")
+        hint.setFont(QFont("微软雅黑", hint_size))
+        hint.setStyleSheet("color: #ccc; border: none;")
+        hint.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+        layout.addWidget(hint)
+
+        notification.move((self.width() - 420) // 2, (self.height() - 130) // 2)
+        notification.show()
+        notification.raise_()
+
+        opacity = QGraphicsOpacityEffect(notification)
+        notification.setGraphicsEffect(opacity)
+        fade = QPropertyAnimation(opacity, b"opacity")
+        fade.setDuration(400)
+        fade.setStartValue(1.0)
+        fade.setEndValue(0.0)
+
+        def cleanup():
+            notification.deleteLater()
+
+        fade.finished.connect(cleanup)
+        QTimer.singleShot(3500, fade.start)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "add_page") and hasattr(self.add_page, "apply_ui_metrics"):
+            from ai_settings_ui import compute_ai_ui_metrics, DEFAULT_METRICS
+            metrics = compute_ai_ui_metrics(self.width(), self.height(), "微软雅黑")
+            self.add_page.apply_ui_metrics(metrics)
+            self.add_page._metrics = dict(DEFAULT_METRICS)
+            self.add_page._metrics.update(metrics)
+
+class FontScene(QWidget):
+    next_clicked = pyqtSignal()
+    prev_clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(40, 40, 40, 20)
+        main_layout.setSpacing(0)
+
+        header_layout = QVBoxLayout()
+        header_layout.setAlignment(Qt.AlignCenter)
+
+        page_title = QLabel("基本设置")
+        page_title_font = QFont("HarmonyOS Sans SC Medium", 28, QFont.Bold)
+        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC Medium"):
+            page_title_font = QFont("微软雅黑", 28, QFont.Bold)
+        page_title.setFont(page_title_font)
+        page_title.setAlignment(Qt.AlignCenter)
+        page_title.setStyleSheet("color: #333;")
+
+        subtitle = QLabel("配置全局字体和在线资源源。")
+        subtitle_font = QFont("HarmonyOS Sans SC", 14)
+        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
+            subtitle_font = QFont("微软雅黑", 14)
+        subtitle.setFont(subtitle_font)
+        subtitle.setStyleSheet("color: #555;")
+        subtitle.setAlignment(Qt.AlignCenter)
+
+        header_layout.addWidget(page_title)
+        header_layout.addSpacing(10)
+        header_layout.addWidget(subtitle)
+
+        main_layout.addLayout(header_layout)
+        main_layout.addSpacing(20)
+
+        from custom_page import FontSettingsGroup
+        self.font_group = FontSettingsGroup(self)
+        self.font_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: none;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 0px;
+                padding: 0px;
+            }
+            QLabel {
+                background-color: transparent;
+            }
+        """)
+        self.font_group.min_font_size.hide()
+        self.font_group.max_font_size.hide()
+        for lb in self.font_group.findChildren(QLabel):
+            if lb.text() in ("最小字号:", "最大字号:"):
+                lb.hide()
+        base_font = QFont("微软雅黑", 22)
+        for w in self.font_group.findChildren(QWidget):
+            if isinstance(w, QFontComboBox):
+                w.setObjectName("locked_font_combo")
+                existing = w.styleSheet() or ""
+                w.setStyleSheet(existing + "\nQFontComboBox#locked_font_combo { font-size: 12pt; }")
+                continue
+            w.setFont(base_font)
+        main_layout.addWidget(self.font_group)
+
+        # Resource source card
+        resource_card = QFrame()
+        resource_card.setStyleSheet("""
+            QFrame {
+                background-color: #e6e8eb;
+                border-radius: 16px;
+            }
+        """)
+        resource_layout = QHBoxLayout(resource_card)
+        resource_layout.setContentsMargins(20, 16, 20, 16)
+        resource_layout.setSpacing(15)
+
+        resource_icon = QLabel("🌐")
+        resource_icon.setFont(QFont("Segoe UI Emoji", 24))
+        resource_icon.setStyleSheet("background: transparent; border: none;")
+
+        resource_text_layout = QVBoxLayout()
+        resource_text_layout.setSpacing(4)
+        resource_title = QLabel("在线消息源")
+        resource_title.setFont(QFont("微软雅黑", 14, QFont.Bold))
+        resource_desc = QLabel("选择从何处获取应用所需的在线资源。")
+        resource_desc.setFont(QFont("微软雅黑", 11))
+        resource_desc.setStyleSheet("color: #666;")
+        resource_text_layout.addWidget(resource_title)
+        resource_text_layout.addWidget(resource_desc)
+
+        self.resource_source_combo = QComboBox()
+        self.resource_source_combo.addItem("GitHub（默认）", "github")
+        self.resource_source_combo.addItem("Gitee（国内镜像）", "gitee")
+        self.resource_source_combo.addItem("自定义源", "custom")
+        self.resource_source_combo.setMinimumWidth(150)
+        self.resource_source_combo.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 2px 8px;
+            }
+            QComboBox:focus {
+                border: 1px solid #4A90E2;
+            }
+            QComboBox::drop-down {
+                width: 24px;
+                border: none;
+                border-left: 1px solid #E0E0E0;
+            }
+            QComboBox::drop-down:hover {
+                background-color: #4A90E2;
+            }
+            QComboBox::down-arrow {
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #666;
+            }
+            QComboBox::drop-down:hover QComboBox::down-arrow {
+                border-top-color: white;
+            }
+        """)
+
+        from resource_urls import ResourceURLManager
+        current_source = ResourceURLManager.get_current_source()
+        idx = self.resource_source_combo.findData(current_source)
+        if idx >= 0:
+            self.resource_source_combo.setCurrentIndex(idx)
+
+        self.resource_source_combo.currentIndexChanged.connect(self._on_resource_source_changed)
+
+        resource_layout.addWidget(resource_icon)
+        resource_layout.addLayout(resource_text_layout, 1)
+        resource_layout.addWidget(self.resource_source_combo)
+
+        main_layout.addSpacing(15)
+        main_layout.addWidget(resource_card)
         main_layout.addStretch(1)
 
-    def open_register_link(self):
-        url = "https://www.bigmodel.cn/invite?icode=%2FveqUy%2BfLWQAs9oUDFwAmZmwcr074zMJTpgMb8zZZvg%3D" 
-        if url:
-            QDesktopServices.openUrl(QUrl(url))
-            
-    def save_and_next(self):
-        # Save API Key
-        key = self.api_input.text().strip()
-        if key:
-            SettingsManager().set_api_key('api_key_ChatGLM', key)
-            debug_logger.output("onboarding_page.py", LogLevel.INFO, "API Key已保存", fold_code="ONBOARD_SAVE")
-        
-        self.next_clicked.emit()
+        nav_layout = QHBoxLayout()
+        nav_layout.setSpacing(20)
+
+        self.btn_prev = NavButton(is_next=False)
+        self.btn_prev.clicked.connect(self.prev_clicked.emit)
+
+        self.btn_next = NavButton(is_next=True)
+        self.btn_next.clicked.connect(self.next_clicked.emit)
+
+        nav_layout.addStretch()
+        nav_layout.addWidget(self.btn_prev)
+        nav_layout.addWidget(self.btn_next)
+        nav_layout.addStretch()
+
+        main_layout.addSpacing(10)
+        main_layout.addLayout(nav_layout)
+
+    def _on_resource_source_changed(self, index):
+        source = self.resource_source_combo.itemData(index)
+        if not source:
+            return
+        SettingsManager().Custom.set_value("resource_source", source)
+        from resource_urls import ResourceURLManager
+        ResourceURLManager.set_source(source)
+
+
+class HotkeyScene(QWidget):
+    next_clicked = pyqtSignal()
+    prev_clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(40, 40, 40, 20)
+        main_layout.setSpacing(0)
+
+        header_layout = QVBoxLayout()
+        header_layout.setAlignment(Qt.AlignCenter)
+
+        page_title = QLabel("快捷键设置")
+        page_title_font = QFont("HarmonyOS Sans SC Medium", 28, QFont.Bold)
+        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC Medium"):
+            page_title_font = QFont("微软雅黑", 28, QFont.Bold)
+        page_title.setFont(page_title_font)
+        page_title.setAlignment(Qt.AlignCenter)
+
+        subtitle = QLabel("自定义全局快捷键。")
+        subtitle_font = QFont("HarmonyOS Sans SC", 14)
+        if not QFontDatabase().families().__contains__("HarmonyOS Sans SC"):
+            subtitle_font = QFont("微软雅黑", 14)
+        subtitle.setFont(subtitle_font)
+        subtitle.setStyleSheet("color: #555;")
+        subtitle.setAlignment(Qt.AlignCenter)
+
+        header_layout.addWidget(page_title)
+        header_layout.addSpacing(10)
+        header_layout.addWidget(subtitle)
+
+        main_layout.addLayout(header_layout)
+        main_layout.addSpacing(20)
+
+        from custom_page import HotkeyControlWidget
+        self.hotkey_group = HotkeyControlWidget(self)
+        base_font = QFont("微软雅黑", 12)
+        for w in [self.hotkey_group] + self.hotkey_group.findChildren(QWidget):
+            w.setFont(base_font)
+        main_layout.addWidget(self.hotkey_group, 1)
+
+        nav_layout = QHBoxLayout()
+        nav_layout.setSpacing(20)
+
+        self.btn_prev = NavButton(is_next=False)
+        self.btn_prev.clicked.connect(self.prev_clicked.emit)
+
+        self.btn_next = NavButton(is_next=True)
+        self.btn_next.clicked.connect(self.next_clicked.emit)
+
+        nav_layout.addStretch()
+        nav_layout.addWidget(self.btn_prev)
+        nav_layout.addWidget(self.btn_next)
+        nav_layout.addStretch()
+
+        main_layout.addSpacing(10)
+        main_layout.addLayout(nav_layout)
+
 
 class DraggableButton(QPushButton):
     """可拖拽排序的按钮"""
     visibility_changed = pyqtSignal(str, bool) # Signal for visibility change
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
-        self.setFixedSize(100, 50)
+        self.setAcceptDrops(True)
         self.setAcceptDrops(True)
         self.setStyleSheet("""
             QPushButton {
                 background-color: white;
                 border: 2px solid #aaa;
                 border-radius: 6px;
-                font-size: 14px;
                 color: #333;
             }
             QPushButton:hover {
@@ -974,7 +1411,6 @@ class DraggableButton(QPushButton):
                     background-color: white;
                     border: 2px solid #aaa;
                     border-radius: 6px;
-                    font-size: 14px;
                     color: #333;
                 }
                 QPushButton:hover {
@@ -987,7 +1423,6 @@ class DraggableButton(QPushButton):
                     background-color: #f0f0f0; /* Grayed out background */
                     border: 2px solid #ccc;
                     border-radius: 6px;
-                    font-size: 14px;
                     color: #999; /* Lighter text color */
                     text-decoration: line-through; /* Strikethrough text */
                 }
@@ -1065,7 +1500,7 @@ class FifthScene(QWidget):
         text_layout1.addWidget(desc1)
         
         self.combo_initial = QComboBox()
-        self.combo_initial.addItems(["欢迎", "听写", "设置", "个性化", "杂项" #, "流媒体"
+        self.combo_initial.addItems(["欢迎", "听写", "设置", "个性化", "杂项", "流媒体", "插件"
         ])
         self.combo_initial.setFixedWidth(120)
         self.combo_initial.setFont(desc1_font)
@@ -1133,7 +1568,7 @@ class FifthScene(QWidget):
         self.buttons_layout.setSpacing(10)
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)
         
-        tabs = ["欢迎", "听写", "设置", "个性化", "杂项" #, "流媒体"
+        tabs = ["欢迎", "听写", "设置", "个性化", "杂项", "流媒体", "插件"
         ]
         self.drag_buttons = []
         for tab_name in tabs:
@@ -1258,7 +1693,8 @@ class FifthScene(QWidget):
             "设置": "settings",
             "个性化": "personalization",
             "杂项": "misc",
-            #"流媒体": "streaming" # Commented out
+            "流媒体": "streaming",
+            "插件": "plugins",
         }
         selected_text = self.combo_initial.currentText()
         initial_tab = initial_tab_map.get(selected_text, "welcome")
@@ -1271,7 +1707,8 @@ class FifthScene(QWidget):
             "设置": "settings",
             "个性化": "personalization",
             "杂项": "misc",
-            #"流媒体": "streaming" # Commented out
+            "流媒体": "streaming",
+            "插件": "plugins",
         }
         
         ordered_tabs = []
@@ -1406,14 +1843,8 @@ class SixthScene(QWidget):
             QFrame {
                 background-color: #e6e8eb; 
                 border-radius: 16px;
-                border: 2px solid #888;
             }
         """)
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 30))
-        shadow.setOffset(0, 4)
-        card.setGraphicsEffect(shadow)
         
         card_layout = QHBoxLayout(card)
         card_layout.setContentsMargins(40, 30, 40, 30)
@@ -1585,8 +2016,34 @@ class FinalScene(QWidget):
         layout.addStretch(1)
 
     def finish_onboarding_and_quit(self):
-        # Mark as not first run
         SettingsManager().set_is_first_run(False)
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("在线资源加载")
+        dialog.setText("正在下载语音列表…")
+        dialog.setStandardButtons(QMessageBox.NoButton)
+        dialog.setModal(True)
+        dialog.show()
+        QApplication.processEvents()
+
+        voicelist_path = os.path.join(get_app_base_path(), 'cache', 'voicelist.txt')
+        url = get_resource_url('release', 'voicelist')
+
+        if url and not os.path.exists(voicelist_path):
+            try:
+                from requests import get as http_get
+                resp = http_get(url, timeout=60, stream=True)
+                resp.raise_for_status()
+                os.makedirs(os.path.dirname(voicelist_path), exist_ok=True)
+                with open(voicelist_path, 'wb') as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                debug_logger.output("onboarding_page.py", LogLevel.INFO, "语音列表下载完成", fold_code="ONBOARD_DL")
+            except Exception as e:
+                debug_logger.output("onboarding_page.py", LogLevel.WARNING, f"语音列表下载失败: {e}", fold_code="ONBOARD_DL")
+
+        dialog.accept()
         debug_logger.output("onboarding_page.py", LogLevel.INFO, "设置向导完成，应用程序退出", fold_code="ONBOARD_FINISH")
         QApplication.quit()
 
@@ -1616,25 +2073,37 @@ class OnboardingPage(QWidget):
         self.logo_scene.prev_clicked.connect(self.prev_scene)
         self.scenes.append(self.logo_scene)
         
-        # 4. Settings Scene
+        # 4. AI Model Settings
         self.settings_scene = SettingsScene(self)
         self.settings_scene.next_clicked.connect(self.next_scene)
         self.settings_scene.prev_clicked.connect(self.prev_scene)
         self.scenes.append(self.settings_scene)
         
-        # 5. Fifth Scene (Tab Settings)
+        # 5. Font Settings
+        self.font_scene = FontScene(self)
+        self.font_scene.next_clicked.connect(self.next_scene)
+        self.font_scene.prev_clicked.connect(self.prev_scene)
+        self.scenes.append(self.font_scene)
+        
+        # 6. Hotkey Settings
+        self.hotkey_scene = HotkeyScene(self)
+        self.hotkey_scene.next_clicked.connect(self.next_scene)
+        self.hotkey_scene.prev_clicked.connect(self.prev_scene)
+        self.scenes.append(self.hotkey_scene)
+        
+        # 7. Fifth Scene (Tab Settings)
         self.fifth_scene = FifthScene(self)
         self.fifth_scene.finished.connect(self.next_scene) 
         self.fifth_scene.prev_clicked.connect(self.prev_scene)
         self.scenes.append(self.fifth_scene)
         
-        # 6. Sixth Scene (Shortcuts)
+        # 8. Sixth Scene (Shortcuts)
         self.sixth_scene = SixthScene(self)
         self.sixth_scene.finished.connect(self.next_scene) # Changed from finish_tutorial to next_scene
         self.sixth_scene.prev_clicked.connect(self.prev_scene)
         self.scenes.append(self.sixth_scene)
         
-        # 7. Final Scene
+        # 9. Final Scene
         self.final_scene = FinalScene(self)
         self.scenes.append(self.final_scene)
         
@@ -1765,7 +2234,36 @@ class OnboardingPage(QWidget):
         SettingsManager().set_is_first_run(False)
         self.tutorial_finished.emit()
 
+    def _apply_font_scale(self):
+        ratio = max(0.65, min(1.5, (self.width() / 1080 + self.height() / 720) / 2))
+
+        for scene in self.scenes:
+            if isinstance(scene, LogoScene):
+                targets = [scene] + scene.findChildren((QLabel, QPushButton))
+            else:
+                targets = [scene] + scene.findChildren((QLabel, QPushButton, QComboBox, QLineEdit, QCheckBox, QSpinBox))
+
+            for w in targets:
+                if isinstance(scene, LogoScene) and w is getattr(scene, '_logo_title', None):
+                    continue
+                if w.objectName() == "locked_font_combo":
+                    continue
+                orig = getattr(w, '_orig_ps', None)
+                if orig is None:
+                    ps = w.font().pointSize()
+                    if ps <= 0:
+                        continue
+                    w._orig_ps = ps
+                    orig = ps
+                n = max(8, int(orig * ratio))
+                if n != w.font().pointSize():
+                    f = w.font()
+                    f.setPointSize(n)
+                    w.setFont(f)
+
     def resizeEvent(self, event):
+        self.setMinimumSize(0, 0)
         for scene in self.scenes:
             scene.resize(self.size())
         super().resizeEvent(event)
+        self._apply_font_scale()

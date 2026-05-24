@@ -733,7 +733,14 @@ class AboutDialog(QDialog):
                             import sys
                             
                             try:
-                                subprocess.Popen([save_path])
+                                # 隐藏 cmd 窗口
+                                startupinfo = None
+                                if sys.platform == 'win32':
+                                    startupinfo = subprocess.STARTUPINFO()
+                                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                                
+                                subprocess.Popen([save_path], startupinfo=startupinfo)
                                 sys.exit(0)
                             except Exception as e:
                                 QMessageBox.warning(self, "启动失败", f"文件下载成功，但启动失败：{str(e)}\n\n请手动运行新版本程序。")

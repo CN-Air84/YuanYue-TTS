@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QObject, pyqtSignal, QTimer
 from PyQt5.QtGui import QKeyEvent
 from debug_logger import debug_logger, LogLevel
 from sdl_input_manager import SDLInputManager
+from keyboard_hook_manager import KeyboardHookManager
 
 class HotkeyAction:
     """热键动作常量"""
@@ -67,6 +68,15 @@ class HotkeyManager(QObject):
         # 按钮状态缓存，防止重复触发 (Key Repeat)
         # {action: is_pressed}
         self.sdl_button_states: Dict[str, bool] = {}
+        
+        # 键盘钩子管理器（底层键盘监听）
+        self.keyboard_hook = KeyboardHookManager()
+        self.use_keyboard_hook = False
+        self.keyboard_button_states: Dict[str, bool] = {}  # 防止重复触发
+        
+        # 连接键盘钩子信号
+        self.keyboard_hook.key_pressed.connect(self._on_keyboard_hook_pressed)
+        self.keyboard_hook.key_released.connect(self._on_keyboard_hook_released)
         
         self.load_hotkeys()
         
@@ -156,6 +166,68 @@ class HotkeyManager(QObject):
             self.settings_manager.Custom.set_value("use_sdl_input", self.use_sdl_mode)
             
         return self.use_sdl_mode
+    
+    def set_keyboard_hook_mode(self, enabled: bool) -> bool:
+        """启用或禁用键盘钩子模式（底层键盘监听）"""
+        debug_logger.output("hotkey_manager.py", LogLevel.INFO, f"正在切换键盘钩子模式: {enabled}", fold_code="HOTKEY_CFG")
+        
+        if not self.keyboard_hook.is_available():
+            debug_logger.output("hotkey_manager.py", LogLevel.ERROR, 
+                               "键盘钩子功能不可用：pynput 库未安装", 
+                               fold_code="HOTKEY_CFG")
+            return False
+        
+        if enabled:
+            if self.keyboard_hook.start():
+                self.use_keyboard_hook = True
+                debug_logger.output("hotkey_manager.py", LogLevel.INFO, 
+                                   "键盘钩子模式已启动（底层监听，不受窗口焦点影响）", 
+                                   fold_code="HOTKEY_CFG")
+            else:
+                self.use_keyboard_hook = False
+                debug_logger.output("hotkey_manager.py", LogLevel.ERROR, 
+                                   "键盘钩子模式启动失败", 
+                                   fold_code="HOTKEY_CFG")
+        else:
+            self.use_keyboard_hook = False
+            self.keyboard_hook.stop()
+            debug_logger.output("hotkey_manager.py", LogLevel.INFO, 
+                               "键盘钩子模式已关闭", 
+                               fold_code="HOTKEY_CFG")
+        
+        if self.settings_manager:
+            self.settings_manager.Custom.set_value("use_keyboard_hook", self.use_keyboard_hook)
+        
+        return self.use_keyboard_hook
+    
+    def _on_keyboard_hook_pressed(self, key_code: int):
+        """处理键盘钩子按下事件"""
+        if not self.use_keyboard_hook:
+            return
+        
+        # 检查是否匹配热键
+        for action, target_key in self.hotkeys.items():
+            if key_code == target_key:
+                # 防止重复触发
+                was_pressed = self.keyboard_button_states.get(action, False)
+                if not was_pressed:
+                    debug_logger.output("hotkey_manager.py", LogLevel.INFO, 
+                                       f"触发键盘钩子热键: {action} (Key: {key_code})", 
+                                       fold_code="HOTKEY_HOOK")
+                    self.hotkey_triggered.emit(action)
+                    self.keyboard_button_states[action] = True
+                break
+    
+    def _on_keyboard_hook_released(self, key_code: int):
+        """处理键盘钩子抬起事件"""
+        if not self.use_keyboard_hook:
+            return
+        
+        # 重置按键状态
+        for action, target_key in self.hotkeys.items():
+            if key_code == target_key:
+                self.keyboard_button_states[action] = False
+                break
 
     def load_hotkeys(self):
         """从设置中加载热键配置"""
@@ -169,6 +241,11 @@ class HotkeyManager(QObject):
         use_sdl_raw = self.settings_manager.Custom.get_value("use_sdl_input", False)
         use_sdl = str(use_sdl_raw).lower() == 'true'
         debug_logger.output("hotkey_manager.py", LogLevel.INFO, f"读取到 SDL 模式偏好: {use_sdl}", fold_code="HOTKEY_CFG")
+        
+        # 加载键盘钩子模式开关
+        use_hook_raw = self.settings_manager.Custom.get_value("use_keyboard_hook", True)  # 默认开启
+        use_hook = str(use_hook_raw).lower() == 'true' if isinstance(use_hook_raw, str) else bool(use_hook_raw)
+        debug_logger.output("hotkey_manager.py", LogLevel.INFO, f"读取到键盘钩子模式偏好: {use_hook}", fold_code="HOTKEY_CFG")
         
         # 注意：这里不立即调用 set_sdl_mode，避免初始化时阻塞或依赖未就绪，
         # 但为了保持状态一致，可以在 UI 加载时读取此值

@@ -17,9 +17,9 @@ try:
                                 QHBoxLayout, QListWidget, QPushButton,
                                 QLabel, QTextEdit, QSplitter, QListWidgetItem,
                                 QFrame, QMessageBox, QFileDialog, QScrollArea,
-                                QGridLayout, QGraphicsOpacityEffect)
-    from PyQt5.QtCore import Qt, pyqtSignal, QSize, QRectF
-    from PyQt5.QtGui import QFont, QPainter, QColor, QPainterPath, QPen, QBrush
+                                QGridLayout)
+    from PyQt5.QtCore import Qt, pyqtSignal, QSize
+    from PyQt5.QtGui import QFont
 except ImportError:
     # Fallback for development/testing without PyQt5
     class QWidget:
@@ -94,132 +94,11 @@ except ImportError:
         def __init__(self, w, h):
             pass
     
-    class QGraphicsOpacityEffect:
-        pass
-    
-    class QRectF:
-        pass
-    
-    class QPainter:
-        pass
-    
-    class QColor:
-        pass
-    
-    class QPainterPath:
-        pass
-    
-    class QPen:
-        pass
-    
-    class QBrush:
+    class QFont:
         pass
 
 from plugin_instance import PluginStatus
-
-
-class DevelopmentOverlay(QWidget):
-    """
-    开发中覆盖层 - 显示模糊效果和提示信息
-    
-    在插件系统完全开发完成前，向用户展示"插件系统正在开发中"的提示
-    """
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)  # 拦截鼠标事件
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
-        self._blur_radius = 15
-        self._setup_ui()
-    
-    def _setup_ui(self):
-        """设置UI"""
-        # 主布局
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 创建内容容器（居中显示）
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-        content_layout.setSpacing(15)
-        content_layout.setAlignment(Qt.AlignCenter)
-        
-        # 提示图标（使用文字代替）
-        icon_label = QLabel("🔧")
-        icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 64px;
-                background: transparent;
-            }
-        """)
-        content_layout.addWidget(icon_label)
-        
-        # 主提示文字
-        title_label = QLabel("插件系统正在开发中")
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: bold;
-                color: #333333;
-                background: transparent;
-            }
-        """)
-        content_layout.addWidget(title_label)
-        
-        # 副提示文字
-        subtitle_label = QLabel("敬请期待更多精彩功能")
-        subtitle_label.setAlignment(Qt.AlignCenter)
-        subtitle_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                color: #666666;
-                background: transparent;
-            }
-        """)
-        content_layout.addWidget(subtitle_label)
-        
-        # 进度提示
-        progress_label = QLabel("🚧 开发进度: 80%")
-        progress_label.setAlignment(Qt.AlignCenter)
-        progress_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                color: #888888;
-                background: transparent;
-                margin-top: 10px;
-            }
-        """)
-        content_layout.addWidget(progress_label)
-        
-        layout.addStretch()
-        layout.addWidget(content_widget, alignment=Qt.AlignCenter)
-        layout.addStretch()
-    
-    def paintEvent(self, event):
-        """绘制模糊背景"""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # 绘制半透明模糊背景
-        # 使用白色半透明背景模拟模糊效果
-        blur_color = QColor(255, 255, 255, 230)
-        painter.fillRect(self.rect(), blur_color)
-        
-        # 绘制边框
-        painter.setPen(QPen(QColor(200, 200, 200), 1))
-        painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
-        
-        super().paintEvent(event)
-    
-    def mousePressEvent(self, event):
-        """拦截鼠标点击事件"""
-        event.accept()
-    
-    def mouseReleaseEvent(self, event):
-        """拦截鼠标释放事件"""
-        event.accept()
+from resource_urls import get_resource_url
 
 
 class PluginPage(QWidget):
@@ -291,22 +170,6 @@ class PluginPage(QWidget):
         self.tab_widget.addTab(self.settings_tab, "插件设置")
         
         layout.addWidget(self.tab_widget)
-        
-        # 创建模糊覆盖层 - 提示用户插件系统正在开发中
-        self._create_development_overlay()
-    
-    def _create_development_overlay(self):
-        """创建开发中的模糊覆盖层"""
-        # 创建覆盖层 widget
-        self._overlay = DevelopmentOverlay(self)
-        self._overlay.setGeometry(self.rect())
-        self._overlay.show()
-    
-    def resizeEvent(self, event):
-        """窗口大小改变时调整覆盖层大小"""
-        super().resizeEvent(event)
-        if hasattr(self, '_overlay'):
-            self._overlay.setGeometry(self.rect())
         
     def set_plugin_manager(self, plugin_manager):
         """
@@ -810,7 +673,7 @@ class InstalledPluginsTab(QWidget):
                     continue
                 
                 try:
-                    # Parse GitHub repo URL
+                    # Parse GitHub repo URL (插件系统保持 GitHub)
                     # Expected format: https://github.com/owner/repo
                     match = re.match(r'https://github\.com/([^/]+)/([^/]+)', metadata.github_repo)
                     if not match:
@@ -819,8 +682,8 @@ class InstalledPluginsTab(QWidget):
                     
                     owner, repo = match.groups()
                     
-                    # Get latest release from GitHub API (需求 10.3)
-                    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+                    # Get latest release from GitHub API (保持 GitHub，不迁移)
+                    api_url = get_resource_url('api_releases', owner=owner, repo=repo)
                     response = requests.get(api_url, timeout=10)
                     
                     if response.status_code == 404:

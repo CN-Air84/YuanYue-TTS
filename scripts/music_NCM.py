@@ -210,7 +210,11 @@ class MusicPlayer:
                 return
 
             executable_name = os.path.basename(sys.executable).lower()
-            script_path = os.path.join(os.path.dirname(__file__), "music_backend.py")
+            # 使用正确的路径获取方式，避免 MEI 临时目录问题
+            if getattr(sys, 'frozen', False):
+                script_path = os.path.join(os.path.dirname(sys.executable), "music_backend.py")
+            else:
+                script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music_backend.py")
             backend_env = None
             use_script_backend = (executable_name.startswith("python") or executable_name.startswith("pypy")) and os.path.exists(script_path)
 
@@ -226,6 +230,14 @@ class MusicPlayer:
                 start_mode = "exe-arg"
 
             debug_logger.info("MusicPlayer", f"正在启动独立播放后台 (mode={start_mode}): {python_exe}")
+            
+            # 隐藏 cmd 窗口
+            startupinfo = None
+            if sys.platform == 'win32':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             self.backend_proc = subprocess.Popen(
                 args,
                 stdin=subprocess.PIPE,
@@ -233,7 +245,8 @@ class MusicPlayer:
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                env=backend_env
+                env=backend_env,
+                startupinfo=startupinfo
             )
             
             # 启动线程读取后台状态报告

@@ -5,14 +5,12 @@ import re
 import base64
 import io
 import tempfile
-import subprocess
 import requests
-from multiprocessing import Event
 from PyQt5.QtWidgets import (QApplication, QPushButton, QLineEdit, QTreeWidget, 
-                            QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
-                            QTreeWidgetItem)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+                             QMessageBox, QVBoxLayout, QHBoxLayout, QDialog, QLabel, 
+                             QTreeWidgetItem)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QUrl
+from PyQt5.QtGui import QFont, QDesktopServices
 from multi_thread_downloader import download
 from PIL import Image
 import certifi
@@ -21,6 +19,7 @@ import tchMP
 from debug_logger import debug_logger, LogLevel
 
 from misc_func import get_app_base_path
+from resource_urls import get_resource_url, apply_mirror
 
 try:
     from misc_func import SettingsManager
@@ -30,23 +29,9 @@ except ImportError:
 
 from iw_dialogs import LoadingDialog, PageOffsetDialog
 
-class SEIRunnerThread(QThread):
-    """运行SmartEduInteract.exe的线程"""
-    finished_signal = pyqtSignal()
-    error_signal = pyqtSignal(str)
-    
-    def __init__(self, exe_path):
-        super().__init__()
-        self.exe_path = exe_path
-    
-    def run(self):
-        """运行SEI.exe"""
-        try:
-            process = subprocess.Popen([self.exe_path], cwd=os.path.dirname(self.exe_path))
-            process.wait()
-            self.finished_signal.emit()
-        except Exception as e:
-            self.error_signal.emit(str(e))
+SMARTEDU_URL = "https://basic.smartedu.cn/tchMaterial"
+TCHMATERIAL_URL_PATTERN = re.compile(r'contentId=')
+
 
 class AIOCRWorker(QThread):
     """AI OCR识别线程 - 使用AIManager"""
@@ -154,7 +139,6 @@ class OnlineImportDialog(QDialog):
         self.batch_extract_type = ""
         self.total_batch_count = 0
         
-        # 检查在线导入模式
         self.is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"在线导入模式: {'SEI' if self.is_sei_mode else 'GitHub'}", fold_code="OI_INIT")
         
@@ -205,7 +189,7 @@ class OnlineImportDialog(QDialog):
                  border: 2px solid gray; border-radius: 5px;}}
             """)
         
-        main_layout = QVBoxLayout()
+        self.main_layout = QVBoxLayout()
         
         # 路径导航和操作按钮
         nav_layout = QHBoxLayout()
@@ -224,7 +208,7 @@ class OnlineImportDialog(QDialog):
         nav_layout.addStretch()
         nav_layout.addWidget(self.refresh_button)
         
-        main_layout.addLayout(nav_layout)
+        self.main_layout.addLayout(nav_layout)
         
         # 目录浏览器
         self.tree_widget = QTreeWidget(self)
@@ -234,7 +218,7 @@ class OnlineImportDialog(QDialog):
         self.tree_widget.setColumnWidth(2, 100)
         self.tree_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
         
-        main_layout.addWidget(self.tree_widget)
+        self.main_layout.addWidget(self.tree_widget)
         
         # 底部控件
         bottom_layout = QHBoxLayout()
@@ -264,7 +248,7 @@ class OnlineImportDialog(QDialog):
         bottom_layout.addWidget(self.status_label)
         bottom_layout.addStretch()
         
-        main_layout.addLayout(bottom_layout)
+        self.main_layout.addLayout(bottom_layout)
         
         # 按钮
         button_layout = QHBoxLayout()
@@ -279,84 +263,45 @@ class OnlineImportDialog(QDialog):
         button_layout.addStretch()
         button_layout.addWidget(self.confirm_button)
         
-        main_layout.addLayout(button_layout)
+        self.main_layout.addLayout(button_layout)
         
-        self.setLayout(main_layout)
+        self.setLayout(self.main_layout)
         
         # 更新字体大小
         self._update_fonts()
 
     def _init_sei_mode_ui(self):
-        """初始化SEI模式的UI"""
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, "初始化 SEI 模式 UI", fold_code="OI_SEI")
-        # 隐藏GitHub模式相关的UI元素
+        debug_logger.output("iw_online_import.py", LogLevel.INFO, "初始化 SEI 模式 UI (手动输入)", fold_code="OI_SEI")
         self.back_button.setVisible(False)
         self.refresh_button.setVisible(False)
         self.path_label.setVisible(False)
         self.tree_widget.setVisible(False)
-        
-        # 设置合适的窗口大小
-        self.resize(500, 300)
-        
-        # 隐藏页码和提取内容输入框，先启动SEI.exe
-        self.page_label.setVisible(False)
-        self.page_input.setVisible(False)
-        self.extract_label.setVisible(False)
-        self.extract_input.setVisible(False)
-        self.confirm_button.setEnabled(False)
-        
-        # 更新状态标签
-        self.status_label.setText("智慧教育平台导入模式\n正在呼出智慧教育平台交互窗口……\n请选择需要的书籍，选择后程序会自动解析。")
-        
-        # 更新窗口标题
+        self.resize(650, 380)
         self.setWindowTitle("从教科书中导入 - 智慧教育平台模式")
-        
-        # 启动SEI.exe
-        self._launch_sei_and_show_inputs()
 
-    def _launch_sei_and_show_inputs(self):
-        """启动SEI.exe并在结束后显示输入框"""
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在启动 SmartEduInteract.exe", fold_code="OI_SEI")
-        
-        try:
-            # 启动SmartEduInteract.exe并等待结束
-            sei_exe_path = os.path.join(get_app_base_path(), "SEI", "SmartEduInteract.exe")
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 路径: {sei_exe_path}", fold_code="OI_SEI")
-            if not os.path.exists(sei_exe_path):
-                debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"找不到 SmartEduInteract.exe: {sei_exe_path}", fold_code="OI_SEI")
-                QMessageBox.critical(self, "错误", f"找不到SmartEduInteract.exe\n路径: {sei_exe_path}")
-                return
-            
-            # 使用新线程运行SEI，避免阻塞主线程
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"启动 SEI 线程: {sei_exe_path}", fold_code="OI_SEI")
-            self.status_label.setText("正在呼出智慧教育平台交互窗口...")
-            
-            self.sei_thread = SEIRunnerThread(sei_exe_path)
-            self.sei_thread.finished_signal.connect(self._on_sei_finished)
-            self.sei_thread.error_signal.connect(self._on_sei_error)
-            self.sei_thread.start()
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "SEI 线程已启动", fold_code="OI_SEI")
-            
-        except Exception as e:
-            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"启动 SmartEduInteract 失败: {e}", fold_code="OI_SEI")
-            QMessageBox.critical(self, "错误", f"启动SmartEduInteract失败: {str(e)}")
-    
-    def _on_sei_finished(self):
-        """SEI运行完成后的回调"""
-        debug_logger.output("iw_online_import.py", LogLevel.INFO, "SmartEduInteract.exe 运行结束", fold_code="OI_SEI")
-        
-        # 显示输入框
-        self.page_label.setVisible(True)
-        self.page_input.setVisible(True)
-        self.extract_label.setVisible(True)
-        self.extract_input.setVisible(True)
-        self.confirm_button.setEnabled(True)
-        self.status_label.setVisible(False)
-    
-    def _on_sei_error(self, error_msg):
-        """SEI.exe出错时的回调"""
-        debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"SmartEduInteract 运行时出错: {error_msg}", fold_code="OI_SEI")
-        QMessageBox.critical(self, "错误", f"运行SmartEduInteract失败: {error_msg}")
+        self.status_label.setText("已自动打开智慧教育平台，请在浏览器中找到教材详情页，复制链接后粘贴到下方。")
+
+        hint = QLabel('操作步骤：\n1. 浏览器已自动打开智慧教育平台\n2. 找到需要的教科书，进入详情页\n3. 复制浏览器地址栏的完整链接，粘贴到下方输入框\n4. 输入页码和提取内容后点击"确认导入"')
+        hint.setWordWrap(True)
+
+        url_layout = QHBoxLayout()
+        self.sei_url_input = QLineEdit()
+        self.sei_url_input.setPlaceholderText("粘贴教材详情页链接（例如 https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&contentId=...）")
+        self.sei_url_input.textChanged.connect(self._on_sei_url_changed)
+        url_layout.addWidget(self.sei_url_input)
+
+        open_btn = QPushButton("打开平台")
+        open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SMARTEDU_URL)))
+        url_layout.addWidget(open_btn)
+
+        self.main_layout.insertWidget(2, hint)
+        self.main_layout.insertWidget(3, QLabel("教材链接:"))
+        self.main_layout.insertLayout(4, url_layout)
+
+        QDesktopServices.openUrl(QUrl(SMARTEDU_URL))
+
+    def _on_sei_url_changed(self, text):
+        self.confirm_button.setEnabled(bool(text.strip()))
 
     def _update_fonts(self):
         """更新字体大小"""
@@ -418,7 +363,7 @@ class OnlineImportDialog(QDialog):
         self.tree_widget.clear()
         
         try:
-            url = f"https://api.github.com/repos/TapXWorld/ChinaTextbook/contents/{path}"
+            url = get_resource_url('textbook_api', path)
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"发送请求到: {url}", fold_code="OI_DIR")
             
             response = requests.get(url, verify=certifi.where(), timeout=15)
@@ -464,14 +409,8 @@ class OnlineImportDialog(QDialog):
         """根据加速选项获取下载URL"""
         github_acceleration = self.settings_manager.get_github_acceleration() if self.settings_manager else 0
         
-        if github_acceleration == 1:  # ghfast镜像
-            return f"https://ghfast.top/{original_url}"
-        elif github_acceleration == 2:  # ghproxy主站            
-            return f"https://gh-proxy.org/{original_url}"
-        elif github_acceleration == 3:  # ghproxy HK            
-            return f"https://hk.gh-proxy.org/{original_url}"
-        elif github_acceleration == 4:  # ghproxy edgeone
-            return f"https://edgeone.gh-proxy.org/{original_url}"
+        if github_acceleration > 0:
+            return apply_mirror(original_url, mirror_index=github_acceleration)
         else:  # 默认直接从GitHub获取
             return original_url
 
@@ -532,12 +471,8 @@ class OnlineImportDialog(QDialog):
         self.load_directory_contents(self.current_path)
 
     def process_sei_import(self):
-        """处理通过SmartEduInteract.exe的在线导入（第二种解决方案）"""
         debug_logger.output("iw_online_import.py", LogLevel.INFO, "开始处理 SEI 导入流程", fold_code="OI_SEI")
-        # 首先检查页码输入
         page_str = self.page_input.text().strip()
-        
-        # 使用统一的解析函数
         pages = self.parse_page_string(page_str)
         
         if not pages:
@@ -545,7 +480,6 @@ class OnlineImportDialog(QDialog):
             QMessageBox.warning(self, "提示", "请输入有效页码\n支持格式：\n- 单页：5\n- 范围：1-3 或 1~3\n- 列表：1,3,5 或 1、3、5\n- 混合：1-3, 5, 7~9")
             return
             
-        # 检查页码数量，超过4页提示用户
         if len(pages) > 4:
             reply = QMessageBox.question(self, "确认", f"您选择了 {len(pages)} 页进行导入，这可能需要较长时间。\n确认要继续吗？",
                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -556,34 +490,23 @@ class OnlineImportDialog(QDialog):
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"SEI 导入参数: 页码={pages}, 提取内容='{extract_type}'", fold_code="OI_SEI")
         
         loading_dialog = LoadingDialog(self)
-        loading_dialog.text_label.setText("正在读取链接信息...")
+        loading_dialog.text_label.setText("正在解析教材链接...")
         loading_dialog.show()
         QApplication.processEvents()
         
         try:
-            # 1. 读取links.txt文件
-            links_txt_path = os.path.join(get_app_base_path(), "SEI", "links.txt")
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"读取 SEI 链接文件: {links_txt_path}", fold_code="OI_SEI")
-            if not os.path.exists(links_txt_path):
-                debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"找不到 links.txt: {links_txt_path}", fold_code="OI_SEI")
+            sei_url = getattr(self, 'captured_sei_url', None)
+            if not sei_url:
+                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "未捕获到教材链接", fold_code="OI_SEI")
                 loading_dialog.close()
-                QMessageBox.critical(self, "错误", f"找不到links.txt\n路径: {links_txt_path}")
+                QMessageBox.critical(self, "错误", "未捕获到教材链接，请重新选择教材。")
                 return
             
-            # 2. 提取最后一串链接
-            last_link = self._extract_last_link_from_file(links_txt_path)
-            if not last_link:
-                debug_logger.output("iw_online_import.py", LogLevel.ERROR, "未能从 links.txt 中提取到有效链接", fold_code="OI_SEI")
-                loading_dialog.close()
-                QMessageBox.critical(self, "错误", "未能从links.txt中提取到有效链接")
-                return
-            
-            # 3. 调用tchMP.parse解析下载链接和标题
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, "正在通过 tchMP 解析下载链接...", fold_code="OI_SEI")
+            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用捕获的链接: {sei_url}", fold_code="OI_SEI")
             loading_dialog.text_label.setText("正在解析下载链接...")
             QApplication.processEvents()
             
-            download_url, pdf_title, _ = tchMP.parse(last_link, bookmarks=False)
+            download_url, pdf_title, _ = tchMP.parse(sei_url, bookmarks=False)
             if not download_url:
                 debug_logger.output("iw_online_import.py", LogLevel.ERROR, "tchMP 解析下载链接失败", fold_code="OI_SEI")
                 loading_dialog.close()
@@ -592,27 +515,22 @@ class OnlineImportDialog(QDialog):
             
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"解析成功: PDF 标题='{pdf_title}', URL='{download_url}'", fold_code="OI_SEI")
             
-            # 4. 确定保存路径和文件名
             downloads_dir = os.path.join(get_app_base_path(), "downloaded_pdfs")
             if not os.path.exists(downloads_dir):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, f"创建下载目录: {downloads_dir}", fold_code="OI_SEI")
                 os.makedirs(downloads_dir)
             
-            # 使用服务器提供的标题作为文件名
             if pdf_title:
                 filename = re.sub(r'[^\w\-_.]', '_', pdf_title) + '.pdf'
             else:
-                # 如果没有标题，尝试从链接中提取文件名，如果没有则使用时间戳
-                filename = self._extract_filename_from_url(last_link)
+                filename = self._extract_filename_from_url(sei_url)
                 if not filename:
-                    # 使用hh-mm-ss.pdf格式
                     from datetime import datetime
                     filename = datetime.now().strftime("%H-%M-%S.pdf")
             
             saved_pdf_path = os.path.join(downloads_dir, filename)
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"目标保存路径: {saved_pdf_path}", fold_code="OI_SEI")
             
-            # 5. 检查本地是否已存在该PDF文件
             if os.path.exists(saved_pdf_path):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, "检测到本地已存在同名 PDF，跳过下载", fold_code="OI_SEI")
                 loading_dialog.close()
@@ -620,16 +538,13 @@ class OnlineImportDialog(QDialog):
                 self.process_pdf_with_offset(saved_pdf_path, pages, extract_type)
                 return
             
-            # 5. 使用multi_thread_downloader.download下载文件（使用用户设置的线程数）
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"正在下载 PDF: {filename}", fold_code="OI_SEI")
             loading_dialog.text_label.setText(f"正在下载: {filename}")
             QApplication.processEvents()
             
-            # 获取用户设置的下载线程数
             thread_num = self.settings_manager.get_download_thread_num() if self.settings_manager else 1
             debug_logger.output("iw_online_import.py", LogLevel.INFO, f"下载线程数: {thread_num}", fold_code="OI_SEI")
             
-            # 为国家中小学智慧教育平台增加 Referer 以解决 403 Forbidden 错误
             referer = "https://ykt.cbern.com.cn/" if "ykt.cbern.com.cn" in download_url else None
             
             download(
@@ -643,12 +558,9 @@ class OnlineImportDialog(QDialog):
             
             loading_dialog.close()
             
-            # 6. 检查下载是否成功
             if os.path.exists(saved_pdf_path):
                 debug_logger.output("iw_online_import.py", LogLevel.INFO, f"PDF 下载成功，保存在: {saved_pdf_path}", fold_code="OI_SEI")
                 self.status_label.setText(f"PDF已保存到: {saved_pdf_path}")
-                
-                # 直接使用偏移量处理PDF
                 self.process_pdf_with_offset(saved_pdf_path, pages, extract_type)
             else:
                 debug_logger.output("iw_online_import.py", LogLevel.ERROR, "PDF 下载失败，未找到文件", fold_code="OI_SEI")
@@ -658,30 +570,6 @@ class OnlineImportDialog(QDialog):
             debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"SEI 导入处理失败: {e}", fold_code="OI_SEI")
             loading_dialog.close()
             QMessageBox.critical(self, "错误", f"处理失败: {str(e)}")
-
-    def _extract_last_link_from_file(self, file_path):
-        """从links.txt中提取最后一串链接"""
-        try:
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"尝试从文件提取链接: {file_path}", fold_code="OI_SEI")
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # 匹配 [YY-MM-DD hh-mm-ss]网址 或 [YY_MM_DD hh-mm-ss]网址 格式的链接
-            # 支持 - 和 _ 两种日期分隔符
-            pattern = r'\[\d{2}[-_]\d{2}[-_]\d{2}\s+\d{2}-\d{2}-\d{2}\](https?://[^\s]+)'
-            matches = re.findall(pattern, content)
-            
-            debug_logger.output("iw_online_import.py", LogLevel.INFO, f"提取到 {len(matches)} 个匹配的链接", fold_code="OI_SEI")
-            if matches:
-                last_link = matches[-1]
-                debug_logger.output("iw_online_import.py", LogLevel.INFO, f"使用最后一个链接: {last_link}", fold_code="OI_SEI")
-                return last_link
-            
-            debug_logger.output("iw_online_import.py", LogLevel.WARNING, "未能在文件中找到符合格式的链接", fold_code="OI_SEI")
-            return None
-        except Exception as e:
-            debug_logger.output("iw_online_import.py", LogLevel.ERROR, f"提取链接时发生异常: {e}", fold_code="OI_SEI")
-            return None
 
     def _extract_filename_from_url(self, url):
         """尝试从URL中提取文件名"""
@@ -741,13 +629,18 @@ class OnlineImportDialog(QDialog):
             return None
 
     def process_selection(self):
-        """处理选择的文件"""
-        # 检查在线导入模式
         is_sei_mode = self.settings_manager.get_online_import_mode() if self.settings_manager else False
         debug_logger.output("iw_online_import.py", LogLevel.INFO, f"处理确认选择，当前 SEI 模式: {is_sei_mode}", fold_code="OI_CONFIRM")
         
         if is_sei_mode:
-            # 智慧教育平台导入模式
+            url_text = self.sei_url_input.text().strip() if hasattr(self, 'sei_url_input') else ''
+            if not url_text:
+                QMessageBox.warning(self, "提示", "请粘贴教材详情页链接")
+                return
+            if 'contentId=' not in url_text:
+                QMessageBox.warning(self, "提示", "链接格式不正确，请粘贴完整的教材详情页链接（需包含 contentId=...）")
+                return
+            self.captured_sei_url = url_text
             self.process_sei_import()
         else:
             # GitHub导入模式（原有逻辑）
@@ -1105,9 +998,9 @@ class OnlineImportDialog(QDialog):
             if 'download_url' in file_info and file_info['download_url']:
                 return file_info['download_url']
             
-            #构建原始GitHub URL
+            #构建原始GitHub URL（使用 resource_urls 统一管理）
             file_path = file_info['path']
-            raw_url = f"https://raw.githubusercontent.com/TapXWorld/ChinaTextbook/main/{file_path}"
+            raw_url = get_resource_url('textbook_raw', file_path)
             return raw_url
             
         except Exception as e:

@@ -51,7 +51,7 @@ class DebugLogger:
         if self._initialized:
             return
         self._initialized = True
-        self._min_level = LogLevel.WARNING
+        self._min_level = LogLevel.INFO
         self._buffer_mode = True
         self._buffer = []
         self._log_file_path = None

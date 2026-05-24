@@ -405,6 +405,139 @@ class BoolConfigSection(ConfigSection):
     def set_value(self, key: str, value: bool) -> bool:
         """设置布尔值配置值"""
         return StringConfigSection(self.settings_manager, self.section_name).set_value(key, str(value))
+
+
+class CompatibilityConfigSection:
+    """向后兼容的配置段落 - 将旧的 Custom 段落映射到新的分类段落"""
+    
+    # 配置项到新段落的映射
+    KEY_MAPPING = {
+        # Window 段落
+        'window_size': 'Window',
+        'is_first_run': 'Window',
+        
+        # Theme 段落
+        'current_theme': 'Theme',
+        'background_color': 'Theme',
+        'card_background_color': 'Theme',
+        'component_background_color': 'Theme',
+        'highlight_button_color': 'Theme',
+        'text_color': 'Theme',
+        
+        # Font 段落
+        'global_font': 'Font',
+        'min_font_size': 'Font',
+        'max_font_size': 'Font',
+        
+        # Notification 段落
+        'notification_info_color': 'Notification',
+        'notification_warning_color': 'Notification',
+        'notification_error_color': 'Notification',
+        'animation_appear': 'Notification',
+        'animation_disappear': 'Notification',
+        'animation_move': 'Notification',
+        'position_m': 'Notification',
+        'position_n': 'Notification',
+        'width_ratio': 'Notification',
+        'height_ratio': 'Notification',
+        'max_visible': 'Notification',
+        'offset_n': 'Notification',
+        'spacing_n': 'Notification',
+        'auto_close_time': 'Notification',
+        
+        # Tab 段落
+        'tab_order': 'Tab',
+        'tab_visibility': 'Tab',
+        'initial_tab': 'Tab',
+        'tab_switch_speed': 'Tab',
+        'indicator_animation_speed': 'Tab',
+        'indicator_x_offset': 'Tab',
+        'indicator_y_offset': 'Tab',
+        'indicator_width_adjust': 'Tab',
+        'indicator_height_adjust': 'Tab',
+        
+        # Hotkeys 段落
+        'hk_toggle_pause': 'Hotkeys',
+        'hk_seek_backward': 'Hotkeys',
+        'hk_seek_forward': 'Hotkeys',
+        'hk_volume_up': 'Hotkeys',
+        'hk_volume_down': 'Hotkeys',
+        'hk_next_sentence': 'Hotkeys',
+        'hk_prev_sentence': 'Hotkeys',
+        'use_keyboard_hook': 'Hotkeys',
+        'use_sdl_input': 'Hotkeys',
+        
+        # Dictation 段落
+        'default_punctuation_hint': 'Dictation',
+        'default_pause_marks': 'Dictation',
+        'online_import_mode': 'Dictation',
+        
+        # Download 段落
+        'github_acceleration': 'Download',
+        'download_threads': 'Download',
+        'max_download_threads': 'Download',
+        'github_mirror': 'Download',
+        
+        # AI_Models 段落
+        'ai_model_chat_provider': 'AI_Models',
+        'ai_model_chat_model': 'AI_Models',
+        'ai_model_vision_provider': 'AI_Models',
+        'ai_model_vision_model': 'AI_Models',
+        'ai_model_tts_provider': 'AI_Models',
+        'ai_model_tts_model': 'AI_Models',
+        'default_model_mimo': 'AI_Models',
+        'default_model_qwen': 'AI_Models',
+        'default_model_chatglm': 'AI_Models',
+        'default_model_minimax': 'AI_Models',
+        'default_model_ms': 'AI_Models',
+        
+        # Music 段落
+        'music_playlists': 'Music',
+        'music_queue_data': 'Music',
+        'music_play_mode': 'Music',
+        
+        # Streaming 段落
+        'stream_left_bg_color': 'Streaming',
+        'stream_right_bg_color': 'Streaming',
+        'stream_bottom_bg_color': 'Streaming',
+        'stream_lyrics_bg_color': 'Streaming',
+    }
+    
+    def __init__(self, settings_manager):
+        self.settings_manager = settings_manager
+    
+    def _get_section_for_key(self, key: str) -> str:
+        """获取配置项对应的段落名称"""
+        return self.KEY_MAPPING.get(key, 'Custom')
+    
+    def get_value(self, key: str, default: str = "") -> str:
+        """获取配置值 - 自动从正确的段落读取"""
+        section_name = self._get_section_for_key(key)
+        section = StringConfigSection(self.settings_manager, section_name)
+        
+        # 先尝试从新段落读取
+        value = section.get_value(key, None)
+        if value is not None:
+            return value
+        
+        # 如果新段落没有，尝试从旧的 Custom 段落读取（迁移兼容）
+        if section_name != 'Custom':
+            old_section = StringConfigSection(self.settings_manager, 'Custom')
+            value = old_section.get_value(key, None)
+            if value is not None:
+                # 迁移到新段落
+                section.set_value(key, value)
+                return value
+        
+        return default
+    
+    def set_value(self, key: str, value: str) -> bool:
+        """设置配置值 - 自动写入到正确的段落"""
+        section_name = self._get_section_for_key(key)
+        section = StringConfigSection(self.settings_manager, section_name)
+        return section.set_value(key, value)
+
+
 class SettingsManager:
     """设置管理器 - 使用ini文件保存配置 (单例模式)"""
     _instance = None
@@ -420,11 +553,23 @@ class SettingsManager:
     
     # 段落名称常量
     SECTION_API_KEYS = 'API_Keys'
-    SECTION_DEFAULT_VOICES = 'Default_Voices'
     SECTION_DEFAULT_PATHS = 'Default_Paths'
     SECTION_DEFAULT_PARAMETERS = 'Default_Parameters'
     SECTION_PAGE_OFFSETS = 'Page_Offsets'
-    SECTION_Custom = 'Custom'  # 新增个性化设置段落
+    SECTION_Custom = 'Custom'  # 保留用于向后兼容
+    
+    # 新的分类段落
+    SECTION_WINDOW = 'Window'
+    SECTION_THEME = 'Theme'
+    SECTION_FONT = 'Font'
+    SECTION_NOTIFICATION = 'Notification'
+    SECTION_TAB = 'Tab'
+    SECTION_HOTKEYS = 'Hotkeys'
+    SECTION_DICTATION = 'Dictation'
+    SECTION_DOWNLOAD = 'Download'
+    SECTION_AI_MODELS = 'AI_Models'
+    SECTION_MUSIC = 'Music'
+    SECTION_STREAMING = 'Streaming'
     
     def __init__(self):
         if not hasattr(self, '_initialized'): # Ensure __init__ runs only once for singleton
@@ -442,34 +587,46 @@ class SettingsManager:
         """初始化配置段落管理器"""
         debug_logger.output("misc_func.py", LogLevel.INFO, "初始化配置段落管理器", fold_code="MF_INIT")
         self.api_keys = StringConfigSection(self, self.SECTION_API_KEYS)
-        self.default_voices = StringConfigSection(self, self.SECTION_DEFAULT_VOICES)
         self.default_paths = StringConfigSection(self, self.SECTION_DEFAULT_PATHS)
         self.default_parameters = StringConfigSection(self, self.SECTION_DEFAULT_PARAMETERS)
         self.page_offsets = StringConfigSection(self, self.SECTION_PAGE_OFFSETS)
-        self.Custom = StringConfigSection(self, self.SECTION_Custom)  # 新增
+        
+        # 新的分类段落
+        self.window = StringConfigSection(self, self.SECTION_WINDOW)
+        self.theme = StringConfigSection(self, self.SECTION_THEME)
+        self.font = StringConfigSection(self, self.SECTION_FONT)
+        self.notification = StringConfigSection(self, self.SECTION_NOTIFICATION)
+        self.tab = StringConfigSection(self, self.SECTION_TAB)
+        self.hotkeys = StringConfigSection(self, self.SECTION_HOTKEYS)
+        self.dictation = StringConfigSection(self, self.SECTION_DICTATION)
+        self.download = StringConfigSection(self, self.SECTION_DOWNLOAD)
+        self.ai_models = StringConfigSection(self, self.SECTION_AI_MODELS)
+        self.music = StringConfigSection(self, self.SECTION_MUSIC)
+        self.streaming = StringConfigSection(self, self.SECTION_STREAMING)
+        
+        # 保留 Custom 用于向后兼容（作为代理访问新段落）
+        self.Custom = CompatibilityConfigSection(self)
     
     def _ensure_config_file(self):
         """确保配置文件存在"""
         if not os.path.exists(self.config_file):
             debug_logger.output("misc_func.py", LogLevel.WARNING, "配置文件不存在，创建默认配置", fold_code="CFG_INIT")
             self._create_default_config()
+        else:
+            # 检查是否需要迁移旧格式
+            self._check_and_migrate_old_format()
     
     def _create_default_config(self):
         """创建默认配置文件"""
         debug_logger.output("misc_func.py", LogLevel.INFO, "正在创建默认配置文件...", fold_code="CFG_CREATE")
+        
         # API Keys 配置
         self.config[self.SECTION_API_KEYS] = {
             'api_key_ChatGLM': '',
-            'api_key_Azure': '',
-            'api_key_Gemini': '',
-            'api_key_4': '',
-            'api_key_5': ''
-        }
-        
-        # 默认音色配置
-        self.config[self.SECTION_DEFAULT_VOICES] = {
-            'default_voice_1': 'abc',
-            'default_voice_2': 'abc'
+            'api_key_Qwen': '',
+            'api_key_KIMI': '',
+            'api_key_Minimax': '',
+            'api_key_Mimo': ''
         }
         
         # 默认路径配置
@@ -487,16 +644,34 @@ class SettingsManager:
         # 页码偏移量配置
         self.config[self.SECTION_PAGE_OFFSETS] = {}
         
-        # 个性化配置（新增）
-        self.config[self.SECTION_Custom] = {
+        # Window 配置
+        self.config[self.SECTION_WINDOW] = {
             'window_size': '1024x768',
+            'is_first_run': 'True'
+        }
+        
+        # Theme 配置
+        self.config[self.SECTION_THEME] = {
+            'current_theme': '仁物蓝',
             'background_color': CustomConfig.DEFAULT_COLORS['background'],
+            'card_background_color': CustomConfig.DEFAULT_COLORS['card_background'],
+            'component_background_color': CustomConfig.DEFAULT_COLORS['component_background'],
+            'highlight_button_color': CustomConfig.DEFAULT_COLORS['highlight_button'],
+            'text_color': CustomConfig.DEFAULT_COLORS['text_color']
+        }
+        
+        # Font 配置
+        self.config[self.SECTION_FONT] = {
+            'global_font': CustomConfig.DEFAULT_FONTS['global_font'],
+            'min_font_size': CustomConfig.DEFAULT_FONTS['min_font_size'],
+            'max_font_size': CustomConfig.DEFAULT_FONTS['max_font_size']
+        }
+        
+        # Notification 配置
+        self.config[self.SECTION_NOTIFICATION] = {
             'notification_info_color': CustomConfig.DEFAULT_COLORS['notification_info'],
             'notification_warning_color': CustomConfig.DEFAULT_COLORS['notification_warning'],
             'notification_error_color': CustomConfig.DEFAULT_COLORS['notification_error'],
-            'global_font': CustomConfig.DEFAULT_FONTS['global_font'],
-            'min_font_size': CustomConfig.DEFAULT_FONTS['min_font_size'],
-            'max_font_size': CustomConfig.DEFAULT_FONTS['max_font_size'],
             'animation_appear': CustomConfig.DEFAULT_NOTIFICATIONS['animation_appear'],
             'animation_disappear': CustomConfig.DEFAULT_NOTIFICATIONS['animation_disappear'],
             'animation_move': CustomConfig.DEFAULT_NOTIFICATIONS['animation_move'],
@@ -507,18 +682,20 @@ class SettingsManager:
             'max_visible': CustomConfig.DEFAULT_NOTIFICATIONS['max_visible'],
             'offset_n': CustomConfig.DEFAULT_NOTIFICATIONS['offset_n'],
             'spacing_n': CustomConfig.DEFAULT_NOTIFICATIONS['spacing_n'],
-            'auto_close_time': CustomConfig.DEFAULT_NOTIFICATIONS['auto_close_time'],
-            'github_acceleration': '0',  # 新增GitHub下载加速选项，默认0（直接从GitHub获取）
-            'online_import_mode': 'False',  # 新增在线导入模式，默认False（GitHub导入模式）
-            'current_theme': '仁物蓝',
-            'highlight_button_color': CustomConfig.DEFAULT_COLORS['highlight_button'],
-            'card_background_color': CustomConfig.DEFAULT_COLORS['card_background'],
-            'component_background_color': CustomConfig.DEFAULT_COLORS['component_background'],
-            'text_color': CustomConfig.DEFAULT_COLORS['text_color'],
+            'auto_close_time': CustomConfig.DEFAULT_NOTIFICATIONS['auto_close_time']
+        }
+        
+        # Tab 配置
+        self.config[self.SECTION_TAB] = {
             'tab_order': 'welcome,dictation,settings,personalization,misc',
             'tab_visibility': 'welcome,dictation,settings,personalization,misc',
             'initial_tab': 'welcome',
-            # 默认热键设置 (Qt.Key 枚举值)
+            'tab_switch_speed': '300',
+            'indicator_animation_speed': '50'
+        }
+        
+        # Hotkeys 配置
+        self.config[self.SECTION_HOTKEYS] = {
             'hk_toggle_pause': '32',      # Space
             'hk_seek_backward': '65',     # A
             'hk_seek_forward': '68',      # D
@@ -526,8 +703,54 @@ class SettingsManager:
             'hk_volume_down': '83',       # S
             'hk_next_sentence': '16777236',  # Right
             'hk_prev_sentence': '16777234',   # Left
-            'is_first_run': 'True'
+            'use_keyboard_hook': 'True',
+            'use_sdl_input': 'False'
         }
+        
+        # Dictation 配置
+        self.config[self.SECTION_DICTATION] = {
+            'default_punctuation_hint': 'True',
+            'default_pause_marks': '',
+            'online_import_mode': 'False'
+        }
+        
+        # Download 配置
+        self.config[self.SECTION_DOWNLOAD] = {
+            'github_acceleration': '0'
+        }
+        
+        # AI_Models 配置
+        self.config[self.SECTION_AI_MODELS] = {
+            'ai_model_chat_provider': 'ChatGLM',
+            'ai_model_chat_model': 'GLM-4-Flash',
+            'ai_model_vision_provider': 'ChatGLM',
+            'ai_model_vision_model': 'GLM-4V-Flash',
+            'ai_model_tts_provider': 'Microsoft',
+            'ai_model_tts_model': 'edge-tts',
+            'default_model_mimo': 'edge-tts',
+            'default_model_qwen': 'qwen3-tts-flash',
+            'default_model_chatglm': 'GLM-TTS',
+            'default_model_minimax': 'speech-2.8-turbo',
+            'default_model_ms': 'edge-tts'
+        }
+        
+        # Music 配置
+        self.config[self.SECTION_MUSIC] = {
+            'music_playlists': '',
+            'music_queue_data': '[]',
+            'music_play_mode': '0'
+        }
+        
+        # Streaming 配置
+        self.config[self.SECTION_STREAMING] = {
+            'stream_left_bg_color': '#A0A0A0',
+            'stream_right_bg_color': '#A0A0A0',
+            'stream_bottom_bg_color': '#B0B0B0',
+            'stream_lyrics_bg_color': '#9E9E9E'
+        }
+        
+        # Custom 段落（保留为空，用于向后兼容）
+        self.config[self.SECTION_Custom] = {}
         
         self._save_config()
     
@@ -550,6 +773,194 @@ class SettingsManager:
             debug_logger.output("misc_func.py", LogLevel.ERROR, f"保存配置文件失败: {e}", fold_code="CFG_ERR")
             return False
     
+    def _check_and_migrate_old_format(self):
+        """检查并迁移旧格式的配置文件"""
+        try:
+            self._load_config()
+            
+            # 检查是否存在 Custom 段落且包含需要迁移的配置项
+            if 'Custom' not in self.config:
+                return
+            
+            custom_section = self.config['Custom']
+            
+            # 检查是否有需要迁移的配置项（检查几个关键配置项）
+            migration_needed = False
+            key_indicators = ['window_size', 'current_theme', 'global_font', 'hk_toggle_pause', 
+                            'ai_model_chat_provider', 'music_play_mode']
+            
+            for key in key_indicators:
+                if key in custom_section:
+                    migration_needed = True
+                    break
+            
+            if not migration_needed:
+                debug_logger.output("misc_func.py", LogLevel.INFO, "配置文件已是新格式，无需迁移", fold_code="CFG_MIGRATE")
+                return
+            
+            debug_logger.output("misc_func.py", LogLevel.WARNING, "检测到旧格式配置文件，开始自动迁移...", fold_code="CFG_MIGRATE")
+            
+            # 备份原配置文件
+            self._backup_config_file()
+            
+            # 执行迁移
+            self._migrate_custom_section()
+            
+            debug_logger.output("misc_func.py", LogLevel.INFO, "配置文件迁移完成", fold_code="CFG_MIGRATE")
+            
+        except Exception as e:
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"配置文件迁移失败: {e}", fold_code="CFG_ERR")
+    
+    def _backup_config_file(self):
+        """备份配置文件到 cache/backup 目录"""
+        try:
+            from datetime import datetime
+            
+            # 确保备份目录存在
+            backup_dir = os.path.join(get_app_base_path(), "cache", "backup")
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # 生成备份文件名
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f"settings.ini.backup.{timestamp}"
+            backup_path = os.path.join(backup_dir, backup_filename)
+            
+            # 复制文件
+            import shutil
+            shutil.copy2(self.config_file, backup_path)
+            
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"配置文件已备份到: {backup_path}", fold_code="CFG_BACKUP")
+            
+        except Exception as e:
+            debug_logger.output("misc_func.py", LogLevel.ERROR, f"备份配置文件失败: {e}", fold_code="CFG_ERR")
+    
+    def _migrate_custom_section(self):
+        """迁移 Custom 段落中的配置项到新的分类段落"""
+        
+        # 配置项到新段落的映射
+        key_mapping = {
+            # Window 段落
+            'window_size': self.SECTION_WINDOW,
+            'is_first_run': self.SECTION_WINDOW,
+            
+            # Theme 段落
+            'current_theme': self.SECTION_THEME,
+            'background_color': self.SECTION_THEME,
+            'card_background_color': self.SECTION_THEME,
+            'component_background_color': self.SECTION_THEME,
+            'highlight_button_color': self.SECTION_THEME,
+            'text_color': self.SECTION_THEME,
+            
+            # Font 段落
+            'global_font': self.SECTION_FONT,
+            'min_font_size': self.SECTION_FONT,
+            'max_font_size': self.SECTION_FONT,
+            
+            # Notification 段落
+            'notification_info_color': self.SECTION_NOTIFICATION,
+            'notification_warning_color': self.SECTION_NOTIFICATION,
+            'notification_error_color': self.SECTION_NOTIFICATION,
+            'animation_appear': self.SECTION_NOTIFICATION,
+            'animation_disappear': self.SECTION_NOTIFICATION,
+            'animation_move': self.SECTION_NOTIFICATION,
+            'position_m': self.SECTION_NOTIFICATION,
+            'position_n': self.SECTION_NOTIFICATION,
+            'width_ratio': self.SECTION_NOTIFICATION,
+            'height_ratio': self.SECTION_NOTIFICATION,
+            'max_visible': self.SECTION_NOTIFICATION,
+            'offset_n': self.SECTION_NOTIFICATION,
+            'spacing_n': self.SECTION_NOTIFICATION,
+            'auto_close_time': self.SECTION_NOTIFICATION,
+            
+            # Tab 段落
+            'tab_order': self.SECTION_TAB,
+            'tab_visibility': self.SECTION_TAB,
+            'initial_tab': self.SECTION_TAB,
+            'tab_switch_speed': self.SECTION_TAB,
+            'indicator_animation_speed': self.SECTION_TAB,
+            'indicator_x_offset': self.SECTION_TAB,
+            'indicator_y_offset': self.SECTION_TAB,
+            'indicator_width_adjust': self.SECTION_TAB,
+            'indicator_height_adjust': self.SECTION_TAB,
+            
+            # Hotkeys 段落
+            'hk_toggle_pause': self.SECTION_HOTKEYS,
+            'hk_seek_backward': self.SECTION_HOTKEYS,
+            'hk_seek_forward': self.SECTION_HOTKEYS,
+            'hk_volume_up': self.SECTION_HOTKEYS,
+            'hk_volume_down': self.SECTION_HOTKEYS,
+            'hk_next_sentence': self.SECTION_HOTKEYS,
+            'hk_prev_sentence': self.SECTION_HOTKEYS,
+            'use_keyboard_hook': self.SECTION_HOTKEYS,
+            'use_sdl_input': self.SECTION_HOTKEYS,
+            
+            # Dictation 段落
+            'default_punctuation_hint': self.SECTION_DICTATION,
+            'default_pause_marks': self.SECTION_DICTATION,
+            'online_import_mode': self.SECTION_DICTATION,
+            
+            # Download 段落
+            'github_acceleration': self.SECTION_DOWNLOAD,
+            'download_threads': self.SECTION_DOWNLOAD,
+            'max_download_threads': self.SECTION_DOWNLOAD,
+            'github_mirror': self.SECTION_DOWNLOAD,
+            
+            # AI_Models 段落
+            'ai_model_chat_provider': self.SECTION_AI_MODELS,
+            'ai_model_chat_model': self.SECTION_AI_MODELS,
+            'ai_model_vision_provider': self.SECTION_AI_MODELS,
+            'ai_model_vision_model': self.SECTION_AI_MODELS,
+            'ai_model_tts_provider': self.SECTION_AI_MODELS,
+            'ai_model_tts_model': self.SECTION_AI_MODELS,
+            'default_model_mimo': self.SECTION_AI_MODELS,
+            'default_model_qwen': self.SECTION_AI_MODELS,
+            'default_model_chatglm': self.SECTION_AI_MODELS,
+            'default_model_minimax': self.SECTION_AI_MODELS,
+            'default_model_ms': self.SECTION_AI_MODELS,
+            
+            # Music 段落
+            'music_playlists': self.SECTION_MUSIC,
+            'music_queue_data': self.SECTION_MUSIC,
+            'music_play_mode': self.SECTION_MUSIC,
+            
+            # Streaming 段落
+            'stream_left_bg_color': self.SECTION_STREAMING,
+            'stream_right_bg_color': self.SECTION_STREAMING,
+            'stream_bottom_bg_color': self.SECTION_STREAMING,
+            'stream_lyrics_bg_color': self.SECTION_STREAMING,
+        }
+        
+        custom_section = self.config['Custom']
+        migrated_count = 0
+        
+        # 迁移配置项
+        for key, value in list(custom_section.items()):
+            target_section = key_mapping.get(key)
+            
+            if target_section:
+                # 创建目标段落（如果不存在）
+                if target_section not in self.config:
+                    self.config[target_section] = {}
+                
+                # 迁移配置项
+                self.config[target_section][key] = value
+                migrated_count += 1
+                debug_logger.output("misc_func.py", LogLevel.DEBUG, f"迁移配置项: {key} -> [{target_section}]", fold_code="CFG_MIGRATE")
+        
+        # 清空 Custom 段落（保留未知的配置项）
+        known_keys = set(key_mapping.keys())
+        unknown_items = {k: v for k, v in custom_section.items() if k not in known_keys}
+        
+        self.config.remove_section('Custom')
+        self.config['Custom'] = unknown_items
+        
+        # 保存迁移后的配置
+        self._save_config()
+        
+        debug_logger.output("misc_func.py", LogLevel.INFO, f"成功迁移 {migrated_count} 个配置项", fold_code="CFG_MIGRATE")
+        if unknown_items:
+            debug_logger.output("misc_func.py", LogLevel.INFO, f"保留 {len(unknown_items)} 个未知配置项在 [Custom] 段落", fold_code="CFG_MIGRATE")
+    
     # API Key 相关方法
     def get_api_key(self, key_name: str) -> str:
         """获取API Key"""
@@ -561,20 +972,6 @@ class SettingsManager:
         """设置API Key"""
         debug_logger.output("misc_func.py", LogLevel.INFO, f"设置 API Key: {key_name}", fold_code="CFG_API")
         return self.api_keys.set_value(key_name, value)
-    
-    # 默认音色相关方法
-    def get_default_voice(self, index: int) -> str:
-        """获取默认音色"""
-        key = f'default_voice_{index}'
-        val = self.default_voices.get_value(key, 'abc')
-        debug_logger.output("misc_func.py", LogLevel.INFO, f"获取默认音色 {index}: {val}", fold_code="CFG_VOICE")
-        return val
-    
-    def set_default_voice(self, index: int, value: str) -> bool:
-        """设置默认音色"""
-        key = f'default_voice_{index}'
-        debug_logger.output("misc_func.py", LogLevel.INFO, f"设置默认音色 {index}: {value}", fold_code="CFG_VOICE")
-        return self.default_voices.set_value(key, value)
     
     # 默认保存路径相关方法
     def get_default_save_path(self) -> str:
@@ -740,7 +1137,7 @@ class SettingsManager:
         """
         debug_logger.output("misc_func.py", LogLevel.INFO, f"设置在线导入模式: {value}", fold_code="CFG_NET")
         return self.Custom.set_value('online_import_mode', str(value))
-    
+
     # 工具方法
     def get_all_settings(self) -> Dict[str, Dict[str, str]]:
         """获取所有设置"""
