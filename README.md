@@ -2,9 +2,6 @@
 <div align="center">
 
 
-
-
-
 # <img src="https://github.com/CN-Air84/YuanYue-TTS/blob/main/docs/26.04.15_02.00.svg" width="36"> 源悦TTS
 	
 
@@ -16,14 +13,7 @@
 
 
 
-不定期更新|已持续更新五个月|给孩子点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
-
-
-
-[基础功能使用说明](/docs/范小勤看了都能懂的基础使用教程.md)
-
-
-
+不定期更新|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
