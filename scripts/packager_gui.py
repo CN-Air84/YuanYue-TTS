@@ -221,6 +221,11 @@ class PackagerGUI(QWidget):
         self.no_console_checkbox.setChecked(True)
         options_layout.addWidget(self.no_console_checkbox)
 
+        # Win7/8 兼容性选项
+        self.win7_compat_checkbox = QCheckBox('Win7/8 兼容性打包（包含 UCRT 运行时）')
+        self.win7_compat_checkbox.setChecked(False)
+        options_layout.addWidget(self.win7_compat_checkbox)
+
         options_group.setLayout(options_layout)
         layout.addWidget(options_group)
 
@@ -497,6 +502,15 @@ class PackagerGUI(QWidget):
         # 编码选项
         if self.encoding_checkbox.isChecked():
             args.append('--hidden-import=encodings.utf_8')
+
+        # Win7/8 兼容性选项
+        if self.win7_compat_checkbox.isChecked():
+            # 确保 win_compat.py 被打包进去
+            args.append('--hidden-import=win_compat')
+            # 使用私有程序集（让 UCRT 等运行时 DLL 随 exe 分发，Win7 可能缺少这些 DLL）
+            args.append('--win-private-assemblies')
+            # 添加 ucrt 的 hidden-import（Win7 需要的 Universal C Runtime）
+            args.append('--hidden-import=ucrt')
 
         runtime_hook_path = Path(__file__).resolve().parent / 'runtime_hook_preload.py'
         if runtime_hook_path.exists():
