@@ -658,37 +658,122 @@ class DictationSettingsGroup(QWidget):
         hint_layout.addStretch()
         layout.addLayout(hint_layout)
         
-        # 默认停顿设置标题
-        pause_title = QLabel("默认停顿设置:")
-        pause_title.setStyleSheet(self.STYLES['label'] + "font-weight: bold; color: black;")
-        layout.addWidget(pause_title)
+        # 自动连播设置
+        auto_play_group = QFrame()
+        auto_play_group.setStyleSheet("QFrame { background: transparent; border: none; }")
+        auto_play_layout = QVBoxLayout(auto_play_group)
+        auto_play_layout.setContentsMargins(0, 0, 0, 0)
+        auto_play_layout.setSpacing(8)
         
-        # 停顿符号按钮网格
-        self.pause_buttons_layout = QGridLayout()
-        self.pause_buttons_layout.setSpacing(8)
-        self.pause_buttons = {}
-        layout.addLayout(self.pause_buttons_layout)
+        # 第一行: 启用开关
+        ap_enable_layout = QHBoxLayout()
+        ap_enable_label = QLabel("默认启用自动连播:")
+        ap_enable_label.setStyleSheet(self.STYLES['label'])
+        self.auto_play_checkbox = QCheckBox()
+        self.auto_play_checkbox.setStyleSheet(self.STYLES['checkbox'])
+        self.auto_play_checkbox.stateChanged.connect(self._on_auto_play_enabled_changed)
+        ap_enable_layout.addWidget(ap_enable_label)
+        ap_enable_layout.addWidget(self.auto_play_checkbox)
+        ap_enable_layout.addStretch()
+        auto_play_layout.addLayout(ap_enable_layout)
         
-        # 管理按钮
-        manage_layout = QHBoxLayout()
+        # 第二行: 模式 + 数值
+        ap_mode_layout = QHBoxLayout()
+        ap_mode_label = QLabel("默认间隔时长:")
+        ap_mode_label.setStyleSheet(self.STYLES['label'])
+        self.auto_play_mode_combo = QComboBox()
+        self.auto_play_mode_combo.addItem("固定时长", "fixed")
+        self.auto_play_mode_combo.addItem("动态倍率", "dynamic")
+        self.auto_play_mode_combo.setStyleSheet(self.STYLES['combo'])
+        self.auto_play_mode_combo.installEventFilter(self.wheel_filter)
+        self.auto_play_mode_combo.currentIndexChanged.connect(self._on_auto_play_mode_changed)
         
-        self.add_pause_button = QPushButton("添加分隔符")
-        self.add_pause_button.setStyleSheet(self.STYLES['button'])
-        self.add_pause_button.clicked.connect(self._add_pause_mark)
-        manage_layout.addWidget(self.add_pause_button)
+        self.auto_play_fixed_spin = QDoubleSpinBox()
+        self.auto_play_fixed_spin.setRange(0.1, 10.0)
+        self.auto_play_fixed_spin.setSingleStep(0.1)
+        self.auto_play_fixed_spin.setDecimals(1)
+        self.auto_play_fixed_spin.setValue(1.0)
+        self.auto_play_fixed_spin.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 4px 8px;
+                min-height: 20px;
+                min-width: 70px;
+            }
+            QDoubleSpinBox:focus { border: 1px solid #4A90E2; }
+        """)
+        self.auto_play_fixed_spin.installEventFilter(self.wheel_filter)
+        self.auto_play_fixed_spin.valueChanged.connect(self._on_auto_play_fixed_changed)
         
-        self.edit_pause_button = QPushButton("编辑分隔符")
-        self.edit_pause_button.setStyleSheet(self.STYLES['button'])
-        self.edit_pause_button.clicked.connect(self._edit_pause_mark)
-        manage_layout.addWidget(self.edit_pause_button)
+        self.auto_play_fixed_unit = QLabel("秒")
+        self.auto_play_fixed_unit.setStyleSheet(self.STYLES['label'])
         
-        self.delete_pause_button = QPushButton("删除分隔符")
-        self.delete_pause_button.setStyleSheet(self.STYLES['button'])
-        self.delete_pause_button.clicked.connect(self._delete_pause_mark)
-        manage_layout.addWidget(self.delete_pause_button)
+        self.auto_play_dynamic_spin = QDoubleSpinBox()
+        self.auto_play_dynamic_spin.setRange(0.1, 5.0)
+        self.auto_play_dynamic_spin.setSingleStep(0.1)
+        self.auto_play_dynamic_spin.setDecimals(1)
+        self.auto_play_dynamic_spin.setValue(1.0)
+        self.auto_play_dynamic_spin.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 4px 8px;
+                min-height: 20px;
+                min-width: 70px;
+            }
+            QDoubleSpinBox:focus { border: 1px solid #4A90E2; }
+        """)
+        self.auto_play_dynamic_spin.installEventFilter(self.wheel_filter)
+        self.auto_play_dynamic_spin.valueChanged.connect(self._on_auto_play_dynamic_changed)
         
-        manage_layout.addStretch()
-        layout.addLayout(manage_layout)
+        self.auto_play_dynamic_unit = QLabel("倍")
+        self.auto_play_dynamic_unit.setStyleSheet(self.STYLES['label'])
+        
+        ap_mode_layout.addWidget(ap_mode_label)
+        ap_mode_layout.addWidget(self.auto_play_mode_combo)
+        ap_mode_layout.addWidget(self.auto_play_fixed_spin)
+        ap_mode_layout.addWidget(self.auto_play_fixed_unit)
+        ap_mode_layout.addWidget(self.auto_play_dynamic_spin)
+        ap_mode_layout.addWidget(self.auto_play_dynamic_unit)
+        ap_mode_layout.addStretch()
+        auto_play_layout.addLayout(ap_mode_layout)
+        
+        layout.addWidget(auto_play_group)
+
+        # # 默认停顿设置标题
+        # pause_title = QLabel("默认停顿设置:")
+        # pause_title.setStyleSheet(self.STYLES['label'] + "font-weight: bold; color: black;")
+        # layout.addWidget(pause_title)
+
+        # # 停顿符号按钮网格
+        # self.pause_buttons_layout = QGridLayout()
+        # self.pause_buttons_layout.setSpacing(8)
+        # self.pause_buttons = {}
+        # layout.addLayout(self.pause_buttons_layout)
+
+        # # 管理按钮
+        # manage_layout = QHBoxLayout()
+
+        # self.add_pause_button = QPushButton("添加分隔符")
+        # self.add_pause_button.setStyleSheet(self.STYLES['button'])
+        # self.add_pause_button.clicked.connect(self._add_pause_mark)
+        # manage_layout.addWidget(self.add_pause_button)
+
+        # self.edit_pause_button = QPushButton("编辑分隔符")
+        # self.edit_pause_button.setStyleSheet(self.STYLES['button'])
+        # self.edit_pause_button.clicked.connect(self._edit_pause_mark)
+        # manage_layout.addWidget(self.edit_pause_button)
+
+        # self.delete_pause_button = QPushButton("删除分隔符")
+        # self.delete_pause_button.setStyleSheet(self.STYLES['button'])
+        # self.delete_pause_button.clicked.connect(self._delete_pause_mark)
+        # manage_layout.addWidget(self.delete_pause_button)
+
+        # manage_layout.addStretch()
+        # layout.addLayout(manage_layout)
     
     def _on_mode_changed(self, index):
         mode_data = self.import_mode_combo.itemData(index)
@@ -698,7 +783,30 @@ class DictationSettingsGroup(QWidget):
         """标点提示开关改变"""
         enabled = (state == Qt.Checked)
         self.settings_manager.Custom.set_value('default_punctuation_hint', str(enabled))
-    
+
+    def _on_auto_play_enabled_changed(self, state):
+        """自动连播启用开关改变"""
+        enabled = (state == Qt.Checked)
+        self.settings_manager.Custom.set_value('auto_play_enabled', str(enabled))
+
+    def _on_auto_play_mode_changed(self, index):
+        """自动连播模式改变"""
+        mode = self.auto_play_mode_combo.itemData(index)
+        self.settings_manager.Custom.set_value('auto_play_interval_mode', mode)
+        is_fixed = (mode == 'fixed')
+        self.auto_play_fixed_spin.setVisible(is_fixed)
+        self.auto_play_fixed_unit.setVisible(is_fixed)
+        self.auto_play_dynamic_spin.setVisible(not is_fixed)
+        self.auto_play_dynamic_unit.setVisible(not is_fixed)
+
+    def _on_auto_play_fixed_changed(self, value):
+        """固定时长值改变"""
+        self.settings_manager.Custom.set_value('auto_play_interval_fixed', str(value))
+
+    def _on_auto_play_dynamic_changed(self, value):
+        """动态倍率值改变"""
+        self.settings_manager.Custom.set_value('auto_play_interval_dynamic', str(value))
+
     def _on_pause_mark_toggled(self, name, enabled):
         """停顿符号按钮切换"""
         pause_marks = self._get_pause_marks()
@@ -878,8 +986,30 @@ class DictationSettingsGroup(QWidget):
         hint_enabled = self.settings_manager.Custom.get_value('default_punctuation_hint', 'True')
         self.punctuation_hint_checkbox.setChecked(hint_enabled.lower() == 'true')
         
-        # 加载停顿符号按钮
-        self._refresh_pause_buttons()
+        # 加载自动连播设置
+        ap_enabled = self.settings_manager.Custom.get_value('auto_play_enabled', 'False')
+        self.auto_play_checkbox.setChecked(ap_enabled.lower() == 'true')
+        
+        ap_mode = self.settings_manager.Custom.get_value('auto_play_interval_mode', 'fixed')
+        mode_idx = self.auto_play_mode_combo.findData(ap_mode)
+        if mode_idx >= 0:
+            self.auto_play_mode_combo.setCurrentIndex(mode_idx)
+        
+        ap_fixed = self.settings_manager.Custom.get_value('auto_play_interval_fixed', '1.0')
+        self.auto_play_fixed_spin.setValue(float(ap_fixed))
+        
+        ap_dynamic = self.settings_manager.Custom.get_value('auto_play_interval_dynamic', '1.0')
+        self.auto_play_dynamic_spin.setValue(float(ap_dynamic))
+        
+        # 同步可见性
+        is_fixed = (ap_mode == 'fixed')
+        self.auto_play_fixed_spin.setVisible(is_fixed)
+        self.auto_play_fixed_unit.setVisible(is_fixed)
+        self.auto_play_dynamic_spin.setVisible(not is_fixed)
+        self.auto_play_dynamic_unit.setVisible(not is_fixed)
+        
+        # # 加载停顿符号按钮
+        # self._refresh_pause_buttons()
 
 
 class DraggableTabButton(QPushButton):
@@ -1192,7 +1322,7 @@ class TabSettingsGroup(QWidget):
         """)
         self.drag_container_frame.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         drag_frame_layout = QVBoxLayout(self.drag_container_frame)
-        drag_frame_layout.setContentsMargins(10, 15, 10, 15)
+        drag_frame_layout.setContentsMargins(10, 30, 10, 30)
         
         self.drag_container = VerticalDragContainer()
         self.drag_container.order_changed.connect(self._on_order_changed)

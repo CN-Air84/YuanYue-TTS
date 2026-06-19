@@ -5,12 +5,17 @@ import requests
 import threading
 from datetime import datetime
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QGridLayout, QScrollArea, QFrame,
-    QSizePolicy, QApplication, QSpacerItem, QToolButton
+    QSizePolicy, QApplication, QSpacerItem, QToolButton,
+    QGraphicsOpacityEffect
 )
-from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal, QSize
+from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal, QSize, QEasingCurve, pyqtProperty
 from PyQt5.QtGui import QFont, QPixmap, QDesktopServices, QFontDatabase, QIcon
+try:
+    from PyQt5.QtCore import QPropertyAnimation
+except ImportError:
+    QPropertyAnimation = None
 
 from debug_logger import debug_logger, LogLevel
 from misc_func import SettingsManager, get_app_base_path
@@ -19,13 +24,95 @@ from network_latency_checker import NetworkLatencyChecker
 from resource_urls import get_resource_url
 
 class ClickableLabel(QLabel):
-    """可点击的标签，用于切换字体"""
+    """可点击的标签，用于切换字体；支持打字机动画与缩放反馈"""
     clicked = pyqtSignal()
-    
+
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.setCursor(Qt.PointingHandCursor)
-        
+
+        # 打字机动画状态
+        self._full_text = text
+        self._typewriter_timer = QTimer(self)
+        self._typewriter_timer.timeout.connect(self._on_typewriter_tick)
+        self._typewriter_pos = 0
+
+        # 缩放动画状态（通过自定义属性 scaleFactor 驱动 paintEvent 缩放）
+        self._scale = 1.0
+        self._scale_anim = None
+
+    # ---------- 打字机动画 ----------
+    def play_typewriter(self, text=None, interval_ms=60):
+        """逐字显示文本
+
+        Args:
+            text: 要显示的完整文本（默认沿用当前 full_text）
+            interval_ms: 每个字的间隔毫秒
+        """
+        if text is not None:
+            self._full_text = text
+        self._typewriter_pos = 0
+        super().setText("")
+        self._typewriter_timer.start(interval_ms)
+
+    def _on_typewriter_tick(self):
+        self._typewriter_pos += 1
+        super().setText(self._full_text[:self._typewriter_pos])
+        if self._typewriter_pos >= len(self._full_text):
+            self._typewriter_timer.stop()
+
+    # ---------- 缩放动画 ----------
+    @pyqtProperty(float)
+    def scaleFactor(self):
+        return self._scale
+
+    @scaleFactor.setter
+    def scaleFactor(self, value):
+        self._scale = value
+        self.update()
+
+    def play_pop(self, peak=1.18, duration_ms=380):
+        """轻微缩放反馈：放大后回弹到原始大小"""
+        if QPropertyAnimation is None:
+            return
+        if self._scale_anim is not None and self._scale_anim.state() == QPropertyAnimation.Running:
+            self._scale_anim.stop()
+        anim = QPropertyAnimation(self, b"scaleFactor", self)
+        anim.setDuration(duration_ms)
+        anim.setStartValue(self._scale)
+        anim.setKeyValueAt(0.35, peak)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutBack)
+        anim.start()
+        self._scale_anim = anim
+
+    def setText(self, text):
+        self._full_text = text
+        super().setText(text)
+
+    def paintEvent(self, event):
+        """按 scaleFactor 围绕中心缩放绘制文本"""
+        from PyQt5.QtGui import QPainter
+        if abs(self._scale - 1.0) < 1e-3:
+            # 未缩放时使用原生绘制，保留 QLabel 的全部默认行为
+            super().paintEvent(event)
+            return
+        # 缩放时自己绘制文本，确保缩放视觉生效
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        cx = self.width() / 2.0
+        cy = self.height() / 2.0
+        painter.translate(cx, cy)
+        painter.scale(self._scale, self._scale)
+        painter.translate(-cx, -cy)
+        # 应用当前字体与样式表颜色
+        painter.setFont(self.font())
+        text = self.text()
+        flags = int(self.alignment()) | Qt.AlignVCenter
+        painter.drawText(self.rect(), flags, text)
+        painter.end()
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
@@ -83,8 +170,8 @@ class WelcomePage(QWidget):
         # 异步加载数据
         self._start_async_loading()
         
-        # 随机切换标语字体
-        self._change_slogan_font()
+        # 随机切换标语字体（初始化不播放动画）
+        self._change_slogan_font(animate=False)
         
         # 启动网络延迟检测
         self.latency_checker.check_once()  # 立即检测一次
@@ -103,71 +190,26 @@ class WelcomePage(QWidget):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(20)
         
-        # 1. 顶部 Logo 横幅 + 网络状态
+        # 1. 顶部 Logo 横幅（横向居中）
         self.logo_card = QFrame()
         self.logo_card.setStyleSheet("background-color: transparent; border: none;")
-        logo_main_layout = QHBoxLayout(self.logo_card)
+        logo_main_layout = QVBoxLayout(self.logo_card)
         logo_main_layout.setContentsMargins(0, 0, 0, 0)
-        logo_main_layout.setSpacing(20)
-        
-        # 1.1 Logo部分
+        logo_main_layout.setSpacing(0)
+
+        # Logo 部分（横向居中）
         logo_container = QWidget()
         logo_layout = QVBoxLayout(logo_container)
         logo_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.logo_label = QLabel()
         self.logo_label.setAlignment(Qt.AlignCenter)
         self.logo_label.setMinimumHeight(180)
         self.logo_label.setText("正在获取 Logo...")
         logo_layout.addWidget(self.logo_label)
-        
-        # 1.2 网络状态卡片
-        self.network_status_card = QFrame()
-        self.network_status_card.setObjectName("whiteCard")
-        self.network_status_card.setFixedWidth(280)
-        network_layout = QVBoxLayout(self.network_status_card)
-        network_layout.setContentsMargins(15, 15, 15, 15)
-        network_layout.setSpacing(10)
-        
-        # 标题
-        network_title = QLabel("在线服务可用性检测")
-        network_title.setObjectName("networkTitle")
-        network_title.setStyleSheet("font-weight: bold; color: #333;")
-        network_title.setAlignment(Qt.AlignCenter)
-        network_layout.addWidget(network_title)
-        
-        # Github延迟
-        github_row = QHBoxLayout()
-        github_label = QLabel("Github")
-        github_label.setStyleSheet("color: #555;")
-        self.github_latency = QLabel("999ms")
-        self.github_latency.setObjectName("latencyValue")
-        self.github_latency.setStyleSheet("font-weight: bold; color: #E74C3C;")
-        self.github_latency.setAlignment(Qt.AlignRight)
-        github_row.addWidget(github_label)
-        github_row.addStretch()
-        github_row.addWidget(self.github_latency)
-        network_layout.addLayout(github_row)
-        
-        # 国内资源延迟
-        domestic_row = QHBoxLayout()
-        domestic_label = QLabel("国内资源")
-        domestic_label.setStyleSheet("color: #555;")
-        self.domestic_latency = QLabel("16ms")
-        self.domestic_latency.setObjectName("latencyValue")
-        self.domestic_latency.setStyleSheet("font-weight: bold; color: #27AE60;")
-        self.domestic_latency.setAlignment(Qt.AlignRight)
-        domestic_row.addWidget(domestic_label)
-        domestic_row.addStretch()
-        domestic_row.addWidget(self.domestic_latency)
-        network_layout.addLayout(domestic_row)
-        
-        network_layout.addStretch()
-        
-        # 组装Logo区域
-        logo_main_layout.addWidget(logo_container, stretch=7)
-        logo_main_layout.addWidget(self.network_status_card, stretch=3)
-        
+
+        logo_main_layout.addWidget(logo_container)
+
         self.main_layout.addWidget(self.logo_card)
         
         # 2. 中间内容网格
@@ -181,7 +223,7 @@ class WelcomePage(QWidget):
         self.slogan_card.setObjectName("whiteCard")
         slogan_layout = QVBoxLayout(self.slogan_card)
         self.slogan_label = ClickableLabel("源悦TTS，与你共鸣。")
-        self.slogan_label.setAlignment(Qt.AlignCenter)
+        self.slogan_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.slogan_label.clicked.connect(self._change_slogan_font)
         slogan_layout.addWidget(self.slogan_label)
         self.grid_layout.addWidget(self.slogan_card, 0, 0)
@@ -247,12 +289,12 @@ class WelcomePage(QWidget):
         echo_layout.addWidget(self.change_echo_btn, 0, Qt.AlignRight)
         self.grid_layout.addWidget(self.echo_card, 2, 0)
         
-        # 2.5 程序简介卡片 (右侧大卡片)
+        # 2.5 公告栏卡片 (右侧大卡片)
         self.intro_card = QFrame()
         self.intro_card.setObjectName("whiteCard")
         intro_layout = QVBoxLayout(self.intro_card)
-        
-        self.intro_title = QLabel("程序简介")
+
+        self.intro_title = QLabel("公告栏")
         self.intro_title.setObjectName("introTitle")
         self.intro_title.setStyleSheet("font-weight: bold; font-size: 18px; color: #333;")
         
@@ -260,12 +302,57 @@ class WelcomePage(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
         
-        self.intro_label = QLabel("正在从网络获取简介...")
+        self.intro_label = QLabel("正在获取公告...")
         self.intro_label.setWordWrap(True)
         self.intro_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.intro_label.setStyleSheet("line-height: 1.5; color: #444;")
         self.scroll_area.setWidget(self.intro_label)
-        
+
+        # 在线服务可用性检测徽章（紧凑横向格式，放在简介与底部信息栏之间）
+        self.network_status_card = QFrame()
+        self.network_status_card.setObjectName("networkStatusBadge")
+        self.network_status_card.setStyleSheet(
+            "#networkStatusBadge { background-color: rgba(245,247,250,0.9); "
+            "border: 1px solid #E5E8EB; border-radius: 12px; }"
+        )
+        network_layout = QHBoxLayout(self.network_status_card)
+        network_layout.setContentsMargins(12, 6, 12, 6)
+        network_layout.setSpacing(8)
+        network_layout.setAlignment(Qt.AlignVCenter)
+
+        # Github 延迟
+        github_dot = QLabel("●")
+        github_dot.setObjectName("githubDot")
+        github_dot.setStyleSheet("color: #E74C3C; background: transparent; border: none;")
+        network_layout.addWidget(github_dot)
+        github_label = QLabel("Github")
+        github_label.setStyleSheet("color: #555; background: transparent; border: none;")
+        network_layout.addWidget(github_label)
+        self.github_latency = QLabel("999ms")
+        self.github_latency.setObjectName("latencyValue")
+        self.github_latency.setStyleSheet("font-weight: bold; color: #E74C3C; background: transparent; border: none;")
+        network_layout.addWidget(self.github_latency)
+
+        # 分隔
+        sep = QLabel("|")
+        sep.setStyleSheet("color: #CCC; background: transparent; border: none;")
+        network_layout.addWidget(sep)
+
+        # 国内资源延迟
+        domestic_dot = QLabel("●")
+        domestic_dot.setObjectName("domesticDot")
+        domestic_dot.setStyleSheet("color: #27AE60; background: transparent; border: none;")
+        network_layout.addWidget(domestic_dot)
+        domestic_label = QLabel("国内")
+        domestic_label.setStyleSheet("color: #555; background: transparent; border: none;")
+        network_layout.addWidget(domestic_label)
+        self.domestic_latency = QLabel("16ms")
+        self.domestic_latency.setObjectName("latencyValue")
+        self.domestic_latency.setStyleSheet("font-weight: bold; color: #27AE60; background: transparent; border: none;")
+        network_layout.addWidget(self.domestic_latency)
+
+        network_layout.addStretch()
+
         # 底部信息栏 (版本、Github、更新)
         info_footer_container = QVBoxLayout()
         info_footer_container.setSpacing(5)
@@ -293,7 +380,8 @@ class WelcomePage(QWidget):
         info_footer_container.addLayout(btns_row)
         
         intro_layout.addWidget(self.intro_title)
-        intro_layout.addWidget(self.scroll_area)
+        intro_layout.addWidget(self.scroll_area, stretch=1)
+        intro_layout.addWidget(self.network_status_card)
         intro_layout.addLayout(info_footer_container)
         
         self.grid_layout.addWidget(self.intro_card, 1, 1, 2, 1)
@@ -468,19 +556,22 @@ class WelcomePage(QWidget):
         self.btn_settings.setFont(nav_font)
         self.btn_misc.setFont(nav_font)
         
-        # 6. 网络状态卡片
-        network_title_font = QFont(self.global_font, font_base + 1, QFont.Bold)
-        network_content_font = QFont(self.global_font, font_base)
-        
-        # 查找网络状态卡片中的标题和标签
+        # 6. 在线服务可用性徽章（紧凑横向格式）
+        badge_title_font = QFont(self.global_font, font_base, QFont.Bold)
+        badge_value_font = QFont(self.global_font, font_base, QFont.Bold)
+        badge_content_font = QFont(self.global_font, max(8, font_base - 1))
+
+        # 查找徽章中的标题、圆点和标签
         if hasattr(self, 'network_status_card'):
             for child in self.network_status_card.findChildren(QLabel):
                 if child.objectName() == "networkTitle":
-                    child.setFont(network_title_font)
+                    child.setFont(badge_title_font)
                 elif child.objectName() == "latencyValue":
-                    child.setFont(QFont(self.global_font, font_base + 2, QFont.Bold))
+                    child.setFont(badge_value_font)
+                elif child.objectName() in ("githubDot", "domesticDot"):
+                    child.setFont(QFont(self.global_font, font_base - 2, QFont.Bold))
                 else:
-                    child.setFont(network_content_font)
+                    child.setFont(badge_content_font)
         
         # 调整导航按钮图标大小 - 放大为原先的 133%
         icon_size = int(48 * 1.33 * ratio)
@@ -493,14 +584,31 @@ class WelcomePage(QWidget):
         self.btn_dictation.setFixedSize(btn_size, btn_size)
         self.btn_settings.setFixedSize(btn_size, btn_size)
         self.btn_misc.setFixedSize(btn_size, btn_size)
-        
-        # 调整网络状态卡片宽度
-        if hasattr(self, 'network_status_card'):
-            card_width = int(280 * ratio)
-            self.network_status_card.setFixedWidth(card_width)
-        
+
         # 调整Logo大小
         self._scale_logo()
+
+        # 按窗口宽度锁定左侧三卡片宽度（避免动画期间被缩窄）
+        self._update_left_card_widths()
+
+    def _update_left_card_widths(self):
+        """按窗口宽度 × 固定比率实时计算并锁定左侧三卡片宽度
+
+        左侧列原本占网格约 40%（列拉伸权重 4 : 6）。
+        此处在动画期间（以及正常情况下）用 setFixedWidth 锁死宽度，
+        避免 slogan_label 的 paintEvent 缩放导致网格重新分配空间。
+        """
+        if not self.parent_window:
+            return
+        # 左侧列固定占窗口宽度的 40%，并留出主布局左右边距 + 列间距
+        margin_total = 40  # main_layout 左右边距 20*2
+        available = max(200, self.parent_window.width() - margin_total)
+        left_ratio = 0.40  # 与 setColumnStretch(0,4) / setColumnStretch(1,6) 一致
+        # 减去一列间距（grid spacing 20）以贴近实际可用宽度
+        col_w = int(available * left_ratio)
+        col_w = max(160, col_w)
+        for card in (self.slogan_card, self.status_card, self.echo_card):
+            card.setFixedWidth(col_w)
 
     def _update_time(self):
         """更新时间显示"""
@@ -538,10 +646,14 @@ class WelcomePage(QWidget):
         except Exception as e:
             debug_logger.output("welcome_page.py", LogLevel.ERROR, f"调用更新方法失败: {e}")
 
-    def _change_slogan_font(self):
-        """更换标语的中文字体"""
+    def _change_slogan_font(self, animate=True):
+        """更换标语的中文字体
+
+        Args:
+            animate: 是否触发打字机 + 缩放动画（点击时为 True，初始化设为 False）
+        """
         chinese_fonts = [
-            "微软雅黑", "Microsoft YaHei", "宋体", "SimSun", "黑体", "SimHei", 
+            "微软雅黑", "Microsoft YaHei", "宋体", "SimSun", "黑体", "SimHei",
             "楷体", "KaiTi", "仿宋", "FangSong", "新宋体", "NSimSun",
             "华文宋体", "STSong", "华文黑体", "STHeiti", "华文楷体", "STKaiti",
             "华文仿宋", "STFangsong", "Arial Unicode MS"
@@ -549,13 +661,19 @@ class WelcomePage(QWidget):
         font_db = QFontDatabase()
         available = font_db.families()
         valid_fonts = [f for f in chinese_fonts if f in available]
-        
+
         if not valid_fonts:
             valid_fonts = ["Arial", "Helvetica", "Sans-serif"]
-            
+
         self.current_slogan_font_name = random.choice(valid_fonts)
         debug_logger.output("welcome_page.py", LogLevel.INFO, f"Slogan font changed to: {self.current_slogan_font_name}", fold_code="WELCOME_FONT")
         self._update_fonts()
+
+        # 触发输入动画：打字机逐字显示 + 轻微缩放反馈
+        if animate:
+            full_text = self.slogan_label._full_text
+            self.slogan_label.play_typewriter(text=full_text, interval_ms=55)
+            self.slogan_label.play_pop(peak=1.18, duration_ms=400)
     
     def _start_async_loading(self):
         """开始异步加载网络数据"""
@@ -572,7 +690,7 @@ class WelcomePage(QWidget):
         # 2. 加载回声树洞
         threading.Thread(target=self._fetch_echo_zen_task, daemon=True).start()
         
-        # 3. 加载程序简介
+        # 3. 加载公告
         threading.Thread(target=self._fetch_intro_task, daemon=True).start()
 
     def _get_download_url(self, original_url):
@@ -654,7 +772,7 @@ class WelcomePage(QWidget):
             debug_logger.output("welcome_page.py", LogLevel.ERROR, f"Error fetching echo zen: {str(e)}", fold_code="WELCOME_ASYNC")
 
     def _fetch_intro_task(self):
-        """获取程序简介"""
+        """获取公告"""
         try:
             url = get_resource_url('doc', 'intro')
             debug_logger.output("welcome_page.py", LogLevel.INFO, "Fetching program intro...", fold_code="WELCOME_ASYNC")

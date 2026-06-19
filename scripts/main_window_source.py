@@ -1,5 +1,29 @@
 # coding=utf-8
 
+'''
+源悦TTS Ver. ☺packager-replace-version☺
+编译于 ☺packager-replace-update-date☺
+------
+本程序基于Apache2.0协议开源。
+------
+
+'''
+#========#
+'''
++ ###  听写：添加 连播功能，
+        可自定义间隔时长，支持 固定间隔时长 和 上一句时长*倍率 两种间隔时长计算方法
++ 听写：暂时移除 自定义分隔符功能 
++ 个性化选项卡:窗口尺寸设置卡片 和 颜色设置卡片 合并为 外观设置卡片。
++ 欢迎选项卡：将 程序简介卡片 修改为 公告栏卡片。
++ 欢迎选项卡：在线服务可用性检测卡片 修改为胶囊并嵌入公告栏卡片。
++ 欢迎选项卡：修改 slogan卡片 点击动画
++ 流媒体选项卡：添加 网易云音乐账号登录 功能
++ 流媒体选项卡：优化滚动效果；歌单名称支持滚动
++ 流媒体选项卡：添加四个预设歌单
++ 流媒体选项卡：重写歌单管理UI
+
+'''
+
 from re import T
 import sys
 import os
@@ -71,11 +95,7 @@ from startup_profiler import StartupProfiler
 _main_window_instance_count = 0
 _main_window_instances_lock = threading.Lock() 
 
-'''
-+ 新增 好像还不错的启动动画
-+ 新增 插件系统 
-+ 通过障眼法彻底略去了启动时窗口缩放
-'''
+
 
 class VersionInfos:
     """版本信息"""
@@ -206,7 +226,6 @@ class AsyncInitializer:
 
         self._steps.append(("初始化共享内存", self._step_init_shared_memory))
         self._steps.append(("初始化插件系统", self._step_init_plugin_system))
-        self._steps.append(("初始化通知管理器", self._step_init_notification))
 
         debug_logger.output(
             "main_window.py",
@@ -347,9 +366,6 @@ class AsyncInitializer:
 
     def _step_init_plugin_system(self):
         self.parent_window._async_init_plugin_system()
-
-    def _step_init_notification(self):
-        self.parent_window._async_init_non_critical_components()
 
 
 
@@ -704,7 +720,7 @@ class MainWindow(QWidget):
             self.plugin_manager = None
             
             self._audio_generator = None  # 延迟加载
-            self._notification_manager = None  # 延迟加载
+
 
             self._init_audio_state()
             self._init_ui_variables()
@@ -808,7 +824,7 @@ class MainWindow(QWidget):
         # 从设置中获取配置
         tab_order_str = self.settings_manager.get_Custom_value("tab_order", "welcome,dictation,settings,personalization,misc,streaming,plugins")
         debug_logger.output("main_window.py", LogLevel.INFO, f"读取选项卡排序配置: {tab_order_str}", fold_code="MAIN_TABS")
-        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming")
+        tab_visibility_str = self.settings_manager.get_Custom_value("tab_visibility", "welcome,dictation,settings,personalization,misc,streaming,plugins")
         initial_tab_name = self.settings_manager.get_Custom_value("initial_tab", "welcome")
         
         tab_order = [t.strip() for t in tab_order_str.split(',') if t.strip()]
@@ -825,10 +841,10 @@ class MainWindow(QWidget):
             tab_visibility.append('streaming')
             tab_order.append('streaming')
             
-        # 针对新功能 'plugins'：如果它不在可见列表也不在排序列表中（可能是旧配置），则将其添加到排序列表但不添加到可见列表（默认隐藏）
+        # 针对新功能 'plugins'：如果它不在可见列表也不在排序列表中（可能是旧配置），则默认将其添加到最后
         if 'plugins' not in tab_visibility and 'plugins' not in tab_order:
-            debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '插件' 未在配置中，正在自动注册（默认隐藏）", fold_code="MAIN_TABS")
-            # 只添加到排序列表，不添加到可见列表，实现默认隐藏
+            debug_logger.output("main_window.py", LogLevel.INFO, "检测到新功能 '插件' 未在配置中，正在自动注册", fold_code="MAIN_TABS")
+            tab_visibility.append('plugins')
             tab_order.append('plugins')
 
         # 1. 过滤掉不显示的选项卡
@@ -857,7 +873,7 @@ class MainWindow(QWidget):
             self.ready_gate.register(f"page_{name}")
         
         # 4. 注册延迟初始化组件的就绪栅栏
-        for gate_name in ("hotkey", "audio", "shared_memory", "plugin_system", "notification"):
+        for gate_name in ("hotkey", "audio", "shared_memory", "plugin_system"):
             self.ready_gate.register(gate_name)
 
         # 5. 确定起始页索引
@@ -1158,11 +1174,6 @@ class MainWindow(QWidget):
         """异步初始化非关键组件。"""
         try:
             debug_logger.output("main_window.py", LogLevel.INFO, "执行非关键组件异步初始化", fold_code="MAIN_ASYNC")
-            from notification import NotificationManager
-
-            self._notification_manager = NotificationManager(self)
-            self.ready_gate.mark_ready("notification", self._notification_manager)
-            debug_logger.output("main_window.py", LogLevel.INFO, "NotificationManager 初始化成功", fold_code="MAIN_ASYNC")
 
             self.font_manager.update_all_fonts()
             debug_logger.output("main_window.py", LogLevel.INFO, "全局字体适配完成", fold_code="MAIN_ASYNC")
@@ -1192,6 +1203,17 @@ class MainWindow(QWidget):
         if self.hotkey_manager is not None:
             debug_logger.output("main_window.py", LogLevel.INFO, "正在加载全局热键配置", fold_code="MAIN_INIT")
             self.hotkey_manager.load_hotkeys()
+            
+            # 检查是否启用键盘钩子模式
+            use_hook_raw = self.settings_manager.Custom.get_value("use_keyboard_hook", True)
+            if isinstance(use_hook_raw, str):
+                use_hook = use_hook_raw.lower() == 'true'
+            else:
+                use_hook = bool(use_hook_raw)
+            
+            if use_hook:
+                debug_logger.output("main_window.py", LogLevel.INFO, "正在启动键盘钩子模式", fold_code="MAIN_INIT")
+                self.hotkey_manager.set_keyboard_hook_mode(True)
 
     def _connect_shared_memory_signals(self):
         """连接共享内存信号"""
@@ -1609,17 +1631,6 @@ class MainWindow(QWidget):
             from tts_router import get_tts_router
             self._audio_generator = get_tts_router()
         return self._audio_generator
-    
-    @property
-    def notification_manager(self):
-        """获取通知管理器（延迟加载）"""
-        if self._notification_manager is None:
-            debug_logger.output("main_window.py", LogLevel.INFO, "正在延迟加载通知管理器组件", fold_code="MAIN_LAZY")
-            from notification import NotificationManager
-            self._notification_manager = NotificationManager(self)
-            self.ready_gate.mark_ready("notification", self._notification_manager)
-        return self._notification_manager
-
     
     @property
     def generation_page(self):

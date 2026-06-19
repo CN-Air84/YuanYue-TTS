@@ -12,9 +12,9 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QButtonGroup, QMessageBox,
     QStackedWidget, QGraphicsOpacityEffect, QFrame, QScrollArea, QGridLayout,
     QSizePolicy, QSpacerItem, QLayout, QFileDialog, QListWidget, QListWidgetItem,
-    QAbstractItemView
+    QAbstractItemView, QDoubleSpinBox, QGraphicsDropShadowEffect, QApplication
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot, QTimer, QPropertyAnimation, QEasingCurve, QVariantAnimation, QSize, QParallelAnimationGroup, QPoint
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, pyqtSlot, QTimer, QPropertyAnimation, QEasingCurve, QVariantAnimation, QSize, QParallelAnimationGroup, QPoint, QEvent
 from PyQt5.QtGui import QFont, QColor, QPainter, QFontMetrics
 
 from misc_func import AudioConfig, VoiceConfig, ContentHasher, AudioFileManager, InputValidator
@@ -581,9 +581,9 @@ class LongPressButton(QPushButton):
         if event.button() == Qt.LeftButton:
             self.press_timer.stop()
             if not self.is_long_press:
-                # 普通点击，触发 clicked 信号（由父类处理）
-                pass
-        super().mouseReleaseEvent(event)
+                super().mouseReleaseEvent(event)
+        else:
+            super().mouseReleaseEvent(event)
     
     def _on_long_press(self):
         """长按触发"""
@@ -1484,6 +1484,169 @@ class ImportButtonHandler:
 
 
 # =============================================================================
+# 自动连播间隔调节悬浮窗
+# =============================================================================
+class AutoPlayIntervalPopup(QFrame):
+    """自动连播间隔调节悬浮窗，支持输入框和滑条联动"""
+
+    value_changed = pyqtSignal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setStyleSheet("background: transparent;")
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QColor(0, 0, 0, 100))
+        self.setGraphicsEffect(shadow)
+
+        container = QFrame()
+        container.setObjectName("popupContainer")
+        container.setStyleSheet("""
+            QFrame#popupContainer {
+                background-color: #FFFFFF;
+                border: 1px solid #D8D8D8;
+                border-radius: 8px;
+            }
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 14, 16, 16)
+        layout.setSpacing(12)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)
+
+        self.title_label = QLabel()
+        self.title_label.setStyleSheet("border: none; background: transparent; color: #555;")
+
+        self.spinbox = QDoubleSpinBox()
+        self.spinbox.setDecimals(1)
+        self.spinbox.setFixedWidth(72)
+        self.spinbox.setAlignment(Qt.AlignCenter)
+        self.spinbox.setStyleSheet("""
+            QDoubleSpinBox {
+                border: 1px solid #D0D0D0;
+                border-radius: 5px;
+                padding: 4px 0;
+                background: #FFFFFF;
+                color: #333;
+            }
+            QDoubleSpinBox:focus {
+                border: 1px solid #4A90E2;
+            }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                width: 0;
+                border: none;
+            }
+        """)
+
+        top_row.addWidget(self.title_label)
+        top_row.addStretch()
+        top_row.addWidget(self.spinbox)
+        layout.addLayout(top_row)
+
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setFixedHeight(26)
+        self.slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #E8E8E8;
+                height: 6px;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #4A90E2;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #FFFFFF;
+                width: 18px;
+                height: 18px;
+                margin: -6px 0;
+                border-radius: 9px;
+                border: 2px solid #4A90E2;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #F5F8FF;
+                border: 2px solid #357ABD;
+            }
+        """)
+        self.slider.valueChanged.connect(self._on_slider_changed)
+        self.spinbox.valueChanged.connect(self._on_spinbox_changed)
+
+        layout.addWidget(self.slider)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(container)
+
+        self.setFixedWidth(280)
+
+    def configure(self, current_value, min_val, max_val, step, title, font):
+        """配置数值范围和样式，准备显示"""
+        self.title_label.setText(title)
+        self.title_label.setFont(font)
+        self.spinbox.setFont(font)
+        self.spinbox.blockSignals(True)
+        self.spinbox.setRange(min_val, max_val)
+        self.spinbox.setSingleStep(step)
+        self.spinbox.setValue(current_value)
+        self.spinbox.blockSignals(False)
+        int_min = int(min_val * 10)
+        int_max = int(max_val * 10)
+        self.slider.blockSignals(True)
+        self.slider.setRange(int_min, int_max)
+        self.slider.setValue(int(current_value * 10))
+        self.slider.blockSignals(False)
+        self.adjustSize()
+
+    def show_at(self, px, py):
+        """在全局坐标 (px, py) 处显示"""
+        self.move(px, py)
+        self.show()
+        self.raise_()
+        QApplication.instance().installEventFilter(self)
+        if self.parent() and isinstance(self.parent(), QWidget):
+            self.parent().installEventFilter(self)
+
+    def _on_spinbox_changed(self, value):
+        self.slider.blockSignals(True)
+        self.slider.setValue(int(value * 10))
+        self.slider.blockSignals(False)
+        self.value_changed.emit(value)
+
+    def _on_slider_changed(self, value):
+        real_val = value / 10.0
+        self.spinbox.blockSignals(True)
+        self.spinbox.setValue(real_val)
+        self.spinbox.blockSignals(False)
+        self.value_changed.emit(real_val)
+
+    def eventFilter(self, obj, event):
+        if not self.isVisible():
+            return False
+        if event.type() == QEvent.MouseButtonPress:
+            if not self.rect().contains(self.mapFromGlobal(event.globalPos())):
+                self.hide()
+        elif event.type() == QEvent.Move and obj is self.parent():
+            self.hide()
+        return False
+
+    def hideEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        if self.parent() and isinstance(self.parent(), QWidget):
+            try:
+                self.parent().removeEventFilter(self)
+            except RuntimeError:
+                pass
+        super().hideEvent(event)
+
+
+# =============================================================================
 # 主页面类 - 生成页面
 # =============================================================================
 class GenerationPage(QWidget):
@@ -1529,6 +1692,15 @@ class GenerationPage(QWidget):
         # 状态: "generate" - 生成音频, "generating" - 生成中, "next_sentence" - 下一句
         self.key_button_state = "generate"
         self.all_sentences_played = False  # 标记是否所有句子都已播放完毕
+
+        # 自动连播
+        self.auto_play_enabled = True
+        self.auto_play_interval_mode = 'fixed'
+        self.auto_play_interval_fixed = 1.0
+        self.auto_play_interval_dynamic = 1.0
+        self.auto_play_timer = QTimer(self)
+        self.auto_play_timer.setSingleShot(True)
+        self.auto_play_timer.timeout.connect(self._on_auto_play_timeout)
         
         self._init_ui()
         self._connect_signals()
@@ -1884,6 +2056,14 @@ class GenerationPage(QWidget):
         self.end_dictation_btn.long_pressed.connect(self._end_dictation_with_clear_text)
         layout.addWidget(self.end_dictation_btn)
         
+        # 进度条（不允许拖动）
+        self.progress_slider = QSlider(Qt.Horizontal)
+        self.progress_slider.setRange(0, 1000)
+        self.progress_slider.setValue(0)
+        self.progress_slider.setEnabled(False)  # 不允许拖动
+        self.progress_slider.setStyleSheet(self._get_progress_style())
+        layout.addWidget(self.progress_slider, 1)
+        
         # 播放控制按钮组
         control_layout = QHBoxLayout()
         control_layout.setSpacing(10)
@@ -1893,18 +2073,12 @@ class GenerationPage(QWidget):
         self.prev_btn.setStyleSheet(self._get_control_button_style())
         self.prev_btn.clicked.connect(self._play_prev_sentence)
         
-        self.play_pause_btn = QPushButton("⏸")
-        self.play_pause_btn.setFixedSize(40, 40)
-        self.play_pause_btn.setStyleSheet(self._get_control_button_style())
-        self.play_pause_btn.clicked.connect(self._toggle_play_pause)
-        
         self.next_btn = QPushButton("▶")
         self.next_btn.setFixedSize(40, 40)
         self.next_btn.setStyleSheet(self._get_control_button_style())
         self.next_btn.clicked.connect(self._play_next_sentence)
         
         control_layout.addWidget(self.prev_btn)
-        control_layout.addWidget(self.play_pause_btn)
         control_layout.addWidget(self.next_btn)
         
         layout.addLayout(control_layout)
@@ -1926,15 +2100,15 @@ class GenerationPage(QWidget):
         
         layout.addLayout(volume_layout)
         
-        layout.addStretch()
-        
-        # 进度条（不允许拖动）
-        self.progress_slider = QSlider(Qt.Horizontal)
-        self.progress_slider.setRange(0, 1000)
-        self.progress_slider.setValue(0)
-        self.progress_slider.setEnabled(False)  # 不允许拖动
-        self.progress_slider.setStyleSheet(self._get_progress_style())
-        layout.addWidget(self.progress_slider, 2)
+        # 自动连播按钮
+        self.auto_play_btn = LongPressButton("连播")
+        self.auto_play_btn.long_press_duration = 500
+        self.auto_play_btn.setFixedHeight(36)
+        self.auto_play_btn.setMinimumWidth(60)
+        self.auto_play_btn.clicked.connect(self._toggle_auto_play)
+        self.auto_play_btn.long_pressed.connect(self._on_auto_play_long_press)
+        self._update_auto_play_button_style()
+        layout.addWidget(self.auto_play_btn)
         
         return bar
     
@@ -2005,6 +2179,105 @@ class GenerationPage(QWidget):
                 border-radius: 8px;
             }
         """
+
+    def _get_auto_play_button_style(self):
+        """获取自动连播按钮样式"""
+        if self.auto_play_enabled:
+            return """
+                QPushButton {
+                    background-color: #2E8B57;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    padding: 8px 10px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #27774A;
+                }
+                QPushButton:pressed {
+                    background-color: #1E5C39;
+                }
+            """
+        else:
+            return """
+                QPushButton {
+                    background-color: #FFFFFF;
+                    color: #888888;
+                    border: 1px solid #D0D0D0;
+                    border-radius: 5px;
+                    padding: 8px 10px;
+                }
+                QPushButton:hover {
+                    background-color: #F0F0F0;
+                }
+            """
+
+    def _update_auto_play_button_style(self):
+        """更新自动连播按钮样式"""
+        self.auto_play_btn.setStyleSheet(self._get_auto_play_button_style())
+
+    def _toggle_auto_play(self):
+        """切换自动连播开关"""
+        self.auto_play_enabled = not self.auto_play_enabled
+        self._update_auto_play_button_style()
+        if not self.auto_play_enabled:
+            self._stop_auto_play_timer()
+        self.settings_manager.Custom.set_value('auto_play_enabled', str(self.auto_play_enabled))
+
+    def _on_auto_play_long_press(self):
+        """长按自动连播按钮 - 悬浮窗调节间隔时长"""
+        if self.auto_play_interval_mode == 'dynamic':
+            current = self.auto_play_interval_dynamic
+            min_val, max_val, step = 0.1, 5.0, 0.1
+            title = "连播倍率"
+            attr = 'auto_play_interval_dynamic'
+        else:
+            current = self.auto_play_interval_fixed
+            min_val, max_val, step = 0.1, 10.0, 0.1
+            title = "连播间隔"
+            attr = 'auto_play_interval_fixed'
+
+        if not hasattr(self, '_auto_play_popup'):
+            self._auto_play_popup = AutoPlayIntervalPopup(self.parent_window)
+        popup = self._auto_play_popup
+
+        try:
+            popup.value_changed.disconnect()
+        except TypeError:
+            pass
+        popup.value_changed.connect(lambda v: setattr(self, attr, v))
+        popup.configure(current, min_val, max_val, step, title, QFont(self.global_font, 12))
+        popup.adjustSize()
+
+        btn = self.auto_play_btn
+        gx = btn.mapToGlobal(QPoint(btn.width() // 2, 0)).x()
+        gy = btn.mapToGlobal(QPoint(0, 0)).y()
+        px = gx - popup.width() // 2
+        py = gy - popup.height() - 4
+        screen = QApplication.primaryScreen().geometry()
+        if py < screen.top():
+            py = btn.mapToGlobal(QPoint(0, btn.height())).y() + 4
+        popup.show_at(px, py)
+
+    def _start_auto_play_timer(self):
+        """启动自动连播定时器"""
+        if self.auto_play_interval_mode == 'dynamic':
+            duration = self.sentence_manager.audio_durations.get(
+                self.sentence_manager.current_sentence_index, 1.0
+            )
+            interval = duration * self.auto_play_interval_dynamic
+        else:
+            interval = self.auto_play_interval_fixed
+        self.auto_play_timer.start(int(interval * 1000))
+
+    def _stop_auto_play_timer(self):
+        """停止自动连播定时器"""
+        self.auto_play_timer.stop()
+
+    def _on_auto_play_timeout(self):
+        """自动连播定时器触发 - 播放下一个分句"""
+        self._play_next_sentence()
 
     # =============================================================================
     # 信号连接
@@ -2132,6 +2405,17 @@ class GenerationPage(QWidget):
                 except Exception as e:
                     debug_logger.output("generation_page_neo.py", LogLevel.ERROR, 
                                        f"加载停顿符号配置失败: {str(e)}", fold_code="GEN_INIT")
+            
+            # 加载自动连播设置
+            auto_play = self.settings_manager.Custom.get_value('auto_play_enabled', 'True')
+            self.auto_play_enabled = (auto_play.lower() == 'true')
+            self.auto_play_interval_mode = self.settings_manager.Custom.get_value('auto_play_interval_mode', 'fixed')
+            self.auto_play_interval_fixed = float(self.settings_manager.Custom.get_value('auto_play_interval_fixed', '1.0'))
+            self.auto_play_interval_dynamic = float(self.settings_manager.Custom.get_value('auto_play_interval_dynamic', '1.0'))
+            debug_logger.output("generation_page_neo.py", LogLevel.INFO, 
+                               f"加载自动连播设置: enabled={self.auto_play_enabled}, mode={self.auto_play_interval_mode}, "
+                               f"fixed={self.auto_play_interval_fixed}s, dynamic={self.auto_play_interval_dynamic}x", 
+                               fold_code="GEN_INIT")
         except Exception as e:
             debug_logger.output("generation_page_neo.py", LogLevel.ERROR, 
                                f"加载默认设置失败: {str(e)}", fold_code="GEN_INIT")
@@ -2157,16 +2441,16 @@ class GenerationPage(QWidget):
         if self.parent_window and hasattr(self.parent_window, 'audio_preview'):
             if self.parent_window.is_playing:
                 self.parent_window.audio_preview.pause_audio()
-                self.play_pause_btn.setText("▶")
             elif hasattr(self.parent_window.audio_preview, 'is_paused') and self.parent_window.audio_preview.is_paused:
                 self.parent_window.audio_preview.resume_audio()
-                self.play_pause_btn.setText("⏸")
             else:
                 self._play_current_sentence()
     
     def _end_dictation(self):
         """结束听写 - 清空听写相关内容，保留输入文本"""
         debug_logger.output("generation_page_neo.py", LogLevel.INFO, "结束听写（保留文本）", fold_code="GEN_CTRL")
+        
+        self._stop_auto_play_timer()
         
         # 停止音频
         if self.parent_window and hasattr(self.parent_window, 'audio_preview'):
@@ -2184,7 +2468,6 @@ class GenerationPage(QWidget):
         
         # 重置UI状态
         self.progress_slider.setValue(0)
-        self.play_pause_btn.setText("▶")
         
         # 清空分句列表显示
         self.sentence_list_widget.update_sentences([], 0)
@@ -2265,7 +2548,7 @@ class GenerationPage(QWidget):
                     self.tab_sentence_btn, self.tab_pause_btn, self.tab_voice_btn,
                     self.tab_prev_btn, self.tab_next_btn,
                     self.generate_btn, self.end_dictation_btn, self.prev_btn,
-                    self.play_pause_btn, self.next_btn]:
+                    self.next_btn, self.auto_play_btn]:
             btn.setFont(font)
             
         # 标签类
@@ -2279,6 +2562,7 @@ class GenerationPage(QWidget):
     # =============================================================================
     def _play_current_sentence(self):
         """播放当前句子"""
+        self._stop_auto_play_timer()
         manager = self.sentence_manager
         if not manager.sentences:
             return
@@ -2288,11 +2572,16 @@ class GenerationPage(QWidget):
             if self.parent_window and hasattr(self.parent_window, 'audio_preview'):
                 audio_preview = self.parent_window.audio_preview
                 if audio_preview and hasattr(audio_preview, 'audio_signals') and audio_preview.audio_signals:
+                    try:
+                        audio_preview.audio_signals.playback_finished.disconnect(
+                            self._on_sentence_playback_complete
+                        )
+                    except TypeError:
+                        pass
                     audio_preview.audio_signals.playback_finished.connect(
                         self._on_sentence_playback_complete
                     )
                     audio_preview._play_audio_file(audio_file)
-                    self.play_pause_btn.setText("⏸")
                     
                     # 更新进度条
                     total = len(manager.sentences)
@@ -2306,6 +2595,7 @@ class GenerationPage(QWidget):
     
     def _play_next_sentence(self):
         """播放下一句"""
+        self._stop_auto_play_timer()
         if self.sentence_manager.move_to_next_sentence():
             self._update_sentence_list()
             self._play_current_sentence()
@@ -2314,6 +2604,7 @@ class GenerationPage(QWidget):
     
     def _play_prev_sentence(self):
         """播放上一句"""
+        self._stop_auto_play_timer()
         if self.sentence_manager.move_to_prev_sentence():
             self._update_sentence_list()
             self._play_current_sentence()
@@ -2322,7 +2613,6 @@ class GenerationPage(QWidget):
     
     def _on_sentence_playback_complete(self):
         """句子播放完成"""
-        self.play_pause_btn.setText("▶")
         
         # 自动更新进度条
         manager = self.sentence_manager
@@ -2337,6 +2627,8 @@ class GenerationPage(QWidget):
                 self.all_sentences_played = True
                 self._set_key_button_state("generate")
                 debug_logger.output("generation_page_neo.py", LogLevel.INFO, "所有句子播放完毕", fold_code="GEN_PLAY")
+            elif self.auto_play_enabled:
+                self._start_auto_play_timer()
     
     def _on_hotkey_next_sentence(self):
         """热键：下一句"""
