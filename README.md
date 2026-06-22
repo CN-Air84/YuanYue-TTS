@@ -142,7 +142,7 @@
 |---|---|
 | Windows 10 或更高|✅ 经测试可运行 |
 | Windows 8.1 |  ✅ 理论可运行 |
-| Windows 7 SP1 7601 - Windows 8 | ❌ 暂不支持 |
+| Windows 7 SP1 7601 - Windows 8 | ✅ 旧版兼容模式 |
 | WinVista 或更低 / 一切32位系统 / 一切Arm系统 / …… | ❌ 无法原生运行 |
 | macOS / Linux  | ⚠️ 理论无法原生运行 |
 

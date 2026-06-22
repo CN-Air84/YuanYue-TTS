@@ -74,6 +74,12 @@ import threading
 
 if not sys.platform.startswith('win'):
     import fcntl
+
+# Windows 7 SP1 / Windows 8 兼容性补丁
+# 必须在 import PyQt5 之前调用，以设置正确的渲染引擎环境变量
+from win_compat import patch_qt_rendering, patch_dpi_awareness, patch_tls_12, check_compat_warnings, get_compat_level, CompatLevel
+patch_qt_rendering()
+
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QStackedWidget, QGraphicsOpacityEffect
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QPainter, QColor, QPainterPath
@@ -1823,6 +1829,15 @@ def main():
     debug_logger.output(" ", LogLevel.INFO, f"更新内容摘要: {version_info.update_content()[:50]}...", fold_code="MAIN_VERSION")
 
     # multiprocessing.freeze_support() 已在文件最前部、本模块其余 import 之前调用（见文件开头注释）
+
+    # Windows 7 SP1 / Windows 8 兼容性补丁：DPI 感知 + TLS 1.2
+    # patch_dpi_awareness 必须在 QApplication 创建之前调用
+    patch_dpi_awareness()
+    patch_tls_12()
+    _compat_level, _compat_warnings = get_compat_level(), check_compat_warnings()
+    if _compat_warnings:
+        for _cw in _compat_warnings:
+            debug_logger.output("main_window.py", LogLevel.WARNING, f"[WinCompat] {_cw}", fold_code="MAIN_INIT")
 
     startup_profiler.start_span("single_instance_check")
     already_running = SingleInstanceChecker.is_already_running()
