@@ -176,6 +176,102 @@ class NeteaseMusicProvider(BaseMusicProvider):
             duration=song.get('dt', 0)
         )
 
+    # ---------- 登录相关 ----------
+
+    def is_logged_in(self) -> bool:
+        """检查当前 pyncm 会话是否已登录"""
+        try:
+            return pyncm.GetCurrentSession().logged_in
+        except Exception:
+            return False
+
+    def get_login_info(self) -> dict:
+        """返回登录用户信息，未登录返回空 dict。
+        返回: {"uid": int, "nickname": str, "vip_type": int}
+        """
+        try:
+            session = pyncm.GetCurrentSession()
+            if session.logged_in:
+                return {
+                    "uid": session.uid,
+                    "nickname": session.nickname,
+                    "vip_type": session.vipType,
+                }
+        except Exception:
+            pass
+        return {}
+
+    def get_user_detail(self) -> dict:
+        """获取当前登录用户的详细资料（含头像 URL）。
+        返回: {"uid": int, "nickname": str, "avatar_url": str, "vip_type": int}
+        未登录或失败返回空 dict。结果缓存于实例，避免重复请求。
+        """
+        if not self.is_logged_in():
+            return {}
+        # 缓存命中：若已登录且 uid 未变，直接返回缓存
+        try:
+            session = pyncm.GetCurrentSession()
+            uid = session.uid
+            cached = getattr(self, "_user_detail_cache", None)
+            if cached and cached.get("uid") == uid:
+                return cached
+        except Exception:
+            pass
+        try:
+            resp = pyncm.apis.user.GetUserDetail(uid)
+            profile = resp.get("profile") or resp.get("user") or {}
+            if not profile:
+                return {}
+            detail = {
+                "uid": profile.get("userId") or uid,
+                "nickname": profile.get("nickname") or session.nickname,
+                "avatar_url": profile.get("avatarUrl", ""),
+                "vip_type": profile.get("vipType", session.vipType),
+            }
+            self._user_detail_cache = detail
+            return detail
+        except Exception as e:
+            debug_logger.warning("NeteaseMusicProvider", f"获取用户资料失败: {str(e)}")
+            return {}
+
+    def restore_session(self, session_dump: str) -> bool:
+        """从持久化字符串恢复 pyncm 会话（启动时调用）。"""
+        if not session_dump:
+            return False
+        try:
+            session = pyncm.LoadSessionFromString(session_dump)
+            pyncm.SetCurrentSession(session)
+            # 验证会话是否仍然有效
+            if session.logged_in:
+                debug_logger.info("NeteaseMusicProvider",
+                                  f"会话恢复成功，用户: {session.nickname}")
+                return True
+            else:
+                debug_logger.warning("NeteaseMusicProvider", "会话已过期，需要重新登录。")
+                return False
+        except Exception as e:
+            debug_logger.error("NeteaseMusicProvider",
+                               f"会话恢复失败: {str(e)}")
+            return False
+
+    def dump_session(self) -> str:
+        """导出当前 pyncm 会话为可持久化的字符串。"""
+        try:
+            return pyncm.DumpSessionAsString(pyncm.GetCurrentSession())
+        except Exception as e:
+            debug_logger.error("NeteaseMusicProvider",
+                               f"会话导出失败: {str(e)}")
+            return ""
+
+    def logout(self):
+        """登出：清除 pyncm 会话。持久化清理由调用方负责。"""
+        try:
+            pyncm.apis.login.LoginLogout()
+            pyncm.SetNewSession()
+            debug_logger.info("NeteaseMusicProvider", "已登出。")
+        except Exception as e:
+            debug_logger.error("NeteaseMusicProvider", f"登出异常: {str(e)}")
+
 
 class MusicPlayer:
     """

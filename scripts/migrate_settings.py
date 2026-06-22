@@ -126,14 +126,8 @@ def migrate_settings(config_file="settings.ini"):
         'music_playlists': 'Music',
         'music_queue_data': 'Music',
         'music_play_mode': 'Music',
-        
-        # Streaming 段落
-        'stream_left_bg_color': 'Streaming',
-        'stream_right_bg_color': 'Streaming',
-        'stream_bottom_bg_color': 'Streaming',
-        'stream_lyrics_bg_color': 'Streaming',
     }
-    
+
     # 迁移 Custom 段落中的配置项
     custom_section = config['Custom']
     migrated_count = 0

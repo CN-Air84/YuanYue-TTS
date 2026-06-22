@@ -876,67 +876,14 @@ class HotkeyControlWidget(QGroupBox):
             target_btn._update_text()
 
 
-class WindowSizeGroup(QGroupBox):
-    """窗口尺寸设置组 - 卡片式设计"""
+class AppearanceSettingsGroup(QGroupBox):
+    """外观设置组（窗口尺寸 + 颜色设置） - 卡片式设计
     
-    def __init__(self, parent=None):
-        super().__init__("窗口尺寸设置", parent)
-        self.settings_manager = SettingsManager()
-        self.wheel_filter = WheelEventFilter()
-        self._init_ui()
-        self._load_settings()
-        self._apply_card_style()
-    
-    def _init_ui(self):
-        """初始化UI"""
-        layout = QFormLayout()
-        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])  # 添加垂直间距
-        
-        # 获取文字颜色和统一样式
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = CustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # 标题标签
-        title_label = QLabel("预设窗口尺寸:")
-        title_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
-        
-        # 窗口尺寸选择
-        self.size_combo = QComboBox()
-        self.size_combo.addItems(misc_func.CustomConfig.get_window_sizes())
-        self.size_combo.currentTextChanged.connect(self._on_size_changed)
-        self.size_combo.setStyleSheet(unified_styles['combo'])
-        # 安装滚轮事件过滤器
-        self.size_combo.installEventFilter(self.wheel_filter)
-        
-        layout.addRow(title_label, self.size_combo)
-        
-        self.setLayout(layout)
-    
-    def _apply_card_style(self):
-        """应用卡片样式"""
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        self.setStyleSheet(CustomConfig.get_card_style(text_color))
-        self.setContentsMargins(
-            CustomConfig.SPACING_SYSTEM['lg'],
-            CustomConfig.SPACING_SYSTEM['lg'],
-            CustomConfig.SPACING_SYSTEM['lg'],
-            CustomConfig.SPACING_SYSTEM['lg']
-        )
-    
-    def _load_settings(self):
-        """加载设置"""
-        window_size = self.settings_manager.Custom.get_value("window_size", "1024x768")
-        if window_size in misc_func.CustomConfig.get_window_sizes():
-            self.size_combo.setCurrentText(window_size)
-    
-    def _on_size_changed(self, size: str):
-        """窗口尺寸改变事件"""
-        self.settings_manager.Custom.set_value("window_size", size)
-
-
-class ColorSettingsGroup(QGroupBox):
-    """颜色设置组 - 卡片式设计"""
+    合并自原 WindowSizeGroup 与 ColorSettingsGroup，统一展示外观相关设置。
+    为了兼容页面主体中对各子控件属性的引用，本类保留了原 ColorSettingsGroup
+    的所有颜色选择器属性名（background_color、theme_combo 等）以及原
+    WindowSizeGroup 的 size_combo 属性。
+    """
     
     # 主题预设
     COLOR_THEMES = {
@@ -967,15 +914,15 @@ class ColorSettingsGroup(QGroupBox):
     }
     
     def __init__(self, parent=None):
-        super().__init__("颜色设置", parent)
+        super().__init__("外观设置", parent)
         self.settings_manager = SettingsManager()
-        self.wheel_filter = WheelEventFilter()  # 添加滚轮事件过滤器
+        self.wheel_filter = WheelEventFilter()
         self._init_ui()
         self._load_settings()
         self._apply_card_style()
     
     def _init_ui(self):
-        """初始化UI - 使用网格布局增强视觉效果"""
+        """初始化UI - 在同一卡片内依次排列窗口尺寸与颜色设置"""
         layout = QGridLayout()
         layout.setHorizontalSpacing(CustomConfig.SPACING_SYSTEM['lg'])  # 水平间距
         layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])    # 垂直间距
@@ -985,6 +932,22 @@ class ColorSettingsGroup(QGroupBox):
         component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
         unified_styles = CustomConfig.get_unified_styles(text_color, component_bg)
         
+        row = 0
+        
+        # ===== 窗口尺寸部分 =====
+        size_title_label = QLabel("预设窗口尺寸:")
+        size_title_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
+        self.size_combo = QComboBox()
+        self.size_combo.addItems(misc_func.CustomConfig.get_window_sizes())
+        self.size_combo.currentTextChanged.connect(self._on_size_changed)
+        self.size_combo.setStyleSheet(unified_styles['combo'])
+        # 安装滚轮事件过滤器
+        self.size_combo.installEventFilter(self.wheel_filter)
+        layout.addWidget(size_title_label, row, 0)
+        layout.addWidget(self.size_combo, row, 1)
+        row += 1
+        
+        # ===== 颜色设置部分 =====
         # 主题预设选择器
         theme_label = QLabel("主题预设:")
         theme_label.setStyleSheet(f"font-weight: bold; color: {text_color};")
@@ -994,6 +957,9 @@ class ColorSettingsGroup(QGroupBox):
         self.theme_combo.setStyleSheet(unified_styles['combo'])
         # 安装滚轮事件过滤器
         self.theme_combo.installEventFilter(self.wheel_filter)
+        layout.addWidget(theme_label, row, 0)
+        layout.addWidget(self.theme_combo, row, 1)
+        row += 1
         
         # 创建颜色选择器
         self.background_color = ColorPickerWidget()
@@ -1032,24 +998,30 @@ class ColorSettingsGroup(QGroupBox):
         )
         
         # 添加标签和颜色选择器到网格
-        layout.addWidget(theme_label, 0, 0)
-        layout.addWidget(self.theme_combo, 0, 1)
-        layout.addWidget(QLabel("背景颜色:"), 1, 0)
-        layout.addWidget(self.background_color, 1, 1)
-        layout.addWidget(QLabel("卡片背景颜色:"), 2, 0)
-        layout.addWidget(self.card_background_color, 2, 1)
-        layout.addWidget(QLabel("组件背景颜色:"), 3, 0)
-        layout.addWidget(self.component_background_color, 3, 1)
-        layout.addWidget(QLabel("文字颜色:"), 4, 0)
-        layout.addWidget(self.text_color_picker, 4, 1)
-        layout.addWidget(QLabel("高亮按钮颜色:"), 5, 0)
-        layout.addWidget(self.highlight_button_color, 5, 1)
-        layout.addWidget(QLabel("信息通知颜色:"), 6, 0)
-        layout.addWidget(self.info_color, 6, 1)
-        layout.addWidget(QLabel("警告通知颜色:"), 7, 0)
-        layout.addWidget(self.warning_color, 7, 1)
-        layout.addWidget(QLabel("错误通知颜色:"), 8, 0)
-        layout.addWidget(self.error_color, 8, 1)
+        layout.addWidget(QLabel("背景颜色:"), row, 0)
+        layout.addWidget(self.background_color, row, 1)
+        row += 1
+        layout.addWidget(QLabel("卡片背景颜色:"), row, 0)
+        layout.addWidget(self.card_background_color, row, 1)
+        row += 1
+        layout.addWidget(QLabel("组件背景颜色:"), row, 0)
+        layout.addWidget(self.component_background_color, row, 1)
+        row += 1
+        layout.addWidget(QLabel("文字颜色:"), row, 0)
+        layout.addWidget(self.text_color_picker, row, 1)
+        row += 1
+        layout.addWidget(QLabel("高亮按钮颜色:"), row, 0)
+        layout.addWidget(self.highlight_button_color, row, 1)
+        row += 1
+        layout.addWidget(QLabel("信息通知颜色:"), row, 0)
+        layout.addWidget(self.info_color, row, 1)
+        row += 1
+        layout.addWidget(QLabel("警告通知颜色:"), row, 0)
+        layout.addWidget(self.warning_color, row, 1)
+        row += 1
+        layout.addWidget(QLabel("错误通知颜色:"), row, 0)
+        layout.addWidget(self.error_color, row, 1)
+        row += 1
         
         # 设置列拉伸
         layout.setColumnStretch(1, 1)
@@ -1065,6 +1037,12 @@ class ColorSettingsGroup(QGroupBox):
                               CustomConfig.SPACING_SYSTEM['lg'], 
                               CustomConfig.SPACING_SYSTEM['lg'])
     
+    # ===== 窗口尺寸相关方法（来自原 WindowSizeGroup） =====
+    def _on_size_changed(self, size: str):
+        """窗口尺寸改变事件"""
+        self.settings_manager.Custom.set_value("window_size", size)
+    
+    # ===== 颜色相关方法（来自原 ColorSettingsGroup） =====
     def _on_theme_changed(self, theme_name: str):
         """主题预设改变事件"""
         if theme_name and theme_name != "自定义":
@@ -1219,8 +1197,15 @@ class ColorSettingsGroup(QGroupBox):
         self.settings_manager.Custom.set_value("current_theme", "自定义")
     
     def _load_settings(self):
-        """加载颜色设置"""
-        debug_logger.output("custom_page.py", LogLevel.INFO, "Loading color settings...", fold_code="CUSTOM_THEME")
+        """加载外观设置（窗口尺寸 + 颜色）"""
+        debug_logger.output("custom_page.py", LogLevel.INFO, "Loading appearance settings...", fold_code="CUSTOM_THEME")
+        # 窗口尺寸
+        window_size = self.settings_manager.Custom.get_value("window_size", "1024x768")
+        if window_size in misc_func.CustomConfig.get_window_sizes():
+            self.size_combo.blockSignals(True)
+            self.size_combo.setCurrentText(window_size)
+            self.size_combo.blockSignals(False)
+
         # 背景颜色
         bg_color = self.settings_manager.Custom.get_value(
             "background_color", 
@@ -1585,37 +1570,6 @@ class AnimationSettingsGroup(QGroupBox):
         # 安装滚轮事件过滤器
         self.tab_switch_speed.installEventFilter(self.wheel_filter)
         
-        # 消息框动画速度设置（移除时长限制）
-        self.animation_appear = QSpinBox()
-        self.animation_appear.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
-        self.animation_appear.setSuffix(" ms")
-        self.animation_appear.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("animation_appear", str(value))
-        )
-        self.animation_appear.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.animation_appear.installEventFilter(self.wheel_filter)
-        
-        self.animation_disappear = QSpinBox()
-        self.animation_disappear.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
-        self.animation_disappear.setSuffix(" ms")
-        self.animation_disappear.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("animation_disappear", str(value))
-        )
-        self.animation_disappear.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.animation_disappear.installEventFilter(self.wheel_filter)
-        
-        self.animation_move = QSpinBox()
-        self.animation_move.setRange(1, 10000)  # 1ms到10000ms，更宽的范围
-        self.animation_move.setSuffix(" ms")
-        self.animation_move.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("animation_move", str(value))
-        )
-        self.animation_move.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.animation_move.installEventFilter(self.wheel_filter)
-        
         # 指示器动画速度设置（改为毫秒单位）
         self.indicator_animation_speed = QSpinBox()
         self.indicator_animation_speed.setRange(1,10000)  # 10ms到2000ms，无限制范围
@@ -1629,9 +1583,6 @@ class AnimationSettingsGroup(QGroupBox):
         
         # 添加到布局
         layout.addRow("换页动画速度:", self.tab_switch_speed)
-        layout.addRow("消息框出现动画:", self.animation_appear)
-        layout.addRow("消息框消失动画:", self.animation_disappear)
-        layout.addRow("消息框移动动画:", self.animation_move)
         layout.addRow("指示器动画速度:", self.indicator_animation_speed)
         
         self.setLayout(layout)
@@ -1654,22 +1605,6 @@ class AnimationSettingsGroup(QGroupBox):
             "300"  # 默认300ms
         )))
         
-        # 消息框动画设置
-        self.animation_appear.setValue(int(self.settings_manager.Custom.get_value(
-            "animation_appear",
-            CustomConfig.DEFAULT_NOTIFICATIONS["animation_appear"]
-        )))
-        
-        self.animation_disappear.setValue(int(self.settings_manager.Custom.get_value(
-            "animation_disappear",
-            CustomConfig.DEFAULT_NOTIFICATIONS["animation_disappear"]
-        )))
-        
-        self.animation_move.setValue(int(self.settings_manager.Custom.get_value(
-            "animation_move",
-            CustomConfig.DEFAULT_NOTIFICATIONS["animation_move"]
-        )))
-        
         # 指示器动画速度设置（改为毫秒单位）
         try:
             # 尝试读取旧格式的小数值并转换为毫秒
@@ -1684,260 +1619,6 @@ class AnimationSettingsGroup(QGroupBox):
         except (ValueError, TypeError):
             # 如果转换失败，使用默认值
             self.indicator_animation_speed.setValue(50)
-
-
-class NotificationSettingsGroup(QGroupBox):
-    """通知设置组 - 卡片式设计"""
-    
-    def __init__(self, parent=None):
-        super().__init__("通知设置", parent)
-        self.settings_manager = SettingsManager()
-        self.wheel_filter = WheelEventFilter()
-        self._init_ui()
-        self._load_settings()
-        self._apply_card_style()
-    
-    def _init_ui(self):
-        """初始化UI"""
-        layout = QFormLayout()
-        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
-        
-        # 获取文字颜色以应用统一样式
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        component_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
-        unified_styles = CustomConfig.get_unified_styles(text_color, component_bg)
-        
-        # 位置设置 - 应用设置界面样式
-        self.position_m = QSpinBox()
-        self.position_m.setRange(0, 16)
-        self.position_m.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("position_m", str(value))
-        )
-        self.position_m.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.position_m.installEventFilter(self.wheel_filter)
-        
-        # 修改为 QDoubleSpinBox
-        self.position_n = QDoubleSpinBox()
-        self.position_n.setRange(0, 16)
-        self.position_n.setSingleStep(0.25)
-        self.position_n.setDecimals(2)  # 设置小数点位数
-        self.position_n.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("position_n", str(value))
-        )
-        self.position_n.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.position_n.installEventFilter(self.wheel_filter)
-        
-        # 尺寸比例 - 修改为 QDoubleSpinBox
-        self.width_ratio = QDoubleSpinBox()
-        self.width_ratio.setRange(0.1, 5.0)
-        self.width_ratio.setSingleStep(0.1)
-        self.width_ratio.setDecimals(2)
-        self.width_ratio.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("width_ratio", str(value))
-        )
-        self.width_ratio.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.width_ratio.installEventFilter(self.wheel_filter)
-        
-        self.height_ratio = QDoubleSpinBox()
-        self.height_ratio.setRange(0.1, 5.0)
-        self.height_ratio.setSingleStep(0.1)
-        self.height_ratio.setDecimals(2)
-        self.height_ratio.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("height_ratio", str(value))
-        )
-        self.height_ratio.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.height_ratio.installEventFilter(self.wheel_filter)
-        
-        # 其他设置
-        self.max_visible = QSpinBox()
-        self.max_visible.setRange(1, 20)
-        self.max_visible.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("max_visible", str(value))
-        )
-        self.max_visible.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.max_visible.installEventFilter(self.wheel_filter)
-        
-        self.offset_n = QSpinBox()
-        self.offset_n.setRange(1, 10)
-        self.offset_n.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("offset_n", str(value))
-        )
-        self.offset_n.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.offset_n.installEventFilter(self.wheel_filter)
-        
-        # 修改为 QDoubleSpinBox
-        self.spacing_n = QDoubleSpinBox()
-        self.spacing_n.setRange(0.1, 5.0)
-        self.spacing_n.setSingleStep(0.1)
-        self.spacing_n.setDecimals(2)
-        self.spacing_n.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("spacing_n", str(value))
-        )
-        self.spacing_n.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.spacing_n.installEventFilter(self.wheel_filter)
-        
-        self.auto_close_time = QSpinBox()
-        self.auto_close_time.setRange(1000, 30000)
-        self.auto_close_time.setSingleStep(500)
-        self.auto_close_time.setSuffix(" ms")
-        self.auto_close_time.valueChanged.connect(
-            lambda value: self.settings_manager.Custom.set_value("auto_close_time", str(value))
-        )
-        self.auto_close_time.setStyleSheet(unified_styles['input'])
-        # 安装滚轮事件过滤器
-        self.auto_close_time.installEventFilter(self.wheel_filter)
-        
-        # 添加到布局
-        layout.addRow("位置 M 坐标:", self.position_m)
-        layout.addRow("位置 N 坐标:", self.position_n)
-        layout.addRow("宽度比例:", self.width_ratio)
-        layout.addRow("高度比例:", self.height_ratio)
-        layout.addRow("最大可见数:", self.max_visible)
-        layout.addRow("偏移量 N:", self.offset_n)
-        layout.addRow("间距 N:", self.spacing_n)
-        layout.addRow("自动关闭时间:", self.auto_close_time)
-        
-        self.setLayout(layout)
-    
-    def _apply_card_style(self):
-        """应用卡片样式"""
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        self.setStyleSheet(CustomConfig.get_card_style(text_color))
-        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
-                              CustomConfig.SPACING_SYSTEM['lg'],
-                              CustomConfig.SPACING_SYSTEM['lg'], 
-                              CustomConfig.SPACING_SYSTEM['lg'])
-    
-    def _load_settings(self):
-        """加载设置"""
-        # 位置设置
-        self.position_m.setValue(int(self.settings_manager.Custom.get_value(
-            "position_m",
-            CustomConfig.DEFAULT_NOTIFICATIONS["position_m"]
-        )))
-        
-        self.position_n.setValue(float(self.settings_manager.Custom.get_value(
-            "position_n",
-            CustomConfig.DEFAULT_NOTIFICATIONS["position_n"]
-        )))
-        
-        # 尺寸比例
-        self.width_ratio.setValue(float(self.settings_manager.Custom.get_value(
-            "width_ratio",
-            CustomConfig.DEFAULT_NOTIFICATIONS["width_ratio"]
-        )))
-        
-        self.height_ratio.setValue(float(self.settings_manager.Custom.get_value(
-            "height_ratio",
-            CustomConfig.DEFAULT_NOTIFICATIONS["height_ratio"]
-        )))
-        
-        # 其他设置
-        self.max_visible.setValue(int(self.settings_manager.Custom.get_value(
-            "max_visible",
-            CustomConfig.DEFAULT_NOTIFICATIONS["max_visible"]
-        )))
-        
-        self.offset_n.setValue(int(self.settings_manager.Custom.get_value(
-            "offset_n",
-            CustomConfig.DEFAULT_NOTIFICATIONS["offset_n"]
-        )))
-        
-        self.spacing_n.setValue(float(self.settings_manager.Custom.get_value(
-            "spacing_n",
-            CustomConfig.DEFAULT_NOTIFICATIONS["spacing_n"]
-        )))
-        
-        self.auto_close_time.setValue(int(self.settings_manager.Custom.get_value(
-            "auto_close_time",
-            CustomConfig.DEFAULT_NOTIFICATIONS["auto_close_time"]
-        )))
-
-
-class StreamingUISettingsGroup(QGroupBox):
-    """流媒体外观设置组 - 卡片式设计"""
-    
-    def __init__(self, parent=None):
-        super().__init__("流媒体外观设置", parent)
-        self.settings_manager = SettingsManager()
-        self.wheel_filter = WheelEventFilter()
-        self._init_ui()
-        self._load_settings()
-        self._apply_card_style()
-    
-    def _init_ui(self):
-        layout = QGridLayout()
-        layout.setHorizontalSpacing(CustomConfig.SPACING_SYSTEM['lg'])
-        layout.setVerticalSpacing(CustomConfig.SPACING_SYSTEM['md'])
-        
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        
-        # 颜色选择器
-        self.left_bg_color = ColorPickerWidget()
-        self.right_bg_color = ColorPickerWidget()
-        self.bottom_bg_color = ColorPickerWidget()
-        self.lyrics_bg_color = ColorPickerWidget()
-        
-        # 信号连接
-        self.left_bg_color.color_changed.connect(
-            lambda color: self._on_color_changed("stream_left_bg_color", color)
-        )
-        self.right_bg_color.color_changed.connect(
-            lambda color: self._on_color_changed("stream_right_bg_color", color)
-        )
-        self.bottom_bg_color.color_changed.connect(
-            lambda color: self._on_color_changed("stream_bottom_bg_color", color)
-        )
-        self.lyrics_bg_color.color_changed.connect(
-            lambda color: self._on_color_changed("stream_lyrics_bg_color", color)
-        )
-        
-        layout.addWidget(QLabel("左侧面板背景颜色:"), 0, 0)
-        layout.addWidget(self.left_bg_color, 0, 1)
-        layout.addWidget(QLabel("右侧歌曲列表背景:"), 1, 0)
-        layout.addWidget(self.right_bg_color, 1, 1)
-        layout.addWidget(QLabel("底部播放控制栏背景:"), 2, 0)
-        layout.addWidget(self.bottom_bg_color, 2, 1)
-        layout.addWidget(QLabel("歌词展示区背景:"), 3, 0)
-        layout.addWidget(self.lyrics_bg_color, 3, 1)
-        
-        layout.setColumnStretch(1, 1)
-        self.setLayout(layout)
-        
-    def _apply_card_style(self):
-        text_color = self.settings_manager.get_Custom_value("text_color", "#333333")
-        self.setStyleSheet(CustomConfig.get_card_style(text_color))
-        self.setContentsMargins(CustomConfig.SPACING_SYSTEM['lg'], 
-                              CustomConfig.SPACING_SYSTEM['lg'],
-                              CustomConfig.SPACING_SYSTEM['lg'], 
-                              CustomConfig.SPACING_SYSTEM['lg'])
-                              
-    def _load_settings(self):
-        left_bg = self.settings_manager.Custom.get_value("stream_left_bg_color", "#A0A0A0")
-        self.left_bg_color.set_color(left_bg)
-        
-        right_bg = self.settings_manager.Custom.get_value("stream_right_bg_color", "#A0A0A0")
-        self.right_bg_color.set_color(right_bg)
-        
-        bottom_bg = self.settings_manager.Custom.get_value("stream_bottom_bg_color", "#B0B0B0")
-        self.bottom_bg_color.set_color(bottom_bg)
-        
-        lyrics_bg = self.settings_manager.Custom.get_value("stream_lyrics_bg_color", "#9E9E9E")
-        self.lyrics_bg_color.set_color(lyrics_bg)
-        self.bottom_bg_color.set_color(bottom_bg)
-
-    def _on_color_changed(self, color_key: str, color: str):
-        self.settings_manager.Custom.set_value(color_key, color)
-        from shared_memory_manager import get_shared_memory_manager
-        shared_manager = get_shared_memory_manager()
-        shared_manager.broadcast_settings_change("custom", {color_key: color})
 
 
 class CustomPage(QWidget):
@@ -2028,13 +1709,9 @@ class CustomPage(QWidget):
         self.hotkey_group = HotkeyControlWidget(self)
         self.content_layout.addWidget(self.hotkey_group)
         
-        # 窗口尺寸设置
-        self.window_size_group = WindowSizeGroup(self)
-        self.content_layout.addWidget(self.window_size_group)
-        
-        # 颜色设置
-        self.color_group = ColorSettingsGroup(self)
-        self.content_layout.addWidget(self.color_group)
+        # 外观设置（窗口尺寸 + 颜色）
+        self.appearance_group = AppearanceSettingsGroup(self)
+        self.content_layout.addWidget(self.appearance_group)
         
         # 字体设置
         self.font_group = FontSettingsGroup(self)
@@ -2047,15 +1724,7 @@ class CustomPage(QWidget):
         # 动画设置
         self.animation_group = AnimationSettingsGroup(self)
         self.content_layout.addWidget(self.animation_group)
-        
-        # 通知设置
-        self.notification_group = NotificationSettingsGroup(self)
-        self.content_layout.addWidget(self.notification_group)
-        
-        # 流媒体外观设置
-        self.streaming_ui_group = StreamingUISettingsGroup(self)
-        self.content_layout.addWidget(self.streaming_ui_group)
-        
+
         # 添加拉伸，使内容顶部对齐
         self.content_layout.addStretch(1)
         
@@ -2084,10 +1753,9 @@ class CustomPage(QWidget):
         self.setLayout(main_layout)
         
         # 初始组件样式应用
-        groups = [self.hotkey_group, self.window_size_group, 
-                 self.color_group, self.font_group, 
-                 self.indicator_group, self.animation_group, 
-                 self.notification_group, self.streaming_ui_group]
+        groups = [self.hotkey_group, self.appearance_group,
+                 self.font_group,
+                 self.indicator_group, self.animation_group]
         for group in groups:
             self._update_group_text_styles(group)
         
@@ -2108,10 +1776,9 @@ class CustomPage(QWidget):
                 
             if needs_full_update:
                 # 更新所有子分组的卡片样式
-                groups = [self.hotkey_group, self.window_size_group, 
-                         self.color_group, self.font_group, 
-                         self.indicator_group, self.animation_group, 
-                         self.notification_group, self.streaming_ui_group]
+                groups = [self.hotkey_group, self.appearance_group,
+                         self.font_group,
+                         self.indicator_group, self.animation_group]
                 
                 for group in groups:
                     if hasattr(group, '_apply_card_style'):
@@ -2250,14 +1917,11 @@ class CustomPage(QWidget):
         
         # 应用到各个设置组
         self.hotkey_group.setStyleSheet(dynamic_style)
-        self.window_size_group.setStyleSheet(dynamic_style)
-        self.color_group.setStyleSheet(dynamic_style)
+        self.appearance_group.setStyleSheet(dynamic_style)
         self.font_group.setStyleSheet(dynamic_style)
         self.indicator_group.setStyleSheet(dynamic_style)
         self.animation_group.setStyleSheet(dynamic_style)
-        self.notification_group.setStyleSheet(dynamic_style)
-        self.streaming_ui_group.setStyleSheet(dynamic_style)
-    
+
     def _apply_fonts_to_widgets(self, font, small_font):
         """应用字体到所有控件"""
         # 应用字体到提示标签
@@ -2270,26 +1934,15 @@ class CustomPage(QWidget):
         if hasattr(self.hotkey_group, 'reset_btn'):
             self.hotkey_group.reset_btn.setFont(font)
         
-        # 应用字体到窗口尺寸组
-        self.window_size_group.setFont(font)
-        self.window_size_group.size_combo.setFont(font)
-        
-        # 应用字体到颜色设置组
-        self.color_group.setFont(font)
-        for color_picker in [self.color_group.background_color, 
-                            self.color_group.info_color,
-                            self.color_group.warning_color,
-                            self.color_group.error_color]:
+        # 应用字体到外观设置组（窗口尺寸 + 颜色）
+        self.appearance_group.setFont(font)
+        self.appearance_group.size_combo.setFont(font)
+        for color_picker in [self.appearance_group.background_color,
+                            self.appearance_group.info_color,
+                            self.appearance_group.warning_color,
+                            self.appearance_group.error_color]:
             color_picker.color_input.setFont(font)
-            
-        # 应用字体到流媒体外观设置组
-        self.streaming_ui_group.setFont(font)
-        for color_picker in [self.streaming_ui_group.left_bg_color,
-                             self.streaming_ui_group.right_bg_color,
-                             self.streaming_ui_group.bottom_bg_color,
-                             self.streaming_ui_group.lyrics_bg_color]:
-            color_picker.color_input.setFont(font)
-        
+
         # 应用字体到字体设置组（注意：全局字体输入框不应用字体）
         self.font_group.setFont(font)
         self.font_group.min_font_size.setFont(font)
@@ -2306,22 +1959,10 @@ class CustomPage(QWidget):
         # 应用字体到动画设置组
         self.animation_group.setFont(font)
         for widget in [self.animation_group.tab_switch_speed,
-                      self.animation_group.animation_appear,
-                      self.animation_group.animation_disappear,
-                      self.animation_group.animation_move]:
+                      self.animation_group.indicator_animation_speed]:
             widget.setFont(font)
         
-        # 应用字体到通知设置组
-        self.notification_group.setFont(font)
-        for widget in [self.notification_group.position_m,
-                      self.notification_group.position_n,
-                      self.notification_group.width_ratio,
-                      self.notification_group.height_ratio,
-                      self.notification_group.max_visible,
-                      self.notification_group.offset_n,
-                      self.notification_group.spacing_n,
-                      self.notification_group.auto_close_time]:
-            widget.setFont(font)
+        # 应用字体到流媒体外观设置组
         
         # 应用字体到按钮
         self.reset_button.setFont(font)
@@ -2411,19 +2052,11 @@ class CustomPage(QWidget):
             self.settings_manager.Custom.set_value("indicator_y_offset", "0")
             self.settings_manager.Custom.set_value("indicator_width_adjust", "0")
             self.settings_manager.Custom.set_value("indicator_height_adjust", "0")
-            
-            # 重置流媒体外观设置
-            self.settings_manager.Custom.set_value("stream_left_bg_color", "#A0A0A0")
-            self.settings_manager.Custom.set_value("stream_right_bg_color", "#A0A0A0")
-            self.settings_manager.Custom.set_value("stream_bottom_bg_color", "#B0B0B0")
-            self.settings_manager.Custom.set_value("stream_lyrics_bg_color", "#9E9E9E")
-            
+
             # 重新加载设置
-            self.window_size_group._load_settings()
-            self.color_group._load_settings()
+            self.appearance_group._load_settings()
             self.font_group._load_settings()
             self.notification_group._load_settings()
-            self.streaming_ui_group._load_settings()
             
             # 更新字体
             self._update_fonts()
@@ -2643,8 +2276,7 @@ class CustomPage(QWidget):
         try:
             # 重新加载所有设置
             # HotkeyControlWidget 自动处理热键加载，不需要手动调用 _load_settings
-            self.window_size_group._load_settings()
-            self.color_group._load_settings()
+            self.appearance_group._load_settings()
             self.font_group._load_settings()
             self.notification_group._load_settings()
             

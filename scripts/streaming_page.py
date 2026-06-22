@@ -3,15 +3,1259 @@ import os
 import sys
 import random
 import json
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
                              QListWidget, QListWidgetItem, QLabel, QScrollArea, QFrame,
-                             QInputDialog, QMessageBox, QMenu, QSlider, QSizePolicy)
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QTimer
-from PyQt5.QtGui import QFont, QIcon
+                             QInputDialog, QMessageBox, QMenu, QSlider, QSizePolicy,
+                             QGraphicsBlurEffect, QCheckBox, QApplication)
+from PyQt5.QtCore import (Qt, pyqtSignal, QSize, QTimer, QRect, QEvent, QPoint)
+from PyQt5.QtGui import (QFont, QIcon, QPainter, QPalette, QFontMetrics, QPixmap,
+                         QColor, QPainterPath, QBrush, QPen)
 from debug_logger import debug_logger, LogLevel
 from music_NCM import MusicSubsystem, MusicTrack
 from misc_func import SettingsManager
 from shared_memory_manager import get_shared_memory_manager
+
+# 二维码登录所需
+try:
+    import qrcode
+    from io import BytesIO
+    QRCODE_AVAILABLE = True
+except ImportError:
+    QRCODE_AVAILABLE = False
+
+# 网易云登录 API（延后捕获异常，避免未安装 pyncm 时整个页面无法加载）
+try:
+    import pyncm
+    import pyncm.apis.login
+    PYNCM_LOGIN_AVAILABLE = True
+except Exception:
+    PYNCM_LOGIN_AVAILABLE = False
+
+
+class QrCodeLoginDialog(QWidget):
+    """网易云登录/账号悬浮面板。
+
+    全屏覆盖父窗口：背景半透明黑幕 + 模糊，居中白色卡片。
+    两种模式：
+      - mode="login"（默认）：左侧 3/4 扫码登录 + 右侧 1/4 账号信息
+      - mode="account"：左侧 3/4 账号详情（大头像/昵称/UID/VIP）+ 右侧 1/4 操作按钮
+
+    扫码轮询状态码：
+      802 → 等待扫码
+      803 → 已扫码，等待手机确认
+      800 → 二维码过期
+      200 → 登录成功
+    """
+    # 面板关闭时发射（此时对象仍存活，父级可安全查询登录状态）
+    closed = pyqtSignal()
+    # 请求从外部切换到登录模式（account 面板中的"切换账号"按钮）
+    switch_to_login_requested = pyqtSignal()
+    # 请求登出（account 面板中的"登出"按钮）
+    logout_requested = pyqtSignal()
+    POLL_INTERVAL = 2000
+    EXPIRE_SECONDS = 300
+
+    def __init__(self, parent=None, overlay_target=None, mode="login"):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.SubWindow | Qt.FramelessWindowHint)
+        self.setObjectName("login_overlay")
+
+        self._mode = mode  # "login" | "account"
+        self.unikey = ""
+        self._elapsed = 0
+        self._closing = False    # 正在关闭（避免重复触发）
+
+        # 获取用户配置的全局字体（与 PlaylistManagePanel 保持一致）
+        self.settings_manager = SettingsManager()
+        self.font_family = self.settings_manager.get_Custom_value("global_font", "微软雅黑")
+
+        # overlay_target：要覆盖的目标 widget（如 stacked_widget）。
+        # 悬浮窗的 parent 必须是主窗口（保证 resize 跟随），
+        # 但几何跟随 overlay_target（只覆盖内容区，不含 tab 栏）。
+        # 若未指定，则退化为覆盖 parent。
+        if overlay_target is not None:
+            self._overlay_target = overlay_target
+        elif parent is not None:
+            self._overlay_target = parent
+        else:
+            self._overlay_target = None
+
+        # —— 自身作为半透明深色遮罩层 ——
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
+        self._apply_target_geometry()
+
+        # —— 外层布局 ——
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setAlignment(Qt.AlignCenter)
+
+        # 卡片：圆角白色面板
+        card = QFrame()
+        card.setObjectName("login_card")
+        card.setFixedSize(780, 600)
+        card.setStyleSheet(f"""
+            QFrame#login_card {{
+                background-color: rgba(255, 255, 255, 252);
+                border-radius: 20px;
+                font-family: '{self.font_family}';
+            }}
+        """)
+        outer.addWidget(card)
+
+        card_layout = QHBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(0)
+
+        # —— 竖向分隔线 ——
+        sep = QFrame()
+        sep.setFrameShape(QFrame.VLine)
+        sep.setFixedWidth(1)
+        sep.setStyleSheet("color: #e0e0e0; background: #e0e0e0;")
+
+        # 头像下载线程句柄与缓存（避免重复下载）
+        self._avatar_thread = None
+        self._last_avatar_url = ""
+
+        # —— 轮询定时器 ——
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.POLL_INTERVAL)
+        self._timer.timeout.connect(self._poll_status)
+
+        # 根据模式构建不同布局
+        if self._mode == "account":
+            self._build_account_mode(card_layout, sep)
+        else:
+            self._build_login_mode(card_layout, sep)
+
+        # 卡片置于背景层之上
+        card.raise_()
+
+        # 监听父窗口（主窗口）的大小变化，使遮罩跟随缩放。
+        if parent is not None:
+            parent.installEventFilter(self)
+        if self._overlay_target is not None and self._overlay_target is not parent:
+            self._overlay_target.installEventFilter(self)
+
+    # ==================== 布局构建 ====================
+
+    def _build_login_mode(self, card_layout, sep):
+        """构建 login 模式布局：左侧扫码(3/4) + 分隔线 + 右侧信息(1/4)。"""
+        # —— 左侧：扫码登录区（占 3/4） ——
+        self._qr_panel = QFrame()
+        self._qr_panel.setStyleSheet("background: transparent;")
+        left_layout = QVBoxLayout(self._qr_panel)
+        left_layout.setContentsMargins(45, 45, 22, 45)
+        left_layout.setSpacing(21)
+        left_layout.setAlignment(Qt.AlignCenter)
+
+        self._title_label = QLabel("扫码登录/切换网易云音乐账号")
+        self._title_label.setAlignment(Qt.AlignCenter)
+        self._title_label.setStyleSheet(f"font-size: 33px; font-weight: bold; color: #222; background: transparent; font-family: '{self.font_family}';")
+        left_layout.addWidget(self._title_label)
+
+        # QR 码显示标签
+        self._qr_label = QLabel()
+        self._qr_label.setAlignment(Qt.AlignCenter)
+        self._qr_label.setFixedSize(294, 294)
+        self._qr_label.setStyleSheet("background: #ffffff; border-radius: 12px;")
+        left_layout.addWidget(self._qr_label)
+
+        self._status_label = QLabel("正在生成二维码...")
+        self._status_label.setAlignment(Qt.AlignCenter)
+        self._status_label.setStyleSheet(f"font-size: 22px; color: #666; background: transparent; font-family: '{self.font_family}';")
+        left_layout.addWidget(self._status_label)
+
+        self._countdown_label = QLabel()
+        self._countdown_label.setAlignment(Qt.AlignCenter)
+        self._countdown_label.setStyleSheet(f"font-size: 19px; color: #999; background: transparent; font-family: '{self.font_family}';")
+        left_layout.addWidget(self._countdown_label)
+
+        card_layout.addWidget(self._qr_panel, 3)
+        card_layout.addWidget(sep)
+
+        # —— 右侧：用户信息区（占 1/4） ——
+        self._user_info_panel = QFrame()
+        self._user_info_panel.setStyleSheet("background: transparent;")
+        right_layout = QVBoxLayout(self._user_info_panel)
+        right_layout.setContentsMargins(22, 45, 45, 45)
+        right_layout.setSpacing(14)
+        right_layout.setAlignment(Qt.AlignCenter)
+
+        info_title = QLabel("当前账号")
+        info_title.setAlignment(Qt.AlignCenter)
+        info_title.setStyleSheet(f"font-size: 24px; font-weight: bold; color: #222; background: transparent; font-family: '{self.font_family}';")
+        right_layout.addWidget(info_title)
+
+        self._avatar_label = QLabel()
+        self._avatar_label.setAlignment(Qt.AlignCenter)
+        self._avatar_label.setFixedSize(120, 120)
+        self._avatar_label.setStyleSheet("""
+            QLabel {
+                background: #f0f0f0;
+                border-radius: 60px;
+                border: 1px solid #ddd;
+            }
+        """)
+        right_layout.addWidget(self._avatar_label)
+
+        self._nickname_label = QLabel("未登录")
+        self._nickname_label.setAlignment(Qt.AlignCenter)
+        self._nickname_label.setStyleSheet(f"font-size: 21px; font-weight: bold; color: #333; background: transparent; font-family: '{self.font_family}';")
+        self._nickname_label.setWordWrap(True)
+        right_layout.addWidget(self._nickname_label)
+
+        self._vip_label = QLabel("")
+        self._vip_label.setAlignment(Qt.AlignCenter)
+        self._vip_label.setStyleSheet(f"font-size: 17px; color: #c0392b; background: transparent; font-family: '{self.font_family}';")
+        right_layout.addWidget(self._vip_label)
+
+        self._uid_label = QLabel("")
+        self._uid_label.setAlignment(Qt.AlignCenter)
+        self._uid_label.setStyleSheet(f"font-size: 15px; color: #888; background: transparent; font-family: '{self.font_family}';")
+        right_layout.addWidget(self._uid_label)
+
+        right_layout.addStretch(1)
+
+        cancel_btn = self._make_button("关 闭", "#f0f0f0", "#e0e0e0", "#ccc", 54)
+        cancel_btn.clicked.connect(self._close_panel)
+        right_layout.addWidget(cancel_btn)
+
+        card_layout.addWidget(self._user_info_panel, 1)
+
+    def _build_account_mode(self, card_layout, sep):
+        """构建 account 模式布局：左侧账号详情(3/4) + 分隔线 + 右侧操作按钮(1/4)。"""
+        # —— 左侧：账号详情展示（占 3/4） ——
+        left_panel = QFrame()
+        left_panel.setStyleSheet("background: transparent;")
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(60, 55, 30, 45)
+        left_layout.setSpacing(18)
+        left_layout.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+
+        title = QLabel("网易云音乐")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 30px; font-weight: bold; color: #222; background: transparent; font-family: '{self.font_family}';")
+        left_layout.addWidget(title)
+
+        # 大头像
+        self._avatar_label = QLabel()
+        self._avatar_label.setAlignment(Qt.AlignCenter)
+        self._avatar_label.setFixedSize(180, 180)
+        self._avatar_label.setStyleSheet("""
+            QLabel {
+                background: #f0f0f0;
+                border-radius: 90px;
+                border: 2px solid #e0e0e0;
+            }
+        """)
+        left_layout.addWidget(self._avatar_label)
+
+        # 昵称
+        self._nickname_label = QLabel("加载中...")
+        self._nickname_label.setAlignment(Qt.AlignCenter)
+        self._nickname_label.setStyleSheet(f"font-size: 28px; font-weight: bold; color: #333; background: transparent; font-family: '{self.font_family}';")
+        self._nickname_label.setWordWrap(True)
+        left_layout.addWidget(self._nickname_label)
+
+        # VIP 状态
+        self._vip_label = QLabel("")
+        self._vip_label.setAlignment(Qt.AlignCenter)
+        self._vip_label.setStyleSheet(f"font-size: 20px; color: #c0392b; background: transparent; font-family: '{self.font_family}';")
+        left_layout.addWidget(self._vip_label)
+
+        # UID
+        self._uid_label = QLabel("")
+        self._uid_label.setAlignment(Qt.AlignCenter)
+        self._uid_label.setStyleSheet(f"font-size: 18px; color: #888; background: transparent; font-family: '{self.font_family}';")
+        left_layout.addWidget(self._uid_label)
+
+        left_layout.addStretch(1)
+
+        card_layout.addWidget(left_panel, 3)
+        card_layout.addWidget(sep)
+
+        # —— 右侧：操作按钮区（占 1/4） ——
+        right_panel = QFrame()
+        right_panel.setStyleSheet("background: transparent;")
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(22, 55, 45, 55)
+        right_layout.setSpacing(24)
+        right_layout.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+
+        switch_btn = self._make_button("🔄 切换账号", "#0078D7", "#006abc", "#0078D7", 70, "white", 22)
+        switch_btn.clicked.connect(self._close_panel)  # 先关闭本面板
+        switch_btn.clicked.connect(lambda: self.switch_to_login_requested.emit())
+        right_layout.addWidget(switch_btn)
+
+        logout_btn = self._make_button("🚪 登出", "#d9534f", "#c9302c", "#d9534f", 70, "white", 22)
+        logout_btn.clicked.connect(self._close_panel)  # 先关闭本面板
+        logout_btn.clicked.connect(lambda: self.logout_requested.emit())
+        right_layout.addWidget(logout_btn)
+
+        right_layout.addStretch(1)
+
+        cancel_btn = self._make_button("关 闭", "#f0f0f0", "#e0e0e0", "#ccc", 54)
+        cancel_btn.clicked.connect(self._close_panel)
+        right_layout.addWidget(cancel_btn)
+
+        card_layout.addWidget(right_panel, 1)
+
+    # ==================== 通用工具 ====================
+
+    def _make_button(self, text, bg, hover_bg, border_color, height, color="#333333", font_size=21):
+        """创建统一风格的按钮。"""
+        btn = QPushButton(text)
+        btn.setFixedHeight(height)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {bg};
+                color: {color};
+                border: 1px solid {border_color};
+                border-radius: 8px;
+                font-size: {font_size}px;
+                font-family: '{self.font_family}';
+            }}
+            QPushButton:hover {{ background-color: {hover_bg}; }}
+        """)
+        return btn
+
+    def _apply_target_geometry(self):
+        """将悬浮窗几何对齐到 overlay_target（转换到主窗口坐标系）。"""
+        target = self._overlay_target
+        parent = self.parent()
+        if target is None or parent is None:
+            return
+        # target 可能就是 parent（主窗口），也可能在 parent 内部偏移（如 stacked_widget）
+        if target is parent:
+            self.setGeometry(parent.rect())
+        else:
+            # 将 target 在 parent 中的相对几何映射过来
+            top_left = target.mapTo(parent, QPoint(0, 0))
+            self.setGeometry(QRect(top_left, target.size()))
+
+    def eventFilter(self, obj, event):
+        """监听主窗口 / overlay_target 的 Resize / Move，使悬浮窗跟随缩放与位移。
+
+        注意时序：主窗口 resize 时，本 eventFilter 先于主窗口自身的
+        resizeEvent() 触发，此时 stacked_widget 的 setGeometry() 尚未执行，
+        overlay_target 的几何仍是旧值。因此用 QTimer.singleShot(0, ...)
+        将几何更新推迟到当前事件循环结束后执行，确保读到的是更新后的几何。
+        """
+        if event.type() in (QEvent.Resize, QEvent.Move):
+            QTimer.singleShot(0, self._apply_target_geometry)
+        return super().eventFilter(obj, event)
+
+    def showEvent(self, event):
+        """面板显示时：对齐 overlay_target 几何，根据模式执行不同初始化。"""
+        super().showEvent(event)
+        self._apply_target_geometry()
+        # 确保卡片在最上层
+        card = self.findChild(QFrame, "login_card")
+        if card is not None:
+            card.raise_()
+
+        # 刷新账号信息区（两种模式都需要）
+        self.refresh_user_info()
+
+        if self._mode == "login":
+            # 登录模式：生成二维码
+            if not self._generate_qrcode():
+                self._status_label.setText("二维码生成失败，请关闭后重试。")
+
+    def _fade_out_and_close(self):
+        """关闭面板（无动画，直接关闭）。"""
+        if self._closing:
+            return
+        self._closing = True
+        self._timer.stop()
+        self._do_real_close()
+
+    def _do_real_close(self):
+        """动画结束后真正关闭并发射信号。"""
+        # 移除 eventFilter
+        parent = self.parent()
+        for target in set([parent, self._overlay_target]):
+            if target is not None:
+                try:
+                    target.removeEventFilter(self)
+                except RuntimeError:
+                    pass
+        self.closed.emit()
+        self.close()
+
+    def resizeEvent(self, event):
+        """自身大小变化时无需额外处理（遮罩由自身 stylesheet 覆盖）。"""
+        super().resizeEvent(event)
+
+    # ---------- 扫码登录 ----------
+
+    def _generate_qrcode(self) -> bool:
+        """向网易云请求 unikey 并生成二维码图片，缩放填满标签。"""
+        try:
+            resp = pyncm.apis.login.LoginQrcodeUnikey()
+            self.unikey = resp.get("unikey", "")
+            if not self.unikey:
+                return False
+            qr_url = pyncm.apis.login.GetLoginQRCodeUrl(self.unikey)
+        except Exception as e:
+            debug_logger.error("QrCodeLoginDialog", f"获取二维码 unikey 失败: {str(e)}")
+            return False
+
+        try:
+            qr = qrcode.QRCode(version=1, box_size=10, border=2,
+                               error_correction=qrcode.constants.ERROR_CORRECT_M)
+            qr.add_data(qr_url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            pixmap = QPixmap()
+            pixmap.loadFromData(buf.read(), "PNG")
+            # 缩放到标签大小，保持长宽比，平滑缩放
+            scaled = pixmap.scaled(
+                self._qr_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            self._qr_label.setPixmap(scaled)
+        except Exception as e:
+            debug_logger.error("QrCodeLoginDialog", f"生成二维码图片失败: {str(e)}")
+            return False
+
+        self._status_label.setText("请使用网易云音乐 APP 扫描二维码")
+        self._update_countdown()
+        self._timer.start()
+        return True
+
+    def _poll_status(self):
+        """轮询扫码状态。"""
+        self._elapsed += self.POLL_INTERVAL // 1000
+        self._update_countdown()
+
+        try:
+            resp = pyncm.apis.login.LoginQrcodeCheck(self.unikey)
+        except Exception as e:
+            debug_logger.warning("QrCodeLoginDialog", f"轮询扫码状态异常: {str(e)}")
+            return
+
+        code = resp.get("code", -1)
+        debug_logger.info("QrCodeLoginDialog", f"扫码状态码: {code}")
+
+        if code == 800:
+            self._timer.stop()
+            self._status_label.setText("二维码已过期")
+            self._status_label.setStyleSheet(f"font-size: 22px; color: #d9534f; background: transparent; font-family: '{self.font_family}';")
+        elif code == 802:
+            self._status_label.setText("已扫码，请在手机上确认登录")
+            self._status_label.setStyleSheet(f"font-size: 22px; color: #5bc0de; background: transparent; font-family: '{self.font_family}';")
+        elif code == 803:
+            self._status_label.setText("授权成功，正在登录...")
+            self._status_label.setStyleSheet(f"font-size: 22px; color: #5cb85c; background: transparent; font-family: '{self.font_family}';")
+            self._finish_login()
+        elif code == 200 or code == 502:
+            self._status_label.setText("登录成功！")
+            self._status_label.setStyleSheet(f"font-size: 22px; color: #5cb85c; background: transparent; font-family: '{self.font_family}';")
+            self._finish_login()
+
+    def _finish_login(self):
+        """扫码登录成功。
+
+        关键修复：pyncm 的 LoginQrcodeCheck 只会把 cookie 写入 session.cookies，
+        但不会调用 WriteLoginInfo() 来更新 session.login_info。
+        而 session.logged_in / uid / nickname / vipType 等属性完全依赖
+        login_info["success"]，不看 cookie。因此必须显式调用 GetCurrentLoginStatus
+        拿到登录态响应，再 WriteLoginInfo 写入，否则 is_logged_in() 永远返回 False。
+        """
+        self._timer.stop()
+        try:
+            resp = pyncm.apis.login.GetCurrentLoginStatus()
+            # 只在响应确实带账号信息时才写入，避免覆盖已有登录态
+            if resp and (resp.get("code") == 200) and (
+                resp.get("account") or resp.get("profile")
+            ):
+                pyncm.WriteLoginInfo(resp)
+                debug_logger.info("QrCodeLoginDialog",
+                                  f"扫码登录态已写入 session，uid={pyncm.GetCurrentSession().uid}")
+            else:
+                debug_logger.warning("QrCodeLoginDialog",
+                                     f"GetCurrentLoginStatus 未返回账号信息: {resp}")
+        except Exception as e:
+            debug_logger.error("QrCodeLoginDialog", f"写入登录态失败: {str(e)}")
+        # 刷新右侧账号信息区
+        self.refresh_user_info()
+        self._close_panel()
+
+    def _update_countdown(self):
+        """更新倒计时显示。"""
+        remaining = max(0, self.EXPIRE_SECONDS - self._elapsed)
+        mins = remaining // 60
+        secs = remaining % 60
+        self._countdown_label.setText(f"二维码 {mins}:{secs:02d} 后失效")
+
+    # ---------- 用户信息展示 ----------
+
+    def refresh_user_info(self):
+        """刷新账号信息区：昵称 / VIP / UID / 头像。
+
+        登录前显示「未登录」占位；登录后从 provider 拉取详细资料。
+        头像通过后台线程下载，避免阻塞 UI。
+        """
+        # 通过 pyncm 全局会话判断登录态（面板是独立 widget，不持有 subsystem）。
+        try:
+            import pyncm as _pyncm
+            session = _pyncm.GetCurrentSession()
+            logged_in = bool(getattr(session, "logged_in", False))
+        except Exception:
+            logged_in = False
+
+        if not logged_in or not PYNCM_LOGIN_AVAILABLE:
+            self._nickname_label.setText("未登录")
+            self._vip_label.setText("")
+            self._uid_label.setText("")
+            self._avatar_label.setPixmap(QPixmap())  # 清空头像
+            self._last_avatar_url = ""
+            return
+
+        # 直接构造一个临时 provider 调用 get_user_detail（自带缓存）。
+        detail = {}
+        try:
+            from music_NCM import NeteaseMusicProvider
+            provider = NeteaseMusicProvider()
+            detail = provider.get_user_detail() or {}
+        except Exception as e:
+            debug_logger.warning("QrCodeLoginDialog", f"获取用户资料失败: {str(e)}")
+
+        nickname = detail.get("nickname") or "网易云音乐用户"
+        uid = detail.get("uid")
+        vip_type = detail.get("vip_type", 0)
+        avatar_url = detail.get("avatar_url", "")
+
+        self._nickname_label.setText(nickname)
+        self._vip_label.setText(self._format_vip_type(vip_type))
+        self._uid_label.setText(f"UID: {uid}" if uid else "")
+
+        # 头像异步加载（account 模式用 180px，login 模式用 120px）
+        if avatar_url and avatar_url != self._last_avatar_url:
+            self._last_avatar_url = avatar_url
+            avatar_size = self._avatar_label.width()
+            self._fetch_avatar_async(avatar_url, max(avatar_size, 120))
+
+    @staticmethod
+    def _format_vip_type(vip_type) -> str:
+        """把网易云 vipType 数字格式化为可读文本。"""
+        try:
+            vt = int(vip_type)
+        except (TypeError, ValueError):
+            return ""
+        # 常见取值：0=非会员, 1=黑胶VIP(旧), 11=黑胶VIP, 12=豪华VIP, 13=音乐人等
+        mapping = {
+            0: "",
+            1: "♬ 黑胶VIP",
+            11: "♬ 黑胶VIP",
+            12: "♛ 豪华VIP",
+            13: "✦ 音乐人",
+        }
+        return mapping.get(vt, f"VIP{vt}")
+
+    def _fetch_avatar_async(self, url: str, size: int = 120):
+        """后台线程下载头像图片，完成后回到主线程设置到 _avatar_label。"""
+        # 复用现有线程（若还在跑就不重复启动）
+        if self._avatar_thread is not None and self._avatar_thread.is_alive():
+            return
+
+        def _worker():
+            try:
+                import requests
+                resp = requests.get(url, timeout=8)
+                resp.raise_for_status()
+                data = resp.content
+                pixmap = QPixmap()
+                pixmap.loadFromData(data)
+                if pixmap.isNull():
+                    return
+                # 裁剪为圆形（贴到透明 QPixmap 上）
+                scaled = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding,
+                                       Qt.SmoothTransformation)
+                # 居中裁剪到正方形
+                if scaled.width() > size or scaled.height() > size:
+                    x = (scaled.width() - size) // 2
+                    y = (scaled.height() - size) // 2
+                    scaled = scaled.copy(x, y, size, size)
+                rounded = self._make_rounded(scaled, size)
+                # 通过 QTimer 投递回主线程设置
+                QTimer.singleShot(0, lambda: self._apply_avatar(rounded))
+            except Exception as e:
+                debug_logger.warning("QrCodeLoginDialog", f"下载头像失败: {str(e)}")
+
+        import threading
+        self._avatar_thread = threading.Thread(target=_worker, daemon=True)
+        self._avatar_thread.start()
+
+    @staticmethod
+    def _make_rounded(pixmap: QPixmap, size: int) -> QPixmap:
+        """把方形 QPixmap 裁剪为圆形（透明背景）。"""
+        out = QPixmap(size, size)
+        out.fill(Qt.transparent)
+        painter = QPainter(out)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        path = QPainterPath()
+        path.addEllipse(0, 0, size, size)
+        painter.setClipPath(path)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+        return out
+
+    def _apply_avatar(self, pixmap: QPixmap):
+        """主线程中安全地把头像 pixmap 设置到 label。"""
+        try:
+            if not pixmap.isNull():
+                self._avatar_label.setPixmap(pixmap)
+        except RuntimeError:
+            # 面板可能已被销毁
+            pass
+
+    # ---------- 关闭 ----------
+
+    def mousePressEvent(self, event):
+        """点击卡片外的空白区域（即遮罩区域）时，关闭悬浮窗。
+        卡片是独立子 widget，会自行接收点击事件，不会触发本方法。
+        """
+        card = self.findChild(QFrame, "login_card")
+        if card is not None:
+            # 点击位置落在卡片内 → 不处理
+            if card.geometry().contains(event.pos()):
+                super().mousePressEvent(event)
+                return
+        # 点击落在遮罩空白区 → 渐隐关闭
+        if event.button() == Qt.LeftButton:
+            self._fade_out_and_close()
+        else:
+            super().mousePressEvent(event)
+
+    def _close_panel(self):
+        """关闭面板（统一走渐隐动画）。"""
+        self._fade_out_and_close()
+
+    def closeEvent(self, event):
+        """真正关闭时：停止轮询、移除事件过滤器。closed 信号由 _do_real_close 发射。"""
+        self._timer.stop()
+        parent = self.parent()
+        if parent is not None:
+            try:
+                parent.removeEventFilter(self)
+            except Exception:
+                pass
+        super().closeEvent(event)
+
+    def keyPressEvent(self, event):
+        """按 Esc 关闭面板。"""
+        if event.key() == Qt.Key_Escape:
+            self._close_panel()
+        else:
+            super().keyPressEvent(event)
+
+
+class PlaylistManagePanel(QWidget):
+    """歌单管理悬浮面板。
+
+    全屏覆盖父窗口：背景半透明黑幕 + 模糊，居中白色卡片，
+    内含歌单列表（支持勾选）、添加/编辑/删除/合并操作。
+    """
+
+    closed = pyqtSignal()
+    # 操作信号
+    playlist_add_requested = pyqtSignal(str, str)       # (name, url)
+    playlist_delete_requested = pyqtSignal(str)        # name
+    playlist_edit_requested = pyqtSignal(str, str, str) # (old_name, new_name, new_url)
+    playlist_merge_requested = pyqtSignal(str, list)    # (new_name, [url1, url2, ...])
+    playlist_clear_requested = pyqtSignal()            # 清空所有
+
+    def __init__(self, playlists, parent=None, overlay_target=None):
+        """
+        Args:
+            playlists: 当前歌单列表 List[Dict[name, url]]
+            parent: 父窗口（应为顶层主窗口，保证 resize 跟随）
+            overlay_target: 要覆盖的目标 widget（如 stacked_widget），
+                           遮罩几何将跟随该 widget，而非覆盖整个 parent。
+                           若未指定，则退化为覆盖 parent。
+        """
+        super().__init__(parent)
+        self.setWindowFlags(Qt.SubWindow | Qt.FramelessWindowHint)
+        self.setObjectName("playlist_manage_overlay")
+
+        self._closing = False
+
+        # overlay_target 处理（同 QrCodeLoginDialog）
+        if overlay_target is not None:
+            self._overlay_target = overlay_target
+        elif parent is not None:
+            self._overlay_target = parent
+        else:
+            self._overlay_target = None
+
+        # 获取样式配置
+        self.settings_manager = SettingsManager()
+        self.font_family = self.settings_manager.get_Custom_value("global_font", "微软雅黑")
+
+        # —— 自身作为半透明深色遮罩层 ——
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 160);")
+        self._apply_target_geometry()
+
+        # 外层布局（居中卡片）
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setAlignment(Qt.AlignCenter)
+
+        # 卡片容器
+        # 高度由 780 减至 680，避免字号放大后在较小窗口中显示不全；
+        # 实际显示时还会按遮罩可用高度二次约束（见 _constrain_card_height）。
+        self._card = QFrame()
+        self._card.setObjectName("manage_card")
+        self._card.setFixedSize(780, 680)
+        self._card.setStyleSheet(f"""
+            QFrame#manage_card {{
+                background-color: rgba(255, 255, 255, 252);
+                border-radius: 20px;
+            }}
+        """)
+        outer.addWidget(self._card)
+
+        card_layout = QVBoxLayout(self._card)
+        card_layout.setContentsMargins(36, 30, 36, 30)
+        card_layout.setSpacing(18)
+
+        # —— 标题行：左侧标题 + 右侧关闭按钮 ——
+        title_row = QHBoxLayout()
+        title_row.setSpacing(0)
+
+        title_label = QLabel("歌单管理")
+        title_label.setStyleSheet(f"""
+            font-size: 33px;
+            font-weight: bold;
+            color: #222;
+            background: transparent;
+            font-family: '{self.font_family}';
+        """)
+        title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        title_row.addWidget(title_label)
+        title_row.addStretch(1)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(48, 48)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #EEEEEE;
+                border: none;
+                border-radius: 24px;
+                font-size: 24px;
+                color: #666;
+            }
+            QPushButton:hover {
+                background-color: #DDDDDD;
+                color: #333;
+            }
+        """)
+        close_btn.clicked.connect(self._close_panel)
+        title_row.addWidget(close_btn)
+        card_layout.addLayout(title_row)
+
+        # —— 操作按钮行：添加歌单 + 合并选中 ——
+        action_row = QHBoxLayout()
+        action_row.setSpacing(10)
+
+        self._add_btn = QPushButton("+ 添加歌单")
+        self._add_btn.setFixedHeight(57)
+        self._add_btn.setCursor(Qt.PointingHandCursor)
+        self._add_btn.setStyleSheet(self._action_btn_style("#4A90E2", "#357ABD"))
+        self._add_btn.clicked.connect(self._toggle_add_area)
+        action_row.addWidget(self._add_btn)
+
+        self._merge_btn = QPushButton("合并选中")
+        self._merge_btn.setFixedHeight(57)
+        self._merge_btn.setCursor(Qt.PointingHandCursor)
+        self._merge_btn.setEnabled(False)
+        self._merge_btn.setStyleSheet(self._action_btn_style_disabled())
+        self._merge_btn.clicked.connect(self._on_merge_clicked)
+        action_row.addWidget(self._merge_btn)
+
+        action_row.addStretch(1)
+        card_layout.addLayout(action_row)
+
+        # —— 添加歌单内联输入区（默认隐藏） ——
+        self._add_area = QFrame()
+        self._add_area.setVisible(False)
+        self._add_area.setStyleSheet("background: transparent;")
+        add_layout = QVBoxLayout(self._add_area)
+        add_layout.setContentsMargins(0, 0, 0, 0)
+        add_layout.setSpacing(8)
+
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("歌单名称")
+        name_input.setStyleSheet(self._input_style())
+        name_input.setObjectName("add_name_input")
+        add_layout.addWidget(name_input)
+
+        url_input = QLineEdit()
+        url_input.setPlaceholderText("网易云歌单链接")
+        url_input.setStyleSheet(self._input_style())
+        url_input.setObjectName("add_url_input")
+        add_layout.addWidget(url_input)
+
+        add_confirm_row = QHBoxLayout()
+        add_confirm_row.setSpacing(8)
+        add_confirm_row.addStretch(1)
+        confirm_btn = QPushButton("确认添加")
+        confirm_btn.setFixedSize(135, 48)
+        confirm_btn.setCursor(Qt.PointingHandCursor)
+        confirm_btn.setStyleSheet(self._small_btn_style("#4A90E2"))
+        confirm_btn.clicked.connect(self._on_add_confirmed)
+        add_confirm_row.addWidget(confirm_btn)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedSize(90, 48)
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet(self._small_btn_style("#999999"))
+        cancel_btn.clicked.connect(self._toggle_add_area)
+        add_confirm_row.addWidget(cancel_btn)
+        add_layout.addLayout(add_confirm_row)
+
+        card_layout.addWidget(self._add_area)
+
+        # —— 分隔线 ——
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #DDDDDD; max-height: 1px;")
+        card_layout.addWidget(sep)
+
+        # —— 歌单列表（可滚动） ——
+        self._list_container = QWidget()
+        self._list_container.setStyleSheet("background: transparent;")
+        self._list_layout = QVBoxLayout(self._list_container)
+        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        self._list_layout.setSpacing(4)
+        self._list_layout.setAlignment(Qt.AlignTop)
+
+        self._list_scroll = QScrollArea()
+        self._list_scroll.setWidgetResizable(True)
+        self._list_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._list_scroll.setStyleSheet("""
+            QScrollArea { border: none; background: transparent; }
+            QScrollBar:vertical { width: 6px; background: transparent; border-radius: 3px; }
+            QScrollBar::handle:vertical { background: #BBBBBB; border-radius: 3px; }
+        """)
+        self._list_scroll.setWidget(self._list_container)
+        card_layout.addWidget(self._list_scroll, 1)
+
+        # —— 底部：清空所有歌单 ——
+        bottom_row = QHBoxLayout()
+        bottom_row.addStretch(1)
+        clear_btn = QPushButton("清空所有歌单")
+        clear_btn.setFixedHeight(51)
+        clear_btn.setCursor(Qt.PointingHandCursor)
+        clear_btn.setStyleSheet(self._small_btn_style("#E74C3C"))
+        clear_btn.clicked.connect(self._on_clear_all)
+        bottom_row.addWidget(clear_btn)
+        card_layout.addLayout(bottom_row)
+
+        # 监听父窗口（主窗口）与 overlay_target 的大小变化，使遮罩跟随缩放
+        if parent is not None:
+            parent.installEventFilter(self)
+        if self._overlay_target is not None and self._overlay_target is not parent:
+            self._overlay_target.installEventFilter(self)
+
+        # 填充歌单列表
+        self._playlist_items = []  # 存储每个歌单行的组件引用
+        self._build_playlist_list(playlists)
+
+    # —— 样式辅助方法 ——
+
+    def _action_btn_style(self, bg, hover_bg):
+        return f"""
+            QPushButton {{
+                background-color: {bg};
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 21px;
+                font-weight: bold;
+                padding: 0 24px;
+                font-family: '{self.font_family}';
+            }}
+            QPushButton:hover {{ background-color: {hover_bg}; }}
+            QPushButton:disabled {{ background-color: #CCCCCC; color: #888; }}
+        """
+
+    def _action_btn_style_disabled(self):
+        return self._action_btn_style("#CCCCCC", "#CCCCCC")
+
+    def _small_btn_style(self, bg_color):
+        hover = self._lighten(bg_color, 20)
+        return f"""
+            QPushButton {{
+                background-color: {bg_color};
+                color: white;
+                border: none;
+                border-radius: 9px;
+                font-size: 20px;
+                font-weight: bold;
+                font-family: '{self.font_family}';
+            }}
+            QPushButton:hover {{ background-color: {hover}; }}
+        """
+
+    def _input_style(self):
+        return f"""
+            QLineEdit {{
+                border: 1px solid #D0D0D0;
+                border-radius: 9px;
+                padding: 9px 15px;
+                font-size: 21px;
+                background: #FFFFFF;
+                color: #333;
+                font-family: '{self.font_family}';
+            }}
+            QLineEdit:focus {{ border-color: #4A90E2; }}
+        """
+
+    @staticmethod
+    def _lighten(hex_color, amount):
+        """将十六进制颜色变亮"""
+        hex_color = hex_color.lstrip("#")
+        r = min(255, int(hex_color[0:2], 16) + amount)
+        g = min(255, int(hex_color[2:4], 16) + amount)
+        b = min(255, int(hex_color[4:6], 16) + amount)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    # —— 歌单列表构建 ——
+
+    def _build_playlist_list(self, playlists):
+        """根据歌单数据重新构建列表"""
+        # 清空现有列表
+        while self._list_layout.count():
+            item = self._list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._playlist_items = []
+
+        for i, p in enumerate(playlists):
+            is_internal = (p['url'] == "internal://queue")
+            row_widget = self._create_playlist_row(i, p['name'], p['url'], is_internal)
+            self._list_layout.addWidget(row_widget)
+            self._playlist_items.append({
+                "widget": row_widget,
+                "checkbox": row_widget.findChild(QCheckBox, f"cb_{i}"),
+                "name_label": row_widget.findChild(QLabel, f"name_{i}"),
+                "name": p['name'],
+                "url": p['url'],
+                "is_internal": is_internal,
+            })
+
+        self._list_layout.addStretch(1)
+        self._update_merge_btn_state()
+
+    def _create_playlist_row(self, index, name, url, is_internal):
+        """创建单行歌单条目：checkbox + 名称 + 编辑/删除按钮"""
+        row = QFrame()
+        row.setStyleSheet("""
+            QFrame {
+                background-color: #F8F9FA;
+                border-radius: 8px;
+            }
+        """)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(15, 12, 15, 12)
+        row_layout.setSpacing(12)
+
+        # 复选框
+        cb = QCheckBox()
+        cb.setObjectName(f"cb_{index}")
+        if is_internal:
+            cb.setEnabled(False)
+            cb.setChecked(False)
+        cb.stateChanged.connect(lambda state, idx=index: self._on_checkbox_changed(idx, state))
+        row_layout.addWidget(cb)
+
+        # 歌单名称
+        name_label = QLabel(name)
+        name_label.setObjectName(f"name_{index}")
+        name_label.setStyleSheet(f"""
+            background: transparent;
+            border: none;
+            color: {'#999999' if is_internal else '#333333'};
+            font-size: 22px;
+            font-family: '{self.font_family}';
+        """)
+        row_layout.addWidget(name_label, 1)
+
+        if not is_internal:
+            # 编辑按钮
+            edit_btn = QPushButton("编辑")
+            edit_btn.setFixedSize(60, 42)
+            edit_btn.setCursor(Qt.PointingHandCursor)
+            edit_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #E8E8E8;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 18px;
+                    color: #555;
+                    font-family: '{self.font_family}';
+                }}
+                QPushButton:hover {{ background-color: #D8D8D8; }}
+            """)
+            edit_btn.clicked.connect(lambda checked, n=name, u=url, w=row: self._toggle_edit_area(w, n, u))
+            row_layout.addWidget(edit_btn)
+
+            # 删除按钮
+            del_btn = QPushButton("删除")
+            del_btn.setFixedSize(60, 42)
+            del_btn.setCursor(Qt.PointingHandCursor)
+            del_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #FDE8E8;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 18px;
+                    color: #E74C3C;
+                    font-family: '{self.font_family}';
+                }}
+                QPushButton:hover {{ background-color: #FBD0D0; }}
+            """)
+            del_btn.clicked.connect(lambda checked, n=name: self._on_delete_clicked(n))
+            row_layout.addWidget(del_btn)
+
+        return row
+
+    # —— 事件处理 ——
+
+    def _apply_target_geometry(self):
+        """将悬浮窗几何对齐到 overlay_target（转换到主窗口坐标系）。"""
+        target = self._overlay_target
+        parent = self.parent()
+        if target is None or parent is None:
+            return
+        if target is parent:
+            self.setGeometry(parent.rect())
+        else:
+            top_left = target.mapTo(parent, QPoint(0, 0))
+            self.setGeometry(QRect(top_left, target.size()))
+
+    def showEvent(self, event):
+        """面板显示时：对齐 overlay_target 几何。"""
+        super().showEvent(event)
+        self._apply_target_geometry()
+        self._constrain_card_height()
+        # 确保卡片在最上层
+        if self._card is not None:
+            self._card.raise_()
+
+    def _constrain_card_height(self):
+        """约束卡片高度：不超过遮罩可用高度（上下各留 24px 边距）。
+
+        卡片宽度保持固定 780；高度取 min(设定高度, 遮罩高度 - 48)，
+        防止字号放大后卡片超出父遮罩导致显示不全。
+        """
+        if self._card is None:
+            return
+        target = self._overlay_target
+        parent = self.parent()
+        if target is None or parent is None:
+            return
+        available_h = target.size().height()
+        max_h = max(360, available_h - 48)  # 至少保留 360px 可用高度
+        self._card.setFixedHeight(min(680, max_h))
+
+    def resizeEvent(self, event):
+        """自身大小变化时无需额外处理（遮罩由自身 stylesheet 覆盖）。"""
+        super().resizeEvent(event)
+        self._constrain_card_height()
+
+    def eventFilter(self, obj, event):
+        """监听主窗口 / overlay_target 的 Resize / Move，使悬浮窗跟随缩放与位移。
+
+        注意时序：主窗口 resize 时，本 eventFilter 先于主窗口自身的
+        resizeEvent() 触发，此时 stacked_widget 的 setGeometry() 尚未执行，
+        overlay_target 的几何仍是旧值。因此用 QTimer.singleShot(0, ...)
+        将几何更新推迟到当前事件循环结束后执行，确保读到的是更新后的几何。
+        """
+        if event.type() in (QEvent.Resize, QEvent.Move):
+            QTimer.singleShot(0, self._apply_target_geometry)
+            QTimer.singleShot(0, self._constrain_card_height)
+        return False
+
+    def keyPressEvent(self, event):
+        """按 Esc 关闭面板。"""
+        if event.key() == Qt.Key_Escape:
+            self._close_panel()
+        else:
+            super().keyPressEvent(event)
+
+    def _close_panel(self):
+        if self._closing:
+            return
+        self._closing = True
+        # 移除 eventFilter
+        parent = self.parent()
+        for target in set([parent, self._overlay_target]):
+            if target is not None:
+                try:
+                    target.removeEventFilter(self)
+                except RuntimeError:
+                    pass
+        self.hide()
+        self.closed.emit()
+        self.deleteLater()
+
+    # —— 添加歌单 ——
+
+    def _toggle_add_area(self):
+        """显示/隐藏添加歌单的输入区域"""
+        visible = self._add_area.isVisible()
+        self._add_area.setVisible(not visible)
+        if not visible:
+            # 清空输入
+            name_input = self._add_area.findChild(QLineEdit, "add_name_input")
+            url_input = self._add_area.findChild(QLineEdit, "add_url_input")
+            if name_input:
+                name_input.clear()
+                name_input.setFocus()
+            if url_input:
+                url_input.clear()
+
+    def _on_add_confirmed(self):
+        """确认添加歌单"""
+        name_input = self._add_area.findChild(QLineEdit, "add_name_input")
+        url_input = self._add_area.findChild(QLineEdit, "add_url_input")
+        name = name_input.text().strip() if name_input else ""
+        url = url_input.text().strip() if url_input else ""
+        if not name or not url:
+            QMessageBox.warning(self, "提示", "请填写歌单名称和链接。")
+            return
+        self.playlist_add_requested.emit(name, url)
+        self._add_area.setVisible(False)
+
+    # —— 删除歌单 ——
+
+    def _on_delete_clicked(self, name):
+        """删除单个歌单（带确认）"""
+        ret = QMessageBox.question(
+            self, "确认删除", f"确定要删除歌单「{name}」吗？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if ret == QMessageBox.Yes:
+            self.playlist_delete_requested.emit(name)
+
+    # —— 清空所有歌单 ——
+
+    def _on_clear_all(self):
+        """清空所有自定义歌单"""
+        ret = QMessageBox.question(
+            self, "确认", "确定要清空所有自定义歌单吗？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if ret == QMessageBox.Yes:
+            self.playlist_clear_requested.emit()
+
+    # —— 编辑歌单 ——
+
+    def _toggle_edit_area(self, row_widget, current_name, current_url):
+        """在歌单行下方展开/收起编辑区域"""
+        # 查找是否已有编辑区域
+        existing = row_widget.findChild(QFrame, "edit_area")
+        if existing is not None:
+            existing.deleteLater()
+            return
+
+        edit_area = QFrame(row_widget)
+        edit_area.setObjectName("edit_area")
+        edit_area.setStyleSheet("background: transparent;")
+        edit_layout = QVBoxLayout(edit_area)
+        edit_layout.setContentsMargins(36, 4, 10, 4)
+        edit_layout.setSpacing(6)
+
+        name_edit = QLineEdit(current_name)
+        name_edit.setPlaceholderText("歌单名称")
+        name_edit.setStyleSheet(self._input_style())
+        name_edit.setFixedHeight(45)
+        edit_layout.addWidget(name_edit)
+
+        url_edit = QLineEdit(current_url)
+        url_edit.setPlaceholderText("网易云歌单链接")
+        url_edit.setStyleSheet(self._input_style())
+        url_edit.setFixedHeight(45)
+        edit_layout.addWidget(url_edit)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_row.addStretch(1)
+        save_btn = QPushButton("保存")
+        save_btn.setFixedSize(90, 39)
+        save_btn.setCursor(Qt.PointingHandCursor)
+        save_btn.setStyleSheet(self._small_btn_style("#4A90E2"))
+        save_btn.clicked.connect(lambda: self._on_edit_saved(
+            current_name, name_edit.text().strip(), url_edit.text().strip(), edit_area
+        ))
+        btn_row.addWidget(save_btn)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedSize(75, 39)
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.setStyleSheet(self._small_btn_style("#999999"))
+        cancel_btn.clicked.connect(lambda: edit_area.deleteLater())
+        btn_row.addWidget(cancel_btn)
+        edit_layout.addLayout(btn_row)
+
+        # 插入到 row_widget 的布局末尾
+        row_layout = row_widget.layout()
+        row_layout.insertWidget(row_layout.count(), edit_area)
+
+    def _on_edit_saved(self, old_name, new_name, new_url, edit_area):
+        """保存编辑结果"""
+        if not new_name or not new_url:
+            QMessageBox.warning(self, "提示", "名称和链接不能为空。")
+            return
+        edit_area.deleteLater()
+        self.playlist_edit_requested.emit(old_name, new_name, new_url)
+
+    # —— 合并歌单 ——
+
+    def _on_checkbox_changed(self, index, state):
+        """勾选状态变化时更新合并按钮可用性"""
+        self._update_merge_btn_state()
+
+    def _update_merge_btn_state(self):
+        """检查勾选数量，启用/禁用合并按钮"""
+        checked = sum(1 for item in self._playlist_items
+                      if item["checkbox"].isChecked() and not item["is_internal"])
+        if checked >= 2:
+            self._merge_btn.setEnabled(True)
+            self._merge_btn.setStyleSheet(self._action_btn_style("#4A90E2", "#357ABD"))
+        else:
+            self._merge_btn.setEnabled(False)
+            self._merge_btn.setStyleSheet(self._action_btn_style_disabled())
+
+    def _on_merge_clicked(self):
+        """点击合并选中"""
+        selected = [item for item in self._playlist_items
+                    if item["checkbox"].isChecked() and not item["is_internal"]]
+        if len(selected) < 2:
+            return
+
+        # 在卡片内弹出输入新歌单名称
+        names = ", ".join(item["name"] for item in selected)
+        new_name, ok = QInputDialog.getText(
+            self, "合并歌单",
+            f"将合并以下歌单：\n{names}\n\n请输入新歌单名称："
+        )
+        if not ok or not new_name.strip():
+            return
+
+        urls = [item["url"] for item in selected]
+        self.playlist_merge_requested.emit(new_name.strip(), urls)
+
 
 class SongItemWidget(QFrame):
     """
@@ -239,76 +1483,123 @@ class VolumeButton(QPushButton):
 
 class ScrollingLabel(QLabel):
     """
-    实现文本自动横向滚动的 QLabel。
-    当文本宽度超过控件宽度时，文本将自动滚动。
+    实现文本自动横向滚动的 QLabel（marquee 风格，像素级平移）。
+    当文本宽度超过控件宽度时，文本整体向左平移滚动以完整展示。
+
+    滚动轨迹（以超长歌词 "There's a Peeping Tom sat outside my window" 为例）：
+      初始态：文本左对齐贴左侧  -> "There's a Peep"
+      中途：   整体左移           -> "e's a Peeping To"
+      结尾态：尾部贴右、左侧留白 -> "dow"（左侧已移出，右侧空）
+      首尾留白后无缝循环回到初始态。
     """
+    # 滚动一个“完整周期”所需的像素位移：
+    #   offset 从 0 增长到 (text_width - widget_width + GAP)，
+    #   其中 GAP 为结尾态与下一轮初始态之间的留白，保证视觉上有停顿且循环衔接自然。
+    # 每次定时器触发移动 STEP_PX 个像素。
+    STEP_PX = 2
+    GAP_PX = 40  # 首尾留白宽度（约为控件宽度的一部分，给结尾态一个停顿）
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.setContentsMargins(0, 0, 0, 0)
         self.original_text = ""
-        self.current_offset = 0
+        self.offset_px = 0          # 当前像素位移（>= 0）
+        self._max_offset = 0        # 一个周期内的最大位移
         self.scroll_timer = QTimer(self)
-        self.scroll_timer.setInterval(400) # 减慢到原先的 0.25 倍 (100 -> 400)
+        self.scroll_timer.setInterval(400)  # 与原歌词框节奏一致
         self.scroll_timer.timeout.connect(self._scroll_text)
-        self.font_metrics = None
+        self._paused = False        # 外部可暂停（鼠标悬停时停下方便阅读）
+        self._overflow = False      # 当前文本是否判定为“超长”
 
     def set_scrolling_text(self, text: str):
         """设置要滚动的文本"""
         self.original_text = text
-        self.current_offset = 0
+        self.offset_px = 0
+        super().setText(text)  # 始终同步到 QLabel 内部文本，保证未超长时 paintEvent 能渲染
         self.update_text_display()
+
+    def _recompute_overflow(self):
+        """重新计算是否超长与一个周期的最大位移。
+        超长判定算法：文本像素宽度 > 控件可用宽度。
+        """
+        fm = self.fontMetrics()
+        margins = self.contentsMargins()
+        widget_width = self.width() - margins.left() - margins.right()
+        # 控件尚未布局时 widget_width 可能为 0 或很小，此时不做判定
+        if widget_width <= 0:
+            self._overflow = False
+            self._max_offset = 0
+            return
+        text_width = fm.width(self.original_text)
+        self._overflow = text_width > widget_width
+        self._max_offset = max(0, text_width - widget_width + self.GAP_PX)
+
+    def is_overflow(self) -> bool:
+        return self._overflow
 
     def update_text_display(self):
-        """根据当前偏移量更新显示的文本"""
-        if not self.font_metrics:
-            self.font_metrics = self.fontMetrics()
-
-        widget_width = self.width() - self.contentsMargins().left() - self.contentsMargins().right()
-        text_width = self.font_metrics.width(self.original_text)
-
-        if text_width <= widget_width:
-            # 文本未超出，停止滚动，显示完整文本
-            super().setText(self.original_text)
+        """外部调用的兼容入口（保留旧 API）。"""
+        self._recompute_overflow()
+        if not self._overflow:
             self.scroll_timer.stop()
-        else:
-            # 文本超出，开始滚动
-            if not self.scroll_timer.isActive():
-                self.scroll_timer.start()
-            
-            # 计算当前显示的文本段
-            display_text = self.original_text[self.current_offset:]
-            super().setText(display_text)
+            self.offset_px = 0
+        elif not self._paused and not self.scroll_timer.isActive():
+            self.scroll_timer.start()
+        self.update()
+
+    def pause_scroll(self):
+        """暂停滚动（鼠标悬停时调用，方便完整阅读）。文本不超长时无副作用。"""
+        self._paused = True
+        if self.scroll_timer.isActive():
+            self.scroll_timer.stop()
+
+    def resume_scroll(self):
+        """恢复滚动（鼠标离开时调用）。"""
+        self._paused = False
+        if self._overflow and not self.scroll_timer.isActive():
+            self.scroll_timer.start()
 
     def _scroll_text(self):
-        """定时器触发，滚动文本"""
-        if not self.font_metrics:
-            self.font_metrics = self.fontMetrics()
-
-        widget_width = self.width() - self.contentsMargins().left() - self.contentsMargins().right()
-        text_text = self.original_text
-        text_width = self.font_metrics.width(text_text)
-
-        if text_width <= widget_width:
+        """定时器触发：文本整体向左平移 STEP_PX，到达周期末尾后回到初始态循环。"""
+        if not self._overflow:
             self.scroll_timer.stop()
-            super().setText(self.original_text)
-            self.current_offset = 0
+            self.offset_px = 0
+            self.update()
             return
 
-        self.current_offset += 1
-        
-        # 判定循环条件：
-        # 如果剩余文本极短（比如只剩最后 3-5 个字还没完全消失），就重置回开头。
-        # 这里用文本长度 (len) 来粗略判断，比直接计算像素更符合字符切片逻辑。
-        if self.current_offset >= len(text_text) - 1:
-            self.current_offset = 0 # 回到开头
-        
-        self.update_text_display()
+        self.offset_px += self.STEP_PX
+        if self.offset_px >= self._max_offset:
+            self.offset_px = 0  # 回到初始态（文本左对齐贴左侧），无缝循环
+        self.update()
+
+    def paintEvent(self, event):
+        """按当前 offset_px 平移绘制文本，实现像素级 marquee 滚动。
+        不超长时退化为普通的左对齐静态绘制。
+        """
+        if not self._overflow:
+            # 未超长：交给 QLabel 默认绘制（完整居左显示）
+            super().paintEvent(event)
+            return
+
+        fm = self.fontMetrics()
+        margins = self.contentsMargins()
+        x_start = margins.left() - self.offset_px  # 文本起点随 offset 向左移
+        y = (self.height() + fm.ascent() - fm.descent()) // 2
+
+        painter = QPainter(self)
+        painter.setFont(self.font())
+        # 文字颜色：优先用 QPalette 文字色，保证与样式表 color 一致
+        painter.setPen(self.palette().color(QPalette.WindowText))
+
+        # 直接绘制完整文本，超出控件区域的部分由 Qt 自动裁剪
+        painter.drawText(x_start, y, self.original_text)
+        painter.end()
 
     def resizeEvent(self, event):
-        """窗口大小改变时重新计算滚动"""
+        """窗口大小改变时重新计算滚动范围并启动/停止滚动"""
         super().resizeEvent(event)
-        self.font_metrics = self.fontMetrics() # 字体可能随大小改变
+        # 用 update_text_display 统一处理：重新判定 overflow、启动/停止 timer、重绘
         self.update_text_display()
 
 class ElidedLabel(QLabel):
@@ -373,7 +1664,10 @@ class StreamingPage(QWidget):
         self.status_timer.setInterval(500)
         self.status_timer.timeout.connect(self.update_playback_status)
         self.status_timer.start()
-        
+
+        # 启动时自动恢复网易云登录会话
+        self._restore_login_session()
+
         # 订阅设置变更信号
         self.shared_manager = get_shared_memory_manager()
         self.shared_manager.settings_changed.connect(self._on_settings_changed)
@@ -381,43 +1675,165 @@ class StreamingPage(QWidget):
         debug_logger.info("StreamingPage", "流媒体页面已初始化。")
         
     def _on_settings_changed(self, section, data):
-        """处理自定义设置更改，动态更新主容器颜色"""
-        if section == 'custom':
-            left_bg = data.get('stream_left_bg_color')
-            if left_bg and hasattr(self, 'left_outer'):
-                self.left_outer.setStyleSheet(f"QFrame {{ background-color: {left_bg}; border-radius: 12px; }}")
-            
-            right_bg = data.get('stream_right_bg_color')
-            if right_bg and hasattr(self, 'song_scroll') and hasattr(self, 'song_container'):
-                self.song_scroll.setStyleSheet(f"""
-                    QScrollArea {{
-                        background-color: {right_bg};
-                        border-radius: 10px;
-                        border: none;
-                    }}
-                """)
-                self.song_container.setStyleSheet(f"background-color: {right_bg}; border-radius: 10px;")
-            
-            bottom_bg = data.get('stream_bottom_bg_color')
-            if bottom_bg and hasattr(self, 'player_bar'):
-                self.player_bar.setStyleSheet(f"""
-                    QFrame {{
-                        background-color: {bottom_bg};
-                        border-radius: 10px;
-                    }}
-                """)
-                
-            lyrics_bg = data.get('stream_lyrics_bg_color')
-            if lyrics_bg and hasattr(self, 'lyrics_label'):
+        """处理自定义设置更改，动态更新面板颜色
+
+        左/右/底面板跟随卡片背景色 (card_background_color)，
+        歌词区跟随组件背景色 (component_background_color)。
+        """
+        if section != 'custom':
+            return
+
+        changed_keys = set(data.keys()) if isinstance(data, dict) else set()
+
+        # 1. 卡片背景色 → 左/右/底面板
+        if 'card_background_color' in changed_keys:
+            card_bg = data.get('card_background_color')
+            if card_bg:
+                if hasattr(self, 'left_outer'):
+                    self.left_outer.setStyleSheet(f"QFrame {{ background-color: {card_bg}; border-radius: 12px; }}")
+
+                if hasattr(self, 'song_scroll') and hasattr(self, 'song_container'):
+                    self.song_scroll.setStyleSheet(f"""
+                        QScrollArea {{
+                            background-color: {card_bg};
+                            border-radius: 10px;
+                            border: none;
+                        }}
+                    """)
+                    self.song_container.setStyleSheet(f"background-color: {card_bg}; border-radius: 10px;")
+
+                if hasattr(self, 'player_bar'):
+                    self.player_bar.setStyleSheet(f"""
+                        QFrame {{
+                            background-color: {card_bg};
+                            border-radius: 10px;
+                        }}
+                    """)
+
+        # 2. 组件背景色 → 歌词区
+        if 'component_background_color' in changed_keys:
+            component_bg = data.get('component_background_color')
+            if component_bg and hasattr(self, 'lyrics_label'):
                 font_family = self.settings_manager.get_Custom_value("global_font", "微软雅黑")
                 self.lyrics_label.setStyleSheet(f"""
                     color: #333333;
                     font-size: 21px;
                     font-family: '{font_family}';
-                    background-color: {lyrics_bg};
+                    background-color: {component_bg};
                     border-radius: 8px;
                     padding: 8px 15px;
                 """)
+
+    # ---------- 网易云登录 ----------
+
+    def _restore_login_session(self):
+        """启动时从设置中恢复网易云登录会话。"""
+        if not PYNCM_LOGIN_AVAILABLE:
+            return
+        try:
+            session_dump = self.settings_manager.streaming.get_value("ncm_session", "")
+            if session_dump:
+                self.subsystem.provider.restore_session(session_dump)
+        except Exception as e:
+            debug_logger.warning("StreamingPage", f"恢复登录会话失败: {str(e)}")
+        finally:
+            self.update_login_btn()
+
+    def update_login_btn(self):
+        """根据登录状态更新登录按钮文字。"""
+        if not PYNCM_LOGIN_AVAILABLE:
+            self.login_btn.setText("👤 登录不可用")
+            self.login_btn.setEnabled(False)
+            return
+        info = self.subsystem.provider.get_login_info()
+        if info and info.get("nickname"):
+            self.login_btn.setText(f"👤 {info['nickname']}")
+        else:
+            self.login_btn.setText("👤 登录")
+
+    def show_login_menu(self):
+        """点击登录/账号按钮：弹出悬浮面板。
+        已登录 → account 模式（展示账号详情 + 切换/登出按钮）
+        未登录 → login 模式（扫码登录）
+        """
+        self._open_login_panel(mode="account" if self.subsystem.provider.is_logged_in() else "login")
+
+    def _open_login_panel(self, mode="login"):
+        """打开登录/账号悬浮面板。
+
+        mode="login"：扫码登录面板
+        mode="account"：已登录态账号信息面板
+        """
+        if not PYNCM_LOGIN_AVAILABLE:
+            QMessageBox.warning(self, "不可用", "pyncm 登录模块不可用。")
+            return
+        # 同一时间只允许一个面板
+        if hasattr(self, "_login_panel") and self._login_panel is not None:
+            self._login_panel.close()
+
+        if mode == "account":
+            # 已登录态：只展示账号信息，不需要 qrcode
+            self._login_panel = QrCodeLoginDialog(
+                self.window(), overlay_target=self.parent(), mode="account"
+            )
+        else:
+            if not QRCODE_AVAILABLE:
+                QMessageBox.warning(self, "不可用", "qrcode 库未安装，无法生成二维码。")
+                return
+            self._login_panel = QrCodeLoginDialog(
+                self.window(), overlay_target=self.parent(), mode="login"
+            )
+
+        # 面板关闭后检查登录结果
+        self._login_panel.closed.connect(self._on_login_panel_closed)
+        # account 模式下的信号
+        self._login_panel.switch_to_login_requested.connect(self._on_switch_account_requested)
+        self._login_panel.logout_requested.connect(self._do_logout)
+        self._login_panel.show()
+
+    def _on_login_panel_closed(self):
+        """登录面板关闭后，仅 login 模式下检查是否登录成功并持久化。"""
+        panel = self._login_panel
+        self._login_panel = None
+        # account 模式面板关闭不需要持久化或弹"登录成功"
+        if panel is None or getattr(panel, '_mode', '') != 'login':
+            return
+        if self.subsystem.provider.is_logged_in():
+            self._on_login_success()
+
+    def _on_login_success(self):
+        """登录成功后的统一处理：持久化会话 + 更新 UI。"""
+        try:
+            session_dump = self.subsystem.provider.dump_session()
+            if session_dump:
+                self.settings_manager.streaming.set_value("ncm_session", session_dump)
+                debug_logger.info("StreamingPage", "登录会话已持久化。")
+        except Exception as e:
+            debug_logger.error("StreamingPage", f"持久化登录会话失败: {str(e)}")
+        self.update_login_btn()
+        info = self.subsystem.provider.get_login_info()
+        if info.get("nickname"):
+            QMessageBox.information(self, "登录成功", f"欢迎，{info['nickname']}！")
+
+    def _on_switch_account_requested(self):
+        """account 面板中点击「切换账号」后，重新打开扫码登录面板。"""
+        self._open_login_panel(mode="login")
+
+    def _do_logout(self):
+        """执行登出。"""
+        ret = QMessageBox.question(self, "确认", "确定要登出网易云账号吗？")
+        if ret != QMessageBox.Yes:
+            return
+        try:
+            self.subsystem.provider.logout()
+        except Exception:
+            pass
+        try:
+            self.settings_manager.streaming.set_value("ncm_session", "")
+        except Exception:
+            pass
+        self.update_login_btn()
+        QMessageBox.information(self, "已登出", "已退出网易云账号。")
 
     def init_ui(self):
         # 获取全局字体设置
@@ -466,6 +1882,26 @@ class StreamingPage(QWidget):
         self.search_btn.clicked.connect(self.handle_search)
         search_layout.addWidget(self.search_btn)
 
+        # 登录按钮（未登录显示"登录"，已登录显示昵称）
+        search_layout.addStretch(1)
+        self.login_btn = QPushButton("👤 登录")
+        self.login_btn.setFixedHeight(50)
+        self.login_btn.setCursor(Qt.PointingHandCursor)
+        self.login_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: white;
+                border: 1px solid #AAAAAA;
+                border-radius: 25px;
+                padding: 0 20px;
+                font-size: 18px;
+                color: #333333;
+                font-family: '{font_family}';
+            }}
+            QPushButton:hover {{ background-color: #f0f0f0; }}
+        """)
+        self.login_btn.clicked.connect(self.show_login_menu)
+        search_layout.addWidget(self.login_btn)
+
         main_layout.addLayout(search_layout)
 
         # --- 中间内容区 ---
@@ -480,11 +1916,11 @@ class StreamingPage(QWidget):
         scroll_h = VISIBLE_COUNT * PLAYLIST_BTN_H + (VISIBLE_COUNT - 1) * PLAYLIST_SPACING + 2 * PLAYLIST_PADDING
 
         # 外层统一容器（灰色圆角框，宽度固定）
-        left_bg = self.settings_manager.Custom.get_value("stream_left_bg_color", "#B0B0B0")
+        card_bg = self.settings_manager.get_Custom_value("card_background_color", "#F5F8FF")
         self.left_outer = QFrame()
-        self.left_outer.setFixedWidth(180) 
+        self.left_outer.setFixedWidth(180)
         self.left_outer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding) # 纵向拉伸
-        self.left_outer.setStyleSheet(f"QFrame {{ background-color: {left_bg}; border-radius: 12px; }}")
+        self.left_outer.setStyleSheet(f"QFrame {{ background-color: {card_bg}; border-radius: 12px; }}")
         left_outer_layout = QVBoxLayout(self.left_outer)
         left_outer_layout.setContentsMargins(10, 10, 10, 10)
         left_outer_layout.setSpacing(8)
@@ -520,7 +1956,7 @@ class StreamingPage(QWidget):
         sep_line.setStyleSheet("color: #999999;")
         left_outer_layout.addWidget(sep_line)
 
-        # 底部：歌单管理 + 添加歌单 (1.5倍字体)
+        # 底部：歌单管理 (1.5倍字体)
         BOTTOM_BTN_STYLE = f"""
             QPushButton {{
                 background-color: white;
@@ -539,14 +1975,7 @@ class StreamingPage(QWidget):
         self.manage_btn.setStyleSheet(BOTTOM_BTN_STYLE)
         self.manage_btn.clicked.connect(self.show_playlist_menu)
 
-        self.add_btn = QPushButton("添加歌单")
-        self.add_btn.setFixedHeight(60)
-        self.add_btn.setCursor(Qt.PointingHandCursor)
-        self.add_btn.setStyleSheet(BOTTOM_BTN_STYLE)
-        self.add_btn.clicked.connect(self.handle_add_playlist)
-
         left_outer_layout.addWidget(self.manage_btn)
-        left_outer_layout.addWidget(self.add_btn)
 
         # left_panel_container 纵向拉伸以填满
         left_panel_container = QVBoxLayout()
@@ -594,8 +2023,8 @@ class StreamingPage(QWidget):
 
         right_panel.addLayout(title_layout)
 
-        right_bg = self.settings_manager.Custom.get_value("stream_right_bg_color", "#A0A0A0")
-        
+        right_bg = card_bg
+
         self.song_scroll = QScrollArea()
         self.song_scroll.setWidgetResizable(True)
         self.song_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -606,7 +2035,7 @@ class StreamingPage(QWidget):
                 border: none;
             }}
         """)
-        
+
         self.song_container = QWidget()
         self.song_container.setStyleSheet(f"background-color: {right_bg}; border-radius: 10px;")
         self.song_layout = QVBoxLayout(self.song_container)
@@ -625,7 +2054,7 @@ class StreamingPage(QWidget):
         # 布局：
         #   上行：[歌词区] | [分隔] | [歌名/作者] | [⏮ ▶ ⏭] | [🔊]
         #   下行：[————————————————进度条————————————————]
-        bottom_bg = self.settings_manager.Custom.get_value("stream_bottom_bg_color", "#B0B0B0")
+        bottom_bg = card_bg
         
         self.player_bar = QFrame()
         self.player_bar.setFixedHeight(120) # 稍微增加高度 (110 -> 120)
@@ -644,8 +2073,8 @@ class StreamingPage(QWidget):
         player_layout = QHBoxLayout()
         player_layout.setSpacing(12)
 
-        # 左：歌词显示区域（固定宽度为歌曲栏宽度的约 1/2）
-        lyrics_bg = self.settings_manager.Custom.get_value("stream_lyrics_bg_color", "#9E9E9E")
+        # 左：歌词显示区域（使用组件背景色）
+        lyrics_bg = self.settings_manager.get_Custom_value("component_background_color", "#ffffff")
         self.lyrics_label = ScrollingLabel()
         self.lyrics_label.set_scrolling_text("正在加载歌词...")
         self.lyrics_label.setFixedWidth(380) # 固定宽度
@@ -657,7 +2086,7 @@ class StreamingPage(QWidget):
             border-radius: 8px;
             padding: 8px 15px;
         """)
-        self.lyrics_label.setAlignment(Qt.AlignCenter)
+        self.lyrics_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         player_layout.addWidget(self.lyrics_label)
 
         # 分隔 (重新补上被误删的垂直分割线)
@@ -947,10 +2376,17 @@ class StreamingPage(QWidget):
         playlists_data = self.settings_manager.get_Custom_value("music_playlists", "")
         # 始终包含一个虚拟的“播放列表”项
         result = [{"name": "播放列表", "url": "internal://queue"}]
-        
+
         if not playlists_data:
+            # 首次使用：注入预设歌单并持久化保存
+            presets = self._get_preset_playlists()
+            for p in presets:
+                result.append({"name": p["name"], "url": p["url"]})
+            # 持久化（排除内部播放列表）
+            data = ";".join([f"{p['name']}|{p['url']}" for p in presets])
+            self.settings_manager.set_Custom_value("music_playlists", data)
             return result
-            
+
         # 格式: Name|URL;Name|URL
         items = playlists_data.split(";")
         for item in items:
@@ -960,6 +2396,15 @@ class StreamingPage(QWidget):
                 if name != "播放列表":
                     result.append({"name": name, "url": url})
         return result
+
+    def _get_preset_playlists(self):
+        """内置预设歌单（网易云歌单）"""
+        return [
+            {"name": "自然白噪音",   "url": "https://music.163.com/playlist?id=2845772415"},
+            {"name": "LoFi HipHop", "url": "https://music.163.com/playlist?id=2540031947"},
+            {"name": "影视飓风《样片日记》旅行bgm", "url": "https://music.163.com/playlist?id=9360572545"},
+            {"name": "劲爆音游曲",   "url": "https://music.163.com/playlist?id=7625727312"},
+        ]
 
     def _load_queue_tracks(self):
         """加载保存的播放列表歌曲数据"""
@@ -1015,11 +2460,16 @@ class StreamingPage(QWidget):
         self.playlist_layout.addStretch(1)
 
     def _create_playlist_button(self, index, name):
-        """创建歌单按钮"""
+        """创建歌单按钮。
+        
+        歌单名嵌入 ScrollingLabel：当文本像素宽度超过按钮可用宽度（算法判定为“超长”）时，
+        自动横向滚动以完整展示；否则原样完整显示。滚动动画复用歌词展示框（ScrollingLabel）逻辑。
+        鼠标悬停时暂停滚动，便于阅读。
+        """
         # 获取当前字体
         font_family = self.settings_manager.get_Custom_value("global_font", "微软雅黑")
         
-        btn = QPushButton(name)
+        btn = QPushButton()
         btn.setFixedHeight(40)
         btn.setFixedWidth(160)
         btn.setCursor(Qt.PointingHandCursor)
@@ -1039,6 +2489,33 @@ class StreamingPage(QWidget):
                 background-color: #e0e0e0;
             }}
         """)
+
+        # 用 ScrollingLabel 承载歌单名，实现“超长滚动、否则完整显示”
+        label = ScrollingLabel(btn)
+        label.set_scrolling_text(name)
+        # 与按钮内边距/字体保持一致，确保超长判定准确
+        label.setStyleSheet(f"""
+            ScrollingLabel {{
+                background-color: transparent;
+                border: none;
+                color: #333333;
+                font-size: 21px;
+                font-family: '{font_family}';
+                padding: 0px;
+            }}
+        """)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        # 将 label 铺满按钮内容区，宽高跟随按钮
+        layout = QHBoxLayout(btn)
+        layout.setContentsMargins(8, 0, 8, 0)  # 留出左右内边距，避免文字贴边
+        layout.setSpacing(0)
+        layout.addWidget(label)
+
+        # 鼠标悬停/离开按钮时控制滚动：悬停暂停，离开恢复（仅超长时实际生效）
+        btn.enterEvent = lambda e: label.pause_scroll()
+        btn.leaveEvent = lambda e: label.resume_scroll()
+
         btn.clicked.connect(lambda checked, idx=index: self.handle_playlist_click(idx))
         return btn
 
@@ -1084,6 +2561,25 @@ class StreamingPage(QWidget):
             self.subsystem.current_list = self.queue_tracks
             self.display_songs(self.queue_tracks, clear=True)
             self.list_title_label.setText("播放列表")
+            return
+
+        # 特殊处理合并歌单（merged://url1||url2||url3）
+        if playlist['url'].startswith("merged://"):
+            source_urls = playlist['url'][len("merged://"):].split("||")
+            merged_tracks = []
+            seen_ids = set()
+            for src_url in source_urls:
+                if self.subsystem.import_playlist(src_url):
+                    for t in self.subsystem.current_list:
+                        if t.song_id not in seen_ids:
+                            seen_ids.add(t.song_id)
+                            merged_tracks.append(t)
+            if merged_tracks:
+                self.subsystem.current_list = merged_tracks
+                self.display_songs(merged_tracks, clear=True)
+                self.list_title_label.setText(f"歌单——{playlist['name']}")
+            else:
+                QMessageBox.warning(self, "错误", "无法导入合并歌单，请检查源歌单链接是否正确。")
             return
 
         # 导入网易云歌单
@@ -1195,39 +2691,70 @@ class StreamingPage(QWidget):
             next_page_btn.clicked.connect(self.handle_next_page)
             self.song_layout.addWidget(next_page_btn)
 
-    def handle_add_playlist(self):
-        """处理添加歌单"""
-        name, ok1 = QInputDialog.getText(self, "添加歌单", "请输入歌单名称:")
-        if not ok1 or not name: return
-        
-        url, ok2 = QInputDialog.getText(self, "添加歌单", "请输入网易云歌单链接:")
-        if not ok2 or not url: return
-        
+    def show_playlist_menu(self):
+        """打开歌单管理悬浮面板"""
+        # 同一时间只允许一个面板
+        if hasattr(self, "_manage_panel") and self._manage_panel is not None:
+            self._manage_panel.close()
+        # 挂到顶层主窗口下：QStackedWidget 的 page 不随主窗口 resize，
+        # 挂到主窗口下才能正确跟随窗口缩放。
+        # overlay_target = self.parent()（即 stacked_widget），
+        # 遮罩只覆盖内容区域，不含左侧 tab 栏。
+        self._manage_panel = PlaylistManagePanel(self.playlists, self.window(), overlay_target=self.parent())
+        # 连接操作信号
+        self._manage_panel.playlist_add_requested.connect(self._on_playlist_added)
+        self._manage_panel.playlist_delete_requested.connect(self._on_playlist_deleted)
+        self._manage_panel.playlist_edit_requested.connect(self._on_playlist_edited)
+        self._manage_panel.playlist_merge_requested.connect(self._on_playlists_merged)
+        self._manage_panel.playlist_clear_requested.connect(self._on_playlists_cleared)
+        self._manage_panel.closed.connect(self._on_manage_panel_closed)
+        self._manage_panel.show()
+
+    def _on_manage_panel_closed(self):
+        """歌单管理面板关闭后的清理"""
+        self._manage_panel = None
+
+    def _on_playlist_added(self, name, url):
+        """处理悬浮窗发起的添加歌单请求"""
         self.playlists.append({"name": name, "url": url})
         self._save_playlists()
         self.update_playlist_display()
         debug_logger.info("StreamingPage", f"已添加歌单: {name}")
 
-    def show_playlist_menu(self):
-        """显示歌单管理菜单"""
-        menu = QMenu(self)
-        delete_action = menu.addAction("删除歌单...")
-        clear_action = menu.addAction("清空所有歌单")
+    def _on_playlist_deleted(self, name):
+        """处理悬浮窗发起的删除歌单请求"""
+        self.playlists = [p for p in self.playlists if p['name'] != name]
+        self._save_playlists()
+        self.update_playlist_display()
+        debug_logger.info("StreamingPage", f"已删除歌单: {name}")
+
+    def _on_playlist_edited(self, old_name, new_name, new_url):
+        """处理悬浮窗发起的编辑歌单请求"""
+        for p in self.playlists:
+            if p['name'] == old_name:
+                p['name'] = new_name
+                p['url'] = new_url
+                break
+        self._save_playlists()
+        self.update_playlist_display()
+        debug_logger.info("StreamingPage", f"已编辑歌单: {old_name} -> {new_name}")
+
+    def _on_playlists_merged(self, new_name, urls):
+        """处理悬浮窗发起的合并歌单请求
         
-        action = menu.exec_(self.manage_btn.mapToGlobal(self.manage_btn.rect().bottomLeft()))
-        
-        if action == delete_action:
-            # 弹出一个选择框来删除 (过滤掉内置播放列表)
-            names = [p['name'] for p in self.playlists if p['url'] != "internal://queue"]
-            if not names: return
-            name, ok = QInputDialog.getItem(self, "删除歌单", "选择要删除的歌单:", names, 0, False)
-            if ok and name:
-                self.playlists = [p for p in self.playlists if p['name'] != name]
-                self._save_playlists()
-                self.update_playlist_display()
-        elif action == clear_action:
-            if QMessageBox.question(self, "确认", "确定要清空所有自定义歌单吗？") == QMessageBox.Yes:
-                # 保留内置播放列表
-                self.playlists = [p for p in self.playlists if p['url'] == "internal://queue"]
-                self._save_playlists()
-                self.update_playlist_display()
+        将多个歌单 URL 合并为一个特殊格式的歌单，URL 格式为：
+        merged://url1||url2||url3
+        点击时依次从所有源加载歌曲并合并去重。
+        """
+        merged_url = "merged://" + "||".join(urls)
+        self.playlists.append({"name": new_name, "url": merged_url})
+        self._save_playlists()
+        self.update_playlist_display()
+        debug_logger.info("StreamingPage", f"已合并创建歌单: {new_name}，包含 {len(urls)} 个源")
+
+    def _on_playlists_cleared(self):
+        """处理悬浮窗发起的清空所有歌单请求"""
+        self.playlists = [p for p in self.playlists if p['url'] == "internal://queue"]
+        self._save_playlists()
+        self.update_playlist_display()
+        debug_logger.info("StreamingPage", "已清空所有自定义歌单")
