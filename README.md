@@ -13,7 +13,7 @@
 
 
 
-不定期更新|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
+不定期更新|正在渡劫|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
