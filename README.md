@@ -15,7 +15,7 @@
 
 不定期更新|正在渡劫|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
-终究是被本地部署AITTS干趴下了 一个月白干 哈哈
+正在优化看起来很高大上的UI……
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
 [![下载量](https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total?style=social&label=下载量&logo=github)](https://github.com/CN-Air84/YuanYue-TTS/releases/latest)
@@ -128,13 +128,6 @@
 
 <div align="center">
 
-## 安全提示
-
-本程序不会要求你下载任何软件，
-
-且永不收费、永不 __主动__ 弹出广告 ¹ 。
-
-源悦TTS是一款免费开源程序，仅供学习交流使用，如在任何渠道付费购买了源悦TTS，请为您自身权益退款。
 
 
 ## 💻 支持平台
@@ -170,8 +163,6 @@
 请点击音色列表并选择一个其他的音色。
 
 同时，我们建议您进入 设置-AI设置 选择一个默认音色。
-
-目前，程序偶现音色配置检查功能失效的问题，此问题将很快修复。
 
 ### 为什么某个界面缺少图片
 
@@ -217,17 +208,17 @@
 
 ①程序文字转语音部分基于知名项目Edge-TTS。
 
-感谢Edge-TTS项目作者rany2大佬。
+感谢Edge-TTS项目作者rany2。
 
 ②程序对知名开源项目tchMaterial_parser进行了修改,
 
 并用于智慧教育平台导入模式下在线导入电子书获取部分。
 
-感谢tchMaterial_parser作者happycola233大佬。
+感谢tchMaterial_parser作者happycola233。
 
 ③本程序流媒体页面基于PyNCM实现。
 
-感谢其维护者mos9527等十一位大佬。
+感谢其维护者mos9527。
 
 ④程序修改并使用了python-docx。
 
@@ -239,7 +230,7 @@
 
 如有任何问题请联系我，我会在36小时内解决。
 
-感谢HelloWRC等四十五位大佬。
+感谢HelloWRC。
 
 ②本程序开发时应用HarmonyOS Sans SC字体进行检查，
 
@@ -263,7 +254,7 @@
 
 ④“Github仓库导入模式”下，电子书来自中国电子教科书库ChinaTextbook项目，
 
-感谢维护者TapXWorld和keminshu二位大佬。
+感谢维护者TapXWorld。
 
 
 ## 支持
