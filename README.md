@@ -13,9 +13,10 @@
 
 
 
-不定期更新|正在渡劫|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
+不定期更新|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
-正在优化看起来很高大上的UI……
+<img width="1127" height="1080" alt="HO8bqKdaYAAJ4bt" src="https://github.com/user-attachments/assets/aeba5b53-49fe-42be-bc61-4d03d708a097" />
+
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
 [![下载量](https://img.shields.io/github/downloads/CN-Air84/YuanYue-TTS/total?style=social&label=下载量&logo=github)](https://github.com/CN-Air84/YuanYue-TTS/releases/latest)
