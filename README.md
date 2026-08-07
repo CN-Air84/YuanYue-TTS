@@ -15,7 +15,7 @@
 
 不定期更新|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
 
-<img width="1127" height="1080" alt="HO8bqKdaYAAJ4bt" src="https://github.com/user-attachments/assets/aeba5b53-49fe-42be-bc61-4d03d708a097" />
+<img width="563" height="540" alt="HO8bqKdaYAAJ4bt" src="https://github.com/user-attachments/assets/aeba5b53-49fe-42be-bc61-4d03d708a097" />
 
 
 [![Stars](https://img.shields.io/github/stars/CN-Air84/YuanYue-TTS?label=Stars)](https://github.com/CN-Air84/YuanYue-TTS/)
