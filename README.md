@@ -13,7 +13,7 @@
 
 
 
-不定期更新|已持续更新近6个月|点个Star吧球球了( ´•̥̥̥ω•̥̥̥` )
+不更新|似掉了
 
 <img width="563" height="540" alt="HO8bqKdaYAAJ4bt" src="https://github.com/user-attachments/assets/aeba5b53-49fe-42be-bc61-4d03d708a097" />
 
